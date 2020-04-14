@@ -16,12 +16,8 @@ package nodeos
 
 import (
 	"fmt"
-	"io"
 
-	pbdeos "github.com/dfuse-io/pbgo/dfuse/codecs/deos"
 	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/bstream/codecs/deos"
-	"github.com/dfuse-io/manageos/mindreader"
 )
 
 func BlockFileNamer(block *bstream.Block) string {
@@ -39,17 +35,4 @@ func BlockFileNamer(block *bstream.Block) string {
 	}
 
 	return fmt.Sprintf("%010d-%s-%s-%s", block.Num(), blockTimeString, blockID, previousID)
-}
-
-func ConsoleReaderFactory(reader io.Reader) (mindreader.ConsolerReader, error) {
-	return deos.NewConsoleReader(reader)
-}
-
-func ConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
-	blk, ok := obj.(*pbdeos.Block)
-	if !ok {
-		return nil, fmt.Errorf("expected *pbdeos.Block, got %T", obj)
-	}
-
-	return deos.BlockFromProto(blk)
 }

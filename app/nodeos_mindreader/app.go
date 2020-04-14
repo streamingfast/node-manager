@@ -21,14 +21,14 @@ import (
 	"os"
 	"time"
 
-	pbbstream "github.com/dfuse-io/pbgo/dfuse/bstream/v1"
-	"github.com/dfuse-io/shutter"
 	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/manageos/mindreader"
 	nodeosMindreader "github.com/dfuse-io/manageos/mindreader/nodeos"
 	"github.com/dfuse-io/manageos/operator"
 	"github.com/dfuse-io/manageos/profiler"
 	"github.com/dfuse-io/manageos/superviser/nodeos"
+	pbbstream "github.com/dfuse-io/pbgo/dfuse/bstream/v1"
+	"github.com/dfuse-io/shutter"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
@@ -70,17 +70,24 @@ type Config struct {
 	StartFailureHandlerFunc func()
 }
 
+type Modules struct {
+	consoleReaderFactory     mindreader.ConsolerReaderFactory
+	consoleReaderTransformer mindreader.ConsoleReaderBlockTransformer
+}
+
 type App struct {
 	*shutter.Shutter
 	Config    *Config
 	ReadyFunc func()
+	modules   *Modules
 }
 
-func New(c *Config) *App {
+func New(c *Config, modules *Modules) *App {
 	n := &App{
 		Shutter:   shutter.New(),
 		Config:    c,
 		ReadyFunc: func() {},
+		modules:   modules,
 	}
 	return n
 }
@@ -141,8 +148,8 @@ func (a *App) Run() error {
 		a.Config.WorkingDir,
 		nodeosMindreader.BlockFileNamer,
 		pbbstream.Protocol_EOS,
-		nodeosMindreader.ConsoleReaderFactory,
-		nodeosMindreader.ConsoleReaderBlockTransformer,
+		a.modules.consoleReaderFactory,
+		a.modules.consoleReaderTransformer,
 		gs,
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,
