@@ -71,8 +71,8 @@ type Config struct {
 }
 
 type Modules struct {
-	consoleReaderFactory     mindreader.ConsolerReaderFactory
-	consoleReaderTransformer mindreader.ConsoleReaderBlockTransformer
+	ConsoleReaderFactory     mindreader.ConsolerReaderFactory
+	ConsoleReaderTransformer mindreader.ConsoleReaderBlockTransformer
 }
 
 type App struct {
@@ -148,8 +148,8 @@ func (a *App) Run() error {
 		a.Config.WorkingDir,
 		nodeosMindreader.BlockFileNamer,
 		pbbstream.Protocol_EOS,
-		a.modules.consoleReaderFactory,
-		a.modules.consoleReaderTransformer,
+		a.modules.ConsoleReaderFactory,
+		a.modules.ConsoleReaderTransformer,
 		gs,
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,
