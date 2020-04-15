@@ -1,3 +1,0 @@
-#!/bin/bash
-# description: Stop nodeos for maintenance
-curl -sS -XPOST localhost:8080/v1/maintenance?sync=true

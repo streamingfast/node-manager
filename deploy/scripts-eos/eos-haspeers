@@ -1,3 +1,0 @@
-#!/bin/bash
-# description: show the number of currently valid connected peers
-cleos net peers |grep chain_id |grep -v 0000000000000000000000000000000 |wc -l
