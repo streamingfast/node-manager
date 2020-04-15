@@ -16,7 +16,6 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/eoscanada/eos-go v0.9.1-0.20200415144303-2adb25bcdeca
 	github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2
-	github.com/ethereum/go-ethereum v1.9.9 // indirect
 	github.com/frostschutz/go-fibmap v0.0.0-20160825162329-b32c231bfe6a // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/google/renameio v0.1.0
