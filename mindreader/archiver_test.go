@@ -123,9 +123,9 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 }
 
 func TestNewLocalStore(t *testing.T) {
-	localArchiveStore, err := dstore.NewDBinStore("/tmp/mr_dest/")
-
-	archiver := testNewArchiver("/tmp/mr_test/", localArchiveStore)
+	localArchiveStore, err := dstore.NewDBinStore("/tmp/mr_dest")
+	require.NoError(t, err)
+	archiver := testNewArchiver("/tmp/mr_test", localArchiveStore)
 	err = archiver.init()
 	require.NoError(t, err)
 

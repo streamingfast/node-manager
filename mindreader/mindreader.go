@@ -21,12 +21,11 @@ import (
 	"path/filepath"
 	"time"
 
-	pbbstream "github.com/dfuse-io/pbgo/dfuse/bstream/v1"
-	"github.com/dfuse-io/shutter"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dstore"
 	"github.com/dfuse-io/manageos/metrics"
+	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -63,7 +62,6 @@ func RunMindReaderPlugin(
 	mergeUploadDirectly bool,
 	workingDirectory string,
 	blockFileNamer BlockFileNamer,
-	blockKind pbbstream.Protocol,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	grpcServer *grpc.Server,
@@ -102,10 +100,10 @@ func RunMindReaderPlugin(
 		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
 	}
 	if mergeUploadDirectly {
-		ra := NewReprocArchiver(archiveStore, bstream.MustGetBlockWriterFactory(blockKind))
+		ra := NewReprocArchiver(archiveStore, bstream.GetBlockWriterFactory)
 		archiver = ra
 	} else {
-		archiver = NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.MustGetBlockWriterFactory(blockKind))
+		archiver = NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory)
 	}
 
 	if err = archiver.init(); err != nil {

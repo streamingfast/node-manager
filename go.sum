@@ -93,6 +93,10 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/deckarep/golang-set v0.0.0-20180603214616-504e848d77ea/go.mod h1:93vsz/8Wt4joVM7c2AVqh+YRMiUSc14yDtF28KmMOgQ=
 github.com/dfuse-io/bstream v0.0.0-20200407175946-02835b21c627 h1:57Lzw/oFw7/U6dG5yp9QiknMJEP9v/uuOgNNw5lteVE=
 github.com/dfuse-io/bstream v0.0.0-20200407175946-02835b21c627/go.mod h1:f1Nbm3kpk3fbcUl244zjyMbhdIGnDUvGxYkx8YAPQvU=
+github.com/dfuse-io/bstream v0.0.0-20200415151736-2d83aea8c5af h1:U8+hzcCQsFc9jjJ8YYvNBREUH4khhwkgBZa/1SExgTA=
+github.com/dfuse-io/bstream v0.0.0-20200415151736-2d83aea8c5af/go.mod h1:s6htc3jWU18nI6wq0hCl0uatjUtrN652zRnJD6dMGGc=
+github.com/dfuse-io/bstream v0.0.0-20200415154805-fc5f1d364031 h1:IWo0BA3byIQELkm6itE0BN04yjopwl+KCedirhDCpII=
+github.com/dfuse-io/bstream v0.0.0-20200415154805-fc5f1d364031/go.mod h1:tCeWgLk5bsjFO/pj8c6b0iX2rJAEt1Z86twwg7CHlHQ=
 github.com/dfuse-io/dbin v0.0.0-20200406215642-ec7f22e794eb h1:yrE/Ncb9PAjdN7w5Ixx47Oy1kQQdluBfuv7c8D9UaPQ=
 github.com/dfuse-io/dbin v0.0.0-20200406215642-ec7f22e794eb/go.mod h1:yMMhO8IdiSS+R/961s9Ac1oyAx3MdAO0OneSZ9Wt/Wg=
 github.com/dfuse-io/derr v0.0.0-20200406214256-c690655246a1 h1:ejixSugMZ417KvnJhk4cZJu/VW4ql0AlL+seE4jh1Kc=
@@ -129,6 +133,8 @@ github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.m
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
 github.com/eoscanada/eos-go v0.9.1-0.20200227221642-1b19518201a1 h1:xZohJqmRbCFOdmdO8FnSMxMd33Q+ryVraPZWRJHq8YY=
 github.com/eoscanada/eos-go v0.9.1-0.20200227221642-1b19518201a1/go.mod h1:6RuJFiRU1figWZ39M33o2cERU2MdL6VllElYLHTZNeo=
+github.com/eoscanada/eos-go v0.9.1-0.20200415144303-2adb25bcdeca h1:aj+U4pJtWRP1MUBLanJR/jxQkI2UcQn0Tximh7b41qY=
+github.com/eoscanada/eos-go v0.9.1-0.20200415144303-2adb25bcdeca/go.mod h1:exxz2Fyjqx23FIYF1QlhhhggYZxcbZMGp2H/4h7I34Y=
 github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2 h1:qXzIzDwZsixtJfR6jHRFShEhOKrjYANdjHaPMb1uGCo=
 github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2/go.mod h1:6A7XkYpqkq0DjHzakhUybMXmZeY+9E6Z1SBAWytyO0A=
 github.com/ethereum/go-ethereum v1.9.9/go.mod h1:a9TqabFudpDu1nucId+k9S8R9whYaHnGBLKFouA5EAo=

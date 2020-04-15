@@ -27,7 +27,6 @@ import (
 	"github.com/dfuse-io/manageos/operator"
 	"github.com/dfuse-io/manageos/profiler"
 	"github.com/dfuse-io/manageos/superviser/nodeos"
-	pbbstream "github.com/dfuse-io/pbgo/dfuse/bstream/v1"
 	"github.com/dfuse-io/shutter"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -147,7 +146,6 @@ func (a *App) Run() error {
 		a.Config.MergeUploadDirectly,
 		a.Config.WorkingDir,
 		nodeosMindreader.BlockFileNamer,
-		pbbstream.Protocol_EOS,
 		a.modules.ConsoleReaderFactory,
 		a.modules.ConsoleReaderTransformer,
 		gs,

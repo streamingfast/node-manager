@@ -15,21 +15,28 @@
 package mindreader
 
 import (
+	"io"
 	"testing"
 
 	"github.com/abourget/llerrgroup"
-	pbbstream "github.com/dfuse-io/pbgo/dfuse/bstream/v1"
 	"github.com/dfuse-io/bstream"
-	_ "github.com/dfuse-io/bstream/codecs/deos"
+	"github.com/dfuse-io/dbin"
 	"github.com/dfuse-io/dstore"
 	"github.com/stretchr/testify/assert"
 )
 
+func init() {
+	bstream.GetBlockWriterFactory = bstream.BlockWriterFactoryFunc(func(writer io.Writer) (bstream.BlockWriter, error) {
+		return &bstream.TestBlockWriterBin{
+			DBinWriter: dbin.NewWriter(writer),
+		}, nil
+	})
+}
 func TestReprocArchiver(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
 	a := &ReprocArchiver{
 		store:              mStore,
-		blockWriterFactory: bstream.MustGetBlockWriterFactory(pbbstream.Protocol_EOS),
+		blockWriterFactory: bstream.GetBlockWriterFactory,
 		eg:                 llerrgroup.New(2),
 	}
 
@@ -59,7 +66,7 @@ func TestReprocArchiverSpecialCase(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
 	a := &ReprocArchiver{
 		store:              mStore,
-		blockWriterFactory: bstream.MustGetBlockWriterFactory(pbbstream.Protocol_EOS),
+		blockWriterFactory: bstream.GetBlockWriterFactory,
 	}
 
 	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 1}))
