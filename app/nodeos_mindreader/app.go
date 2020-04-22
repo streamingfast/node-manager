@@ -97,7 +97,7 @@ func (a *App) Run() error {
 	hostname, _ := os.Hostname()
 	zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
-	chainSuperviser, err := nodeos.NewSuperviser(zlog, a.Config.DebugDeepMind, &nodeos.SuperviserOptions{
+	chainSuperviser, err := nodeos.NewSuperviser(zlog, zlogNodeos, a.Config.DebugDeepMind, &nodeos.SuperviserOptions{
 		LocalNodeEndpoint:   a.Config.NodeosAPIAddress,
 		ConfigDir:           a.Config.NodeosConfigDir,
 		BinPath:             a.Config.NodeosBinPath,

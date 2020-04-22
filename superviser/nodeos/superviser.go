@@ -24,11 +24,11 @@ import (
 	"time"
 
 	"github.com/ShinyTrinkets/overseer"
-	"github.com/eoscanada/eos-go"
 	"github.com/dfuse-io/manageos"
 	logplugin "github.com/dfuse-io/manageos/log_plugin"
 	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/superviser"
+	"github.com/eoscanada/eos-go"
 	"github.com/spf13/viper"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -112,7 +112,7 @@ type SuperviserOptions struct {
 	MonitorHeadBlock bool
 }
 
-func NewSuperviser(logger *zap.Logger, debugDeepMind bool, options *SuperviserOptions) (*NodeosSuperviser, error) {
+func NewSuperviser(logger, nodeosLogger *zap.Logger, debugDeepMind bool, options *SuperviserOptions) (*NodeosSuperviser, error) {
 	// Ensure process manager line buffer is large enough (50 MiB) for our Deep Mind instrumentation outputting lot's of text.
 	overseer.DEFAULT_LINE_BUFFER_SIZE = 50 * 1024 * 1024
 
@@ -131,7 +131,7 @@ func NewSuperviser(logger *zap.Logger, debugDeepMind bool, options *SuperviserOp
 	s.RegisterLogPlugin(logplugin.LogPluginFunc(s.analyzeLogLineForStateChange))
 
 	if options.LogToZap {
-		s.RegisterLogPlugin(logplugin.NewToZapLogPlugin(logger, debugDeepMind))
+		s.RegisterLogPlugin(logplugin.NewToZapLogPlugin(nodeosLogger, debugDeepMind))
 	} else {
 		s.RegisterLogPlugin(logplugin.NewToConsoleLogPlugin(debugDeepMind))
 	}

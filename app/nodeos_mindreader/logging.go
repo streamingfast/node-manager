@@ -20,7 +20,9 @@ import (
 )
 
 var zlog *zap.Logger
+var zlogNodeos *zap.Logger
 
 func init() {
 	logging.Register("github.com/dfuse-io/manageos/app/nodeos_mindreader", &zlog)
+	logging.Register("github.com/dfuse-io/manageos/app/nodeos_mindreader/nodeos", &zlogNodeos)
 }
