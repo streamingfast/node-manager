@@ -25,10 +25,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dfuse-io/dgrpc"
-
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
+	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/dstore"
 	"github.com/eoscanada/eos-go"
 	"github.com/klauspost/compress/zstd"
@@ -194,6 +193,8 @@ func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint6
 		gator,
 		startBlockNum,
 		10,
+		nil,
+		nil,
 	)
 }
 

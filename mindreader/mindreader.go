@@ -23,8 +23,8 @@ import (
 
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
+	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/dstore"
-	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -54,7 +54,11 @@ type MindReaderPlugin struct {
 	stopAtBlockNum      uint64
 	channelCapacity     int
 	blockServer         *blockstream.Server
-	setMaintenanceFunc  func()
+
+	headBlockTimeDrift *dmetrics.HeadTimeDrift
+	headBlockNumber    *dmetrics.HeadBlockNum
+
+	setMaintenanceFunc func()
 }
 
 func RunMindReaderPlugin(
@@ -68,6 +72,8 @@ func RunMindReaderPlugin(
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
+	headBlockTimeDrift *dmetrics.HeadTimeDrift,
+	headBlockNumber *dmetrics.HeadBlockNum,
 	setMaintenanceFunc func(),
 ) (*MindReaderPlugin, error) {
 	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
@@ -109,7 +115,7 @@ func RunMindReaderPlugin(
 	if err = archiver.init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %s", err)
 	}
-	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity)
+	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity, headBlockTimeDrift, headBlockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +140,8 @@ func NewMindReaderPlugin(
 	gator Gator,
 	stopAtBlockNum uint64,
 	channelCapacity int,
+	headBlockTimeDrift *dmetrics.HeadTimeDrift,
+	headBlockNumber *dmetrics.HeadBlockNum,
 ) (*MindReaderPlugin, error) {
 	pipeReader, pipeWriter := io.Pipe()
 	consoleReader, err := consoleReaderFactory(pipeReader)
@@ -260,8 +268,12 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 		return nil
 	}
 
-	metrics.HeadBlockNumber.SetUint64(block.Num())
-	metrics.HeadBlockTimeDrift.SetBlockTime(block.Time())
+	if p.headBlockNumber != nil {
+		p.headBlockNumber.SetUint64(block.Num())
+	}
+	if p.headBlockTimeDrift != nil {
+		p.headBlockTimeDrift.SetBlockTime(block.Time())
+	}
 
 	blocks <- block
 	//if len(blocks) > 9*cap(blocks)/10 { // when channel is 90%, returning an error here will trigger a shutdown of the emitting process, but it may generate more blocks before it is completely stopped, so we keep a buffer

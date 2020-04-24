@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/operator"
 	"github.com/dfuse-io/manageos/profiler"
 	"github.com/dfuse-io/manageos/superviser/nodeos"
@@ -29,6 +30,7 @@ import (
 )
 
 type Config struct {
+	MetricID            string
 	ManagerAPIAddress   string
 	NodeosAPIAddress    string
 	ConnectionWatchdog  bool
@@ -87,7 +89,15 @@ func (a *App) Run() error {
 	hostname, _ := os.Hostname()
 	zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
-	chainSuperviser, err := nodeos.NewSuperviser(zlog, zlogNodeos, a.Config.DebugDeepMind, &nodeos.SuperviserOptions{
+	metricID := a.Config.MetricID
+	if metricID == "" {
+		metricID = "manager"
+	}
+	zlog.Info("setting up metrics", zap.String("metric_id", metricID))
+	headBlockTimeDrift := metrics.NewHeadBlockTimeDrift(metricID)
+	headBlockNumber := metrics.NewHeadBlockNumber(metricID)
+
+	chainSuperviser, err := nodeos.NewSuperviser(zlog, zlogNodeos, a.Config.DebugDeepMind, headBlockTimeDrift, headBlockNumber, &nodeos.SuperviserOptions{
 		LocalNodeEndpoint:   a.Config.NodeosAPIAddress,
 		ConfigDir:           a.Config.NodeosConfigDir,
 		BinPath:             a.Config.NodeosBinPath,

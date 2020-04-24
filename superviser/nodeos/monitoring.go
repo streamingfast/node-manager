@@ -59,8 +59,8 @@ func (s *NodeosSuperviser) Monitor() {
 
 		lastHeadBlockTime = chainInfo.HeadBlockTime.Time
 		if s.options.MonitorHeadBlock {
-			metrics.HeadBlockNumber.SetUint64(uint64(chainInfo.HeadBlockNum))
-			metrics.HeadBlockTimeDrift.SetBlockTime(lastHeadBlockTime)
+			s.headBlockNumber.SetUint64(uint64(chainInfo.HeadBlockNum))
+			s.headBlockTimeDrift.SetBlockTime(lastHeadBlockTime)
 		}
 
 		if s.options.ReadinessMaxLatency == 0 || time.Since(lastHeadBlockTime) < s.options.ReadinessMaxLatency {

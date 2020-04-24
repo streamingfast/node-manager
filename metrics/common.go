@@ -22,12 +22,21 @@ import (
 
 var metricset = dmetrics.NewSet()
 
-var HeadBlockTimeDrift = metricset.NewHeadTimeDrift("manager")
-var HeadBlockNumber = metricset.NewHeadBlockNumber("manager")
+//var HeadBlockTimeDrift = metricset.NewHeadTimeDrift("manager")
+//var HeadBlockNumber = metricset.NewHeadBlockNumber("manager")
 var SuccessfulBackups = metricset.NewCounter("successful_backups", "This counter increments every time that a backup is completed successfully")
 
-func init() {
+func NewHeadBlockTimeDrift(serviceName string) *dmetrics.HeadTimeDrift {
+	return metricset.NewHeadTimeDrift(serviceName)
+}
+
+func NewHeadBlockNumber(serviceName string) *dmetrics.HeadBlockNum {
+	return metricset.NewHeadBlockNumber(serviceName)
+}
+
+func RegisterMetrics() {
 	if _, err := os.Stat("/.dockerenv"); !os.IsNotExist(err) {
+		// occurs whilte in docker env
 		metricset.Register()
 	}
 }

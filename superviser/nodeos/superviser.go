@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ShinyTrinkets/overseer"
+	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/manageos"
 	logplugin "github.com/dfuse-io/manageos/log_plugin"
 	"github.com/dfuse-io/manageos/metrics"
@@ -57,6 +58,9 @@ type NodeosSuperviser struct {
 
 	snapshotRestoreOnNextStart bool
 	snapshotRestoreFilename    string
+
+	headBlockTimeDrift *dmetrics.HeadTimeDrift
+	headBlockNumber    *dmetrics.HeadBlockNum
 }
 
 type SuperviserOptions struct {
@@ -112,20 +116,22 @@ type SuperviserOptions struct {
 	MonitorHeadBlock bool
 }
 
-func NewSuperviser(logger, nodeosLogger *zap.Logger, debugDeepMind bool, options *SuperviserOptions) (*NodeosSuperviser, error) {
+func NewSuperviser(logger, nodeosLogger *zap.Logger, debugDeepMind bool, headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, options *SuperviserOptions) (*NodeosSuperviser, error) {
 	// Ensure process manager line buffer is large enough (50 MiB) for our Deep Mind instrumentation outputting lot's of text.
 	overseer.DEFAULT_LINE_BUFFER_SIZE = 50 * 1024 * 1024
 
 	s := &NodeosSuperviser{
 		// The arguments field is actually `nil` because arguments are re-computed upon each start
-		Superviser:       superviser.New(logger, options.BinPath, nil),
-		api:              eos.New(fmt.Sprintf("http://%s", options.LocalNodeEndpoint)),
-		blocksDir:        filepath.Join(options.DataDir, "blocks"),
-		producerHostname: options.ProducerHostname,
-		snapshotsDir:     path.Join(options.DataDir, "snapshots"),
-		options:          options,
-		readinessProbe:   atomic.NewBool(false),
-		forceProduction:  options.ForceProduction,
+		Superviser:         superviser.New(logger, options.BinPath, nil),
+		api:                eos.New(fmt.Sprintf("http://%s", options.LocalNodeEndpoint)),
+		blocksDir:          filepath.Join(options.DataDir, "blocks"),
+		producerHostname:   options.ProducerHostname,
+		snapshotsDir:       path.Join(options.DataDir, "snapshots"),
+		options:            options,
+		readinessProbe:     atomic.NewBool(false),
+		forceProduction:    options.ForceProduction,
+		headBlockTimeDrift: headBlockTimeDrift,
+		headBlockNumber:    headBlockNumber,
 	}
 
 	s.RegisterLogPlugin(logplugin.LogPluginFunc(s.analyzeLogLineForStateChange))
