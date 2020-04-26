@@ -161,6 +161,8 @@ func NewMindReaderPlugin(
 		gator:               gator,
 		stopAtBlockNum:      stopAtBlockNum,
 		channelCapacity:     channelCapacity,
+		headBlockTimeDrift:  headBlockTimeDrift,
+		headBlockNumber:     headBlockNumber,
 	}, nil
 }
 
@@ -273,6 +275,7 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 	if p.headBlockTimeDrift != nil {
 		p.headBlockTimeDrift.SetBlockTime(block.Time())
+
 	}
 
 	blocks <- block
