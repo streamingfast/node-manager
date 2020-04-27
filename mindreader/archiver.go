@@ -15,6 +15,7 @@
 package mindreader
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -135,7 +136,10 @@ func (s *DefaultArchiver) uploadFiles() error {
 
 		eg.Go(func() error {
 			zlog.Debug("about to move file", zap.String("file", file))
-			if err = s.store.PushLocalFile(file, toBaseName); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+
+			if err = s.store.PushLocalFile(ctx, file, toBaseName); err != nil {
 				return fmt.Errorf("moving file %q to storage: %s", file, err)
 			}
 			return nil

@@ -16,6 +16,7 @@ package mindreader
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -174,7 +175,7 @@ func TestNewGSStore(t *testing.T) {
 
 	time.Sleep(2 * time.Second) //todo: this suck!
 
-	exists, err := archiveStore.FileExists("test-file")
+	exists, err := archiveStore.FileExists(context.Background(), "test-file")
 	require.NoError(t, err)
 	require.True(t, exists)
 }

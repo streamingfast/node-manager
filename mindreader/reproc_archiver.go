@@ -16,7 +16,9 @@ package mindreader
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
@@ -107,7 +109,11 @@ func (s *ReprocArchiver) storeBlock(block *bstream.Block) error {
 			if baseNum%1000 == 0 {
 				zlog.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
 			}
-			err := s.store.WriteObject(baseName, bytes.NewReader(buffer.Bytes()))
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+
+			err := s.store.WriteObject(ctx, baseName, bytes.NewReader(buffer.Bytes()))
 			if err != nil {
 				return fmt.Errorf("uploading merged file: %s", err)
 			}

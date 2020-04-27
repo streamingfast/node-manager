@@ -6,11 +6,11 @@ require (
 	cloud.google.com/go/storage v1.4.0
 	github.com/ShinyTrinkets/overseer v0.3.0
 	github.com/abourget/llerrgroup v0.0.0-20161118145731-75f536392d17
-	github.com/dfuse-io/bstream v0.0.0-20200415195700-4274669bdcb6
+	github.com/dfuse-io/bstream v0.0.0-20200427161155-5bc64e86c005
 	github.com/dfuse-io/dbin v0.0.0-20200406215642-ec7f22e794eb
 	github.com/dfuse-io/dgrpc v0.0.0-20200406214416-6271093e544c
 	github.com/dfuse-io/dmetrics v0.0.0-20200406214800-499fc7b320ab
-	github.com/dfuse-io/dstore v0.0.0-20200407173215-10b5ced43022
+	github.com/dfuse-io/dstore v0.1.0
 	github.com/dfuse-io/logging v0.0.0-20200407175011-14021b7a79af
 	github.com/dfuse-io/shutter v1.4.1-0.20200319040708-c809eec458e6
 	github.com/dustin/go-humanize v1.0.0 // indirect

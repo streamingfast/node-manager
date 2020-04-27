@@ -21,11 +21,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/dfuse-io/dstore"
 
-	eos "github.com/eoscanada/eos-go"
 	"github.com/dfuse-io/manageos/metrics"
+	eos "github.com/eoscanada/eos-go"
 	"go.uber.org/zap"
 )
 
@@ -46,7 +47,10 @@ func (s *NodeosSuperviser) TakeSnapshot(snapshotStore dstore.Store) error {
 	}
 	defer fileReader.Close()
 
-	err = snapshotStore.WriteObject(filename, fileReader)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	err = snapshotStore.WriteObject(ctx, filename, fileReader)
 	if err != nil {
 		return fmt.Errorf("cannot write snapshot to store: %s", err)
 	}
@@ -57,7 +61,11 @@ func (s *NodeosSuperviser) TakeSnapshot(snapshotStore dstore.Store) error {
 
 func (s *NodeosSuperviser) RestoreSnapshot(snapshotName string, snapshotStore dstore.Store) error {
 	s.Logger.Info("getting snapshot from store", zap.String("snapshot_name", snapshotName))
-	reader, err := snapshotStore.OpenObject(snapshotName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	reader, err := snapshotStore.OpenObject(ctx, snapshotName)
 	if err != nil {
 		return fmt.Errorf("cannot get snapshot from gstore: %s", err)
 	}

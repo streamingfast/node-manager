@@ -15,10 +15,12 @@
 package nodeos
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dfuse-io/dstore"
 	"go.uber.org/zap"
@@ -26,7 +28,11 @@ import (
 
 func (s *NodeosSuperviser) Bootstrap(bootstrapDataName string, bootstrapDataStore dstore.Store) error {
 	s.Logger.Info("bootstrapping blocks.log from pre-built data", zap.String("bootstrap_data_name", bootstrapDataName))
-	reader, err := bootstrapDataStore.OpenObject(bootstrapDataName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	reader, err := bootstrapDataStore.OpenObject(ctx, bootstrapDataName)
 	if err != nil {
 		return fmt.Errorf("cannot get snapshot from gstore: %s", err)
 	}

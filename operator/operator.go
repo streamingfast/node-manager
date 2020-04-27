@@ -25,10 +25,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dfuse-io/shutter"
 	"github.com/dfuse-io/dstore"
 	"github.com/dfuse-io/manageos"
 	"github.com/dfuse-io/manageos/profiler"
+	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )
 
@@ -573,9 +573,12 @@ func (m *Operator) getHighestSnapshotName() (string, error) {
 		m.Shutdown(errors.New("trying to get snapshot store, but instance is nil, have you provided --snapshot-store-url flag?"))
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
 	m.logger.Info("resolving latest snapshot name to an actual name")
 	latestSnapshot := ""
-	err := m.snapshotStore.Walk("", "", func(filename string) (err error) {
+	err := m.snapshotStore.Walk(ctx, "", "", func(filename string) (err error) {
 		latestSnapshot = filename
 		return dstore.StopIteration
 	})
