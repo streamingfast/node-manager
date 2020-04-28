@@ -21,6 +21,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/dfuse-io/dmetrics"
+
 	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/mindreader"
@@ -123,6 +125,10 @@ func (a *App) Run() error {
 	if err != nil {
 		return fmt.Errorf("unable to create nodeos chain superviser: %w", err)
 	}
+
+	dmetrics.Register(metrics.NodeosMetricset)
+	dmetrics.Register(metrics.Metricset)
+
 	if a.Config.StartFailureHandlerFunc != nil {
 		chainSuperviser.Superviser.RegisterStartFailureHandler(a.Config.StartFailureHandlerFunc)
 	}

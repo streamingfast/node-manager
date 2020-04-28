@@ -15,18 +15,16 @@
 package metrics
 
 import (
-	"os"
-
 	"github.com/dfuse-io/dmetrics"
 )
 
-var nodeosMetricset = dmetrics.NewSet()
+var NodeosMetricset = dmetrics.NewSet()
 
-var NodeosCurrentStatus = nodeosMetricset.NewGauge("nodeos_current_status", "Current status for nodeos")
-var NodeosSuccessfulSnapshots = nodeosMetricset.NewCounter("nodeos_successful_snapshots", "This counter increments every time that a state snapshot is completed successfully")
-var NodeosIsBlockProducer = nodeosMetricset.NewGauge("nodeos_is_block_producer_total", "Is block producer (bp_mode and is not paused)")
-var NodeosConnectedPeers = nodeosMetricset.NewGauge("nodeos_connected_peers_total", "Number of connected peers")
-var NodeosDBSizeInfo = nodeosMetricset.NewGaugeVec("nodeos_db_size_info_bytes", []string{"metric"}, "DB size from Nodeos")
+var NodeosCurrentStatus = NodeosMetricset.NewGauge("nodeos_current_status", "Current status for nodeos")
+var NodeosSuccessfulSnapshots = NodeosMetricset.NewCounter("nodeos_successful_snapshots", "This counter increments every time that a state snapshot is completed successfully")
+var NodeosIsBlockProducer = NodeosMetricset.NewGauge("nodeos_is_block_producer_total", "Is block producer (bp_mode and is not paused)")
+var NodeosConnectedPeers = NodeosMetricset.NewGauge("nodeos_connected_peers_total", "Number of connected peers")
+var NodeosDBSizeInfo = NodeosMetricset.NewGaugeVec("nodeos_db_size_info_bytes", []string{"metric"}, "DB size from Nodeos")
 
 func SetNodeosIsBlockProducer(isProducer bool) {
 	set := float64(0)
@@ -34,10 +32,4 @@ func SetNodeosIsBlockProducer(isProducer bool) {
 		set = 1
 	}
 	NodeosIsBlockProducer.SetFloat64(set)
-}
-
-func init() {
-	if _, err := os.Stat("/.dockerenv"); !os.IsNotExist(err) {
-		metricset.Register()
-	}
 }

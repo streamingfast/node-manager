@@ -15,30 +15,17 @@
 package metrics
 
 import (
-	"os"
-
 	"github.com/dfuse-io/dmetrics"
 )
 
-var metricset = dmetrics.NewSet()
+var Metricset = dmetrics.NewSet()
 
-var SuccessfulBackups = metricset.NewCounter("successful_backups", "This counter increments every time that a backup is completed successfully")
+var SuccessfulBackups = Metricset.NewCounter("successful_backups", "This counter increments every time that a backup is completed successfully")
 
 func NewHeadBlockTimeDrift(serviceName string) *dmetrics.HeadTimeDrift {
-	return metricset.NewHeadTimeDrift(serviceName)
+	return Metricset.NewHeadTimeDrift(serviceName)
 }
 
 func NewHeadBlockNumber(serviceName string) *dmetrics.HeadBlockNum {
-	return metricset.NewHeadBlockNumber(serviceName)
-}
-
-func init() {
-	if _, err := os.Stat("/.dockerenv"); !os.IsNotExist(err) {
-		// occurs whilte in docker env
-		metricset.Register()
-	}
-}
-
-func ServeMetrics() {
-	dmetrics.Serve(":9102")
+	return Metricset.NewHeadBlockNumber(serviceName)
 }
