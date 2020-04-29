@@ -43,6 +43,7 @@ type Config struct {
 	NodeosConfigDir     string
 	NodeosBinPath       string
 	NodeosDataDir       string
+	NoBlocksLog         bool
 	ProducerHostname    string
 	TrustedProducer     string
 	ReadinessMaxLatency time.Duration
@@ -115,6 +116,7 @@ func (a *App) Run() error {
 		BinPath:             a.Config.NodeosBinPath,
 		DataDir:             a.Config.NodeosDataDir,
 		Hostname:            hostname,
+		NoBlocksLog:         a.Config.NoBlocksLog,
 		ProducerHostname:    a.Config.ProducerHostname,
 		TrustedProducer:     a.Config.TrustedProducer,
 		ReadinessMaxLatency: a.Config.ReadinessMaxLatency,

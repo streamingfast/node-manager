@@ -34,6 +34,10 @@ type NodeosBackupInfo struct {
 }
 
 func (s *NodeosSuperviser) TakeBackup(backupTag string, backupStoreURL string) error {
+	if s.options.NoBlocksLog {
+		return errors.New("unable to take backup: refusing to take backup on an instance with option 'NoBlocksLog'")
+	}
+
 	if s.IsRunning() {
 		return errors.New("unable to take backup: refusing to take backup while process is running")
 	}
@@ -52,7 +56,7 @@ func (s *NodeosSuperviser) TakeBackup(backupTag string, backupStoreURL string) e
 	}
 
 	s.Logger.Info("creating backup", zap.String("store_url", backupStoreURL), zap.String("tag", backupTag))
-	err = p.GenerateBackup("/nodeos-data", backupTag, details, pitreos.MustNewIncludeThanExcludeFilter(".*", ""))
+	err = p.GenerateBackup(s.options.DataDir, backupTag, details, pitreos.MustNewIncludeThanExcludeFilter(".*", ""))
 	if err == nil {
 		metrics.SuccessfulBackups.Inc()
 	}
@@ -65,7 +69,15 @@ func (s *NodeosSuperviser) RestoreBackup(backupName, backupTag string, backupSto
 		return errors.New("unable to take backup: refusing to restore backup while process is running")
 	}
 
-	p, err := superviser.GetPitreos(s.Logger, backupStoreURL, "blocks/blocks.log")
+	var appendonlyFiles []string
+	var exclusionFilter string
+	if s.options.NoBlocksLog {
+		exclusionFilter = "blocks/blocks.(log|index)"
+	} else {
+		appendonlyFiles = append(appendonlyFiles, "blocks/blocks.log")
+	}
+
+	p, err := superviser.GetPitreos(s.Logger, backupStoreURL, appendonlyFiles...)
 	if err != nil {
 		return err
 	}
@@ -78,8 +90,8 @@ func (s *NodeosSuperviser) RestoreBackup(backupName, backupTag string, backupSto
 		}
 	}
 
-	s.Logger.Info("restoring from pitreos", zap.String("backup_name", backupName))
-	err = p.RestoreFromBackup("/nodeos-data", backupName, pitreos.MustNewIncludeThanExcludeFilter(".*", ""))
+	zlog.Info("restoring from pitreos", zap.String("backup_name", backupName), zap.Any("appendonly_files", appendonlyFiles), zap.String("exclusion_filter", exclusionFilter))
+	err = p.RestoreFromBackup(s.options.DataDir, backupName, pitreos.MustNewIncludeThanExcludeFilter(".*", exclusionFilter))
 	if s.HandlePostRestore != nil {
 		s.HandlePostRestore()
 	}

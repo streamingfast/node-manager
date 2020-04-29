@@ -106,6 +106,13 @@ type SuperviserOptions struct {
 	// now before /healthz starts returning success
 	ReadinessMaxLatency time.Duration
 
+	// NoBlocksLog
+	// NoBlocksLog is useful when extracting data from the chain only (mindreader) without calls to "get_block", etc.
+	// It will *DELETE* the blocks.log and blocks.index on start (as well as on restore, restart, etc.)
+	// When using that flag, the node CANNOT perform a pitreos backup, only restore (with exclude filters),
+	// to prevent inadvertently deleting blocks.log from other nodes
+	NoBlocksLog bool
+
 	// Redirects all output to zlog instance configured for this process
 	// instead of the standard console output
 	LogToZap bool
@@ -162,6 +169,12 @@ func (s *NodeosSuperviser) Start(options ...manageos.StartOption) error {
 	s.snapshotRestoreOnNextStart = false
 	s.snapshotRestoreFilename = ""
 
+	if s.options.NoBlocksLog {
+		err := os.Remove(path.Join(s.blocksDir, "blocks.log"))
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("cannot delete blocks.log before starting and no-blocks-log is set: %w", err)
+		}
+	}
 	err := s.Superviser.Start(options...)
 	if err != nil {
 		return err
