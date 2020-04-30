@@ -59,6 +59,7 @@ type MindReaderPlugin struct {
 	headBlockNumber    *dmetrics.HeadBlockNum
 
 	setMaintenanceFunc func()
+	stopBlockReachFunc func()
 }
 
 func RunMindReaderPlugin(
@@ -75,6 +76,7 @@ func RunMindReaderPlugin(
 	headBlockTimeDrift *dmetrics.HeadTimeDrift,
 	headBlockNumber *dmetrics.HeadBlockNum,
 	setMaintenanceFunc func(),
+	stopBlockReachFunc func(),
 ) (*MindReaderPlugin, error) {
 	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
 	if err != nil {
@@ -120,10 +122,15 @@ func RunMindReaderPlugin(
 		return nil, err
 	}
 	mindReaderPlugin.setMaintenanceFunc = setMaintenanceFunc
+	mindReaderPlugin.stopBlockReachFunc = stopBlockReachFunc
+
 	mindReaderPlugin.OnTerminating(func(_ error) {
 		zlog.Info("mindreader plugin OnTerminating called")
 		mindReaderPlugin.setMaintenanceFunc()
 		mindReaderPlugin.cleanUp()
+		if stopBlockNum != 0 {
+			mindReaderPlugin.stopBlockReachFunc()
+		}
 	})
 
 	go mindReaderPlugin.ReadFlow()

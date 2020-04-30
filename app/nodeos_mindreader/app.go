@@ -173,6 +173,9 @@ func (a *App) Run() error {
 		headBlockTimeDrift,
 		headBlockNumber,
 		chainOperator.SetMaintenance,
+		func() {
+			chainOperator.Shutdown(nil)
+		},
 	)
 	if err != nil {
 		return err
