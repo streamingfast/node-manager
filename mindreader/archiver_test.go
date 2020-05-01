@@ -237,12 +237,17 @@ func testConsoleReaderFactory(reader io.Reader) (ConsolerReader, error) {
 
 type testConsolerReader struct {
 	scanner *bufio.Scanner
+	done    chan interface{}
 }
 
 func newTestConsolerReader(reader io.Reader) *testConsolerReader {
 	return &testConsolerReader{
 		scanner: bufio.NewScanner(reader),
 	}
+}
+
+func (c *testConsolerReader) Done() <-chan interface{} {
+	return c.done
 }
 
 func (c *testConsolerReader) Read() (obj interface{}, err error) {

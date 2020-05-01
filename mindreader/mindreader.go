@@ -32,6 +32,7 @@ import (
 
 type ConsolerReader interface {
 	Read() (obj interface{}, err error)
+	Done() <-chan interface{}
 }
 
 type ConsolerReaderFactory func(reader io.Reader) (ConsolerReader, error)
@@ -188,8 +189,13 @@ func (p *MindReaderPlugin) ReadFlow() {
 		// ALWAYS READ (otherwise you'll stall `nodeos`' shutdown process, want a dirty flag?)
 		err := p.readOneMessage(blocks)
 		if err != nil {
+			if err == io.EOF {
+				zlog.Info("Mindreader plugin shut down correctly")
+				continue
+			}
 			zlog.Error("reading from console logs", zap.Error(err))
 			p.setMaintenanceFunc()
+			continue
 		}
 	}
 }
@@ -223,8 +229,12 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			// We keep going if more blocks to process, so we never skip writing blocks
 			zlog.Debug("received a terminating sig")
 			if len(blocks) == 0 {
+				// FIXME: consoleReader never gets done because LogLine does not signal EOF
+				//zlog.Info("will shutdown when console reader is done")
+				//<-p.consoleReader.Done()
 				return
 			}
+			// TODO: access consolereader Done
 			zlog.Info("will shutdown when block count == 0", zap.Int("block_count", len(blocks)))
 
 		case block := <-blocks:
