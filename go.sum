@@ -121,6 +121,8 @@ github.com/eoscanada/eos-go v0.9.1-0.20200504212521-e0c66c213e6d h1:w3ayClNvxUli
 github.com/eoscanada/eos-go v0.9.1-0.20200504212521-e0c66c213e6d/go.mod h1:exxz2Fyjqx23FIYF1QlhhhggYZxcbZMGp2H/4h7I34Y=
 github.com/eoscanada/eos-go v0.9.1-0.20200505125434-622529bfdd76 h1:Bo7qMNp41LQrFoAlZkssNa7isG/joLObf8nEWHqdJ8E=
 github.com/eoscanada/eos-go v0.9.1-0.20200505125434-622529bfdd76/go.mod h1:exxz2Fyjqx23FIYF1QlhhhggYZxcbZMGp2H/4h7I34Y=
+github.com/eoscanada/eos-go v0.9.1-0.20200505163554-d07c6e066ba8 h1:vtZJ7h9RqXmVoGu6eyOOwnEN4ArLOADbAQbIYB8oa+c=
+github.com/eoscanada/eos-go v0.9.1-0.20200505163554-d07c6e066ba8/go.mod h1:exxz2Fyjqx23FIYF1QlhhhggYZxcbZMGp2H/4h7I34Y=
 github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2 h1:qXzIzDwZsixtJfR6jHRFShEhOKrjYANdjHaPMb1uGCo=
 github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2/go.mod h1:6A7XkYpqkq0DjHzakhUybMXmZeY+9E6Z1SBAWytyO0A=
 github.com/frostschutz/go-fibmap v0.0.0-20160825162329-b32c231bfe6a h1:uW54f9RL/0sd6JKvYXp18CbwGWgrn7eknZRm08VEdPQ=
