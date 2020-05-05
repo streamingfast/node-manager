@@ -16,6 +16,7 @@ package nodeos_mindreader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -34,6 +35,8 @@ import (
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
+
+var ErrEndBlockReached = errors.New("end block reached")
 
 type Config struct {
 	MetricID            string
@@ -174,7 +177,7 @@ func (a *App) Run() error {
 		headBlockNumber,
 		chainOperator.SetMaintenance,
 		func() {
-			chainOperator.Shutdown(nil)
+			chainOperator.Shutdown(ErrEndBlockReached)
 		},
 	)
 	if err != nil {

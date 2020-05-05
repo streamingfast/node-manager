@@ -261,7 +261,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 			if p.stopAtBlockNum != 0 && block.Num() >= p.stopAtBlockNum {
 				zlog.Info("shutting down because requested end block reached", zap.Uint64("block_num", block.Num()))
-				p.Shutdown(nil)
+				go p.Shutdown(nil)
 			}
 		}
 	}
