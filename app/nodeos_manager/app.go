@@ -111,7 +111,6 @@ func (a *App) Run() error {
 		AdditionalArgs:      a.Config.NodeosExtraArgs,
 		ForceProduction:     a.Config.ForceProduction,
 		LogToZap:            a.Config.LogToZap,
-		MonitorHeadBlock:    true,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create nodeos chain superviser: %w", err)
@@ -130,16 +129,17 @@ func (a *App) Run() error {
 	}
 
 	chainOperator, err := operator.New(zlog, chainSuperviser, &operator.Options{
-		BootstrapDataURL:    a.Config.BootstrapDataURL,
-		BackupTag:           a.Config.BackupTag,
-		BackupStoreURL:      a.Config.BackupStoreURL,
-		AutoRestoreLatest:   a.Config.AutoRestoreLatest,
-		ShutdownDelay:       a.Config.ShutdownDelay,
-		RestoreBackupName:   a.Config.RestoreBackupName,
-		RestoreSnapshotName: a.Config.RestoreSnapshotName,
-		SnapshotStoreURL:    a.Config.SnapshotStoreURL,
-		Profiler:            p,
-		ReadyFunc:           a.ReadyFunc,
+		BootstrapDataURL:           a.Config.BootstrapDataURL,
+		BackupTag:                  a.Config.BackupTag,
+		BackupStoreURL:             a.Config.BackupStoreURL,
+		AutoRestoreLatest:          a.Config.AutoRestoreLatest,
+		ShutdownDelay:              a.Config.ShutdownDelay,
+		RestoreBackupName:          a.Config.RestoreBackupName,
+		RestoreSnapshotName:        a.Config.RestoreSnapshotName,
+		SnapshotStoreURL:           a.Config.SnapshotStoreURL,
+		EnableSupervisorMonitoring: true,
+		Profiler:                   p,
+		ReadyFunc:                  a.ReadyFunc,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create chain operator: %w", err)

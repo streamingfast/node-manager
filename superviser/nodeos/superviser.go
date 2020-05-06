@@ -116,11 +116,6 @@ type SuperviserOptions struct {
 	// Redirects all output to zlog instance configured for this process
 	// instead of the standard console output
 	LogToZap bool
-
-	// MonitorHeadBlock enables external tracking (via `get_info` calls) of the
-	// headblock. Disable when you are using the Console Reader data to provide
-	// those metrics.
-	MonitorHeadBlock bool
 }
 
 func NewSuperviser(logger, nodeosLogger *zap.Logger, debugDeepMind bool, headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, options *SuperviserOptions) (*NodeosSuperviser, error) {

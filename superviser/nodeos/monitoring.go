@@ -58,10 +58,9 @@ func (s *NodeosSuperviser) Monitor() {
 		s.lastBlockSeen = uint32(chainInfo.HeadBlockNum)
 
 		lastHeadBlockTime = chainInfo.HeadBlockTime.Time
-		if s.options.MonitorHeadBlock {
-			s.headBlockNumber.SetUint64(uint64(chainInfo.HeadBlockNum))
-			s.headBlockTimeDrift.SetBlockTime(lastHeadBlockTime)
-		}
+
+		s.headBlockNumber.SetUint64(uint64(chainInfo.HeadBlockNum))
+		s.headBlockTimeDrift.SetBlockTime(lastHeadBlockTime)
 
 		if s.options.ReadinessMaxLatency == 0 || time.Since(lastHeadBlockTime) < s.options.ReadinessMaxLatency {
 			s.setReadinessProbeOn()

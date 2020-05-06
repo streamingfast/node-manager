@@ -61,6 +61,8 @@ type Options struct {
 
 	Profiler *profiler.Profiler
 
+	EnableSupervisorMonitoring bool
+
 	// Delay before shutting manager when sigterm received
 	ShutdownDelay time.Duration
 
@@ -115,8 +117,10 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	m.logger.Info("launching operator HTTP server", zap.String("http_listen_addr", httpListenAddr))
 	m.httpServer = m.RunHTTPServer(httpListenAddr, options...)
 
-	if monitorable, ok := m.superviser.(manageos.MonitorableChainSuperviser); ok {
-		go monitorable.Monitor()
+	if m.options.EnableSupervisorMonitoring {
+		if monitorable, ok := m.superviser.(manageos.MonitorableChainSuperviser); ok {
+			go monitorable.Monitor()
+		}
 	}
 
 	err := m.bootstrap()
