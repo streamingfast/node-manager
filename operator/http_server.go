@@ -111,8 +111,13 @@ func (m *Operator) serverIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Operator) healthzHandler(w http.ResponseWriter, r *http.Request) {
-	if !m.superviser.IsReady() {
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	if !m.superviser.IsRunning() {
+		http.Error(w, "not ready: chain is not running", http.StatusServiceUnavailable)
+		return
+	}
+
+	if !m.chainMonitor.IsReady() {
+		http.Error(w, "not ready: chain is not ready", http.StatusServiceUnavailable)
 		return
 	}
 
