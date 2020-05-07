@@ -35,7 +35,6 @@ type ChainSuperviser interface {
 
 	HasData() bool
 	IsRunning() bool
-	IsReady() bool
 	ServerID() (string, error)
 
 	LastSeenBlockNum() uint64

@@ -21,9 +21,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dfuse-io/manageos"
+
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
-	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/dstore"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
@@ -56,8 +57,7 @@ type MindReaderPlugin struct {
 	channelCapacity     int
 	blockServer         *blockstream.Server
 
-	headBlockTimeDrift *dmetrics.HeadTimeDrift
-	headBlockNumber    *dmetrics.HeadBlockNum
+	headBlockUpdateFunc manageos.HeadBlockUpdater
 
 	setMaintenanceFunc func()
 	stopBlockReachFunc func()
@@ -74,8 +74,7 @@ func RunMindReaderPlugin(
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
-	headBlockTimeDrift *dmetrics.HeadTimeDrift,
-	headBlockNumber *dmetrics.HeadBlockNum,
+	headBlockUpdateFunc manageos.HeadBlockUpdater,
 	setMaintenanceFunc func(),
 	stopBlockReachFunc func(),
 ) (*MindReaderPlugin, error) {
@@ -118,7 +117,7 @@ func RunMindReaderPlugin(
 	if err = archiver.init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %s", err)
 	}
-	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity, headBlockTimeDrift, headBlockNumber)
+	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +147,7 @@ func NewMindReaderPlugin(
 	gator Gator,
 	stopAtBlockNum uint64,
 	channelCapacity int,
-	headBlockTimeDrift *dmetrics.HeadTimeDrift,
-	headBlockNumber *dmetrics.HeadBlockNum,
+	headBlockUpdateFunc manageos.HeadBlockUpdater,
 ) (*MindReaderPlugin, error) {
 	pipeReader, pipeWriter := io.Pipe()
 	consoleReader, err := consoleReaderFactory(pipeReader)
@@ -169,8 +167,7 @@ func NewMindReaderPlugin(
 		gator:               gator,
 		stopAtBlockNum:      stopAtBlockNum,
 		channelCapacity:     channelCapacity,
-		headBlockTimeDrift:  headBlockTimeDrift,
-		headBlockNumber:     headBlockNumber,
+		headBlockUpdateFunc: headBlockUpdateFunc,
 	}, nil
 }
 
@@ -287,12 +284,8 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 		return nil
 	}
 
-	if p.headBlockNumber != nil {
-		p.headBlockNumber.SetUint64(block.Num())
-	}
-	if p.headBlockTimeDrift != nil {
-		p.headBlockTimeDrift.SetBlockTime(block.Time())
-
+	if p.headBlockUpdateFunc != nil {
+		p.headBlockUpdateFunc(block.Num(), block.ID(), block.Time())
 	}
 
 	blocks <- block
