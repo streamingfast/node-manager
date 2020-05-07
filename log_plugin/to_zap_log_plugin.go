@@ -41,6 +41,14 @@ func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 
 func (p *ToZapLogPlugin) LogLine(in string) {
 	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
+		if strings.HasPrefix(in, "error") {
+			p.logger.Error(in)
+			return
+		}
+		if strings.HasPrefix(in, "warn") {
+			p.logger.Warn(in)
+			return
+		}
 		p.logger.Debug(in)
 	}
 }
