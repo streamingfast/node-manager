@@ -37,11 +37,12 @@ type Operator struct {
 	options   *Options
 	ReadyFunc func()
 
-	logger        *zap.Logger
-	commandChan   chan *Command
-	httpServer    *http.Server
-	superviser    manageos.ChainSuperviser
-	snapshotStore dstore.Store
+	logger         *zap.Logger
+	commandChan    chan *Command
+	httpServer     *http.Server
+	superviser     manageos.ChainSuperviser
+	chainReadiness manageos.Readiness
+	snapshotStore  dstore.Store
 }
 
 type Options struct {
@@ -58,8 +59,7 @@ type Options struct {
 	AutoRestoreLatest   bool
 	RestoreBackupName   string
 	RestoreSnapshotName string
-
-	Profiler *profiler.Profiler
+	Profiler            *profiler.Profiler
 
 	EnableSupervisorMonitoring bool
 
@@ -77,14 +77,15 @@ type Command struct {
 	logger   *zap.Logger
 }
 
-func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, options *Options) (*Operator, error) {
+func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, chainReadiness manageos.Readiness, options *Options) (*Operator, error) {
 	m := &Operator{
-		Shutter:     shutter.New(),
-		logger:      logger,
-		commandChan: make(chan *Command, 10),
-		options:     options,
-		superviser:  chainSuperviser,
-		ReadyFunc:   options.ReadyFunc,
+		Shutter:        shutter.New(),
+		chainReadiness: chainReadiness,
+		logger:         logger,
+		commandChan:    make(chan *Command, 10),
+		options:        options,
+		superviser:     chainSuperviser,
+		ReadyFunc:      options.ReadyFunc,
 	}
 
 	if options.SnapshotStoreURL != "" {

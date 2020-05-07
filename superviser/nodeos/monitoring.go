@@ -43,10 +43,6 @@ func (s *NodeosSuperviser) Monitor() {
 		if err != nil {
 			zlog.Warn("got err on get into", zap.Error(err))
 			getInfoFailureCount++
-			if getInfoFailureCount > 5 {
-				s.setReadinessProbeOff()
-			}
-
 			continue
 		}
 
@@ -59,11 +55,8 @@ func (s *NodeosSuperviser) Monitor() {
 
 		lastHeadBlockTime = chainInfo.HeadBlockTime.Time
 
-		s.headBlockNumber.SetUint64(uint64(chainInfo.HeadBlockNum))
-		s.headBlockTimeDrift.SetBlockTime(lastHeadBlockTime)
-
-		if s.options.ReadinessMaxLatency == 0 || time.Since(lastHeadBlockTime) < s.options.ReadinessMaxLatency {
-			s.setReadinessProbeOn()
+		if s.headBlockUpdateFunc != nil {
+			s.headBlockUpdateFunc(uint64(chainInfo.HeadBlockNum), chainInfo.HeadBlockID.String(), chainInfo.HeadBlockTime.Time)
 		}
 
 		// monitor if BP is producer (should be 1 and only 1)
@@ -90,17 +83,5 @@ func (s *NodeosSuperviser) Monitor() {
 			metrics.NodeosDBSizeInfo.SetFloat64(float64(dbSize.UsedBytes), "UsedBytes")
 			metrics.NodeosDBSizeInfo.SetFloat64(float64(dbSize.Size), "Size")
 		}
-	}
-}
-
-func (s *NodeosSuperviser) setReadinessProbeOn() {
-	if s.readinessProbe.CAS(false, true) {
-		s.Logger.Info("nodeos superviser is now assumed to be ready")
-	}
-}
-
-func (s *NodeosSuperviser) setReadinessProbeOff() {
-	if s.readinessProbe.CAS(true, false) {
-		s.Logger.Info("nodeos superviser is not ready anymore")
 	}
 }

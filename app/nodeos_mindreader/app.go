@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dfuse-io/dmetrics"
+	"github.com/dfuse-io/manageos"
 
 	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/manageos/metrics"
@@ -110,22 +111,25 @@ func (a *App) Run() error {
 		metricID = "manager"
 	}
 	zlog.Info("setting up metrics", zap.String("metric_id", metricID))
+
 	headBlockTimeDrift := metrics.NewHeadBlockTimeDrift(metricID)
 	headBlockNumber := metrics.NewHeadBlockNumber(metricID)
 
-	chainSuperviser, err := nodeos.NewSuperviser(zlog, zlogNodeos, a.Config.DebugDeepMind, headBlockTimeDrift, headBlockNumber, &nodeos.SuperviserOptions{
-		LocalNodeEndpoint:   a.Config.NodeosAPIAddress,
-		ConfigDir:           a.Config.NodeosConfigDir,
-		BinPath:             a.Config.NodeosBinPath,
-		DataDir:             a.Config.NodeosDataDir,
-		Hostname:            hostname,
-		NoBlocksLog:         a.Config.NoBlocksLog,
-		ProducerHostname:    a.Config.ProducerHostname,
-		TrustedProducer:     a.Config.TrustedProducer,
-		ReadinessMaxLatency: a.Config.ReadinessMaxLatency,
-		AdditionalArgs:      a.Config.NodeosExtraArgs,
-		LogToZap:            a.Config.LogToZap,
+	metricsAndReadinessManager := manageos.NewMetricsAndReadinessManager(headBlockTimeDrift, headBlockNumber, a.Config.ReadinessMaxLatency)
+
+	chainSuperviser, err := nodeos.NewSuperviser(zlog, zlogNodeos, a.Config.DebugDeepMind, nil, &nodeos.SuperviserOptions{
+		LocalNodeEndpoint: a.Config.NodeosAPIAddress,
+		ConfigDir:         a.Config.NodeosConfigDir,
+		BinPath:           a.Config.NodeosBinPath,
+		DataDir:           a.Config.NodeosDataDir,
+		Hostname:          hostname,
+		NoBlocksLog:       a.Config.NoBlocksLog,
+		ProducerHostname:  a.Config.ProducerHostname,
+		TrustedProducer:   a.Config.TrustedProducer,
+		AdditionalArgs:    a.Config.NodeosExtraArgs,
+		LogToZap:          a.Config.LogToZap,
 	})
+
 	if err != nil {
 		return fmt.Errorf("unable to create nodeos chain superviser: %w", err)
 	}
@@ -142,7 +146,7 @@ func (a *App) Run() error {
 		p = profiler.MaybeNew()
 	}
 
-	chainOperator, err := operator.New(zlog, chainSuperviser, &operator.Options{
+	chainOperator, err := operator.New(zlog, chainSuperviser, metricsAndReadinessManager, &operator.Options{
 		BootstrapDataURL:           a.Config.BootstrapDataURL,
 		BackupTag:                  a.Config.BackupTag,
 		BackupStoreURL:             a.Config.BackupStoreURL,
@@ -173,8 +177,7 @@ func (a *App) Run() error {
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,
 		a.Config.MindReadBlocksChanCapacity,
-		headBlockTimeDrift,
-		headBlockNumber,
+		metricsAndReadinessManager.UpdateHeadBlock,
 		chainOperator.SetMaintenance,
 		func() {
 			chainOperator.Shutdown(ErrEndBlockReached)
@@ -215,6 +218,8 @@ func (a *App) Run() error {
 		},
 	}
 
+	zlog.Info("launching operator")
+	go metricsAndReadinessManager.Launch()
 	go chainOperator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
 
 	return nil

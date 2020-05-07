@@ -195,7 +195,6 @@ func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint6
 		startBlockNum,
 		10,
 		nil,
-		nil,
 	)
 }
 

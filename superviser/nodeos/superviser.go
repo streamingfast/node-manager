@@ -24,14 +24,12 @@ import (
 	"time"
 
 	"github.com/ShinyTrinkets/overseer"
-	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/manageos"
 	logplugin "github.com/dfuse-io/manageos/log_plugin"
 	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/superviser"
 	"github.com/eoscanada/eos-go"
 	"github.com/spf13/viper"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
@@ -43,9 +41,8 @@ type NodeosSuperviser struct {
 	options      *SuperviserOptions
 	snapshotsDir string
 
-	chainID        eos.SHA256Bytes
-	lastBlockSeen  uint32
-	readinessProbe *atomic.Bool
+	chainID       eos.SHA256Bytes
+	lastBlockSeen uint32
 
 	producerHostname    string
 	serverVersion       string
@@ -59,8 +56,7 @@ type NodeosSuperviser struct {
 	snapshotRestoreOnNextStart bool
 	snapshotRestoreFilename    string
 
-	headBlockTimeDrift *dmetrics.HeadTimeDrift
-	headBlockNumber    *dmetrics.HeadBlockNum
+	headBlockUpdateFunc manageos.HeadBlockUpdater
 }
 
 type SuperviserOptions struct {
@@ -104,7 +100,7 @@ type SuperviserOptions struct {
 
 	// ReadinessMaxLatency is the max delta between head block time and
 	// now before /healthz starts returning success
-	ReadinessMaxLatency time.Duration
+	//ReadinessMaxLatency time.Duration
 
 	// NoBlocksLog
 	// NoBlocksLog is useful when extracting data from the chain only (mindreader) without calls to "get_block", etc.
@@ -118,22 +114,20 @@ type SuperviserOptions struct {
 	LogToZap bool
 }
 
-func NewSuperviser(logger, nodeosLogger *zap.Logger, debugDeepMind bool, headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, options *SuperviserOptions) (*NodeosSuperviser, error) {
+func NewSuperviser(logger, nodeosLogger *zap.Logger, debugDeepMind bool, headBlockUpdateFunc manageos.HeadBlockUpdater, options *SuperviserOptions) (*NodeosSuperviser, error) {
 	// Ensure process manager line buffer is large enough (50 MiB) for our Deep Mind instrumentation outputting lot's of text.
 	overseer.DEFAULT_LINE_BUFFER_SIZE = 50 * 1024 * 1024
 
 	s := &NodeosSuperviser{
 		// The arguments field is actually `nil` because arguments are re-computed upon each start
-		Superviser:         superviser.New(logger, options.BinPath, nil),
-		api:                eos.New(fmt.Sprintf("http://%s", options.LocalNodeEndpoint)),
-		blocksDir:          filepath.Join(options.DataDir, "blocks"),
-		producerHostname:   options.ProducerHostname,
-		snapshotsDir:       path.Join(options.DataDir, "snapshots"),
-		options:            options,
-		readinessProbe:     atomic.NewBool(false),
-		forceProduction:    options.ForceProduction,
-		headBlockTimeDrift: headBlockTimeDrift,
-		headBlockNumber:    headBlockNumber,
+		Superviser:          superviser.New(logger, options.BinPath, nil),
+		api:                 eos.New(fmt.Sprintf("http://%s", options.LocalNodeEndpoint)),
+		blocksDir:           filepath.Join(options.DataDir, "blocks"),
+		producerHostname:    options.ProducerHostname,
+		snapshotsDir:        path.Join(options.DataDir, "snapshots"),
+		options:             options,
+		forceProduction:     options.ForceProduction,
+		headBlockUpdateFunc: headBlockUpdateFunc,
 	}
 
 	s.RegisterLogPlugin(logplugin.LogPluginFunc(s.analyzeLogLineForStateChange))
@@ -188,14 +182,6 @@ func (s *NodeosSuperviser) IsRunning() bool {
 	metrics.NodeosCurrentStatus.SetFloat64(isRunningMetricsValue)
 
 	return isRunning
-}
-
-func (s *NodeosSuperviser) IsReady() bool {
-	if !s.Superviser.IsRunning() {
-		return false
-	}
-
-	return s.readinessProbe.Load()
 }
 
 func (s *NodeosSuperviser) LastSeenBlockNum() uint64 {

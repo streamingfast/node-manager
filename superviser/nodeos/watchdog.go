@@ -18,8 +18,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/eoscanada/eos-go"
 	"github.com/dfuse-io/manageos/metrics"
+	"github.com/eoscanada/eos-go"
 	"go.uber.org/zap"
 )
 
@@ -99,7 +99,7 @@ func (cw *connectionWatchdog) processConnection(conn *eos.NetConnectionsResp, lo
 			// We only reconnect if there is no reconnect in progress and when ready.
 			// By not re-connecting when not ready, we give a better chance for the
 			// process to catch-up.
-			if !cs.reconnectInProgress && cw.superviser.IsReady() {
+			if !cs.reconnectInProgress && cw.superviser.IsRunning() {
 				cs.reconnectInProgress = true
 				go cw.reconnect(conn.Peer, logger)
 			}
