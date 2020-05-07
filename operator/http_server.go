@@ -116,7 +116,7 @@ func (m *Operator) healthzHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !m.chainMonitor.IsReady() {
+	if !m.chainReadiness.IsReady() {
 		http.Error(w, "not ready: chain is not ready", http.StatusServiceUnavailable)
 		return
 	}

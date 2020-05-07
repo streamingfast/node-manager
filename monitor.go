@@ -1,15 +1,18 @@
-package monitor
+package manageos
 
 import (
 	"time"
 
 	"github.com/dfuse-io/dmetrics"
-	"github.com/dfuse-io/manageos"
 	"go.uber.org/atomic"
 )
 
+type Readiness interface {
+	IsReady() bool
+}
+
 type MetricsAndReadinessManager struct {
-	headBlockChan      chan *manageos.HeadBlock
+	headBlockChan      chan *headBlock
 	headBlockTimeDrift *dmetrics.HeadTimeDrift
 	headBlockNumber    *dmetrics.HeadBlockNum
 	readinessProbe     *atomic.Bool
@@ -21,7 +24,7 @@ type MetricsAndReadinessManager struct {
 
 func NewMetricsAndReadinessManager(headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, readinessMaxLatency time.Duration) *MetricsAndReadinessManager {
 	return &MetricsAndReadinessManager{
-		headBlockChan:       make(chan *manageos.HeadBlock),
+		headBlockChan:       make(chan *headBlock, 1), // just for non-blocking, saving a few nanoseconds here
 		readinessProbe:      atomic.NewBool(false),
 		headBlockTimeDrift:  headBlockTimeDrift,
 		headBlockNumber:     headBlockNumber,
@@ -46,18 +49,19 @@ func (m *MetricsAndReadinessManager) IsReady() bool {
 }
 
 func (m *MetricsAndReadinessManager) Launch() {
+	var lastSeenBlock *headBlock
 	for {
-		var lastSeenBlock *manageos.HeadBlock
 		select {
 		case block := <-m.headBlockChan:
 			lastSeenBlock = block
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(time.Second):
 		}
 
 		if lastSeenBlock == nil {
 			continue
 		}
 
+		// metrics
 		if m.headBlockNumber != nil {
 			m.headBlockNumber.SetUint64(lastSeenBlock.Num)
 		}
@@ -65,6 +69,7 @@ func (m *MetricsAndReadinessManager) Launch() {
 			m.headBlockTimeDrift.SetBlockTime(lastSeenBlock.Time)
 		}
 
+		// readiness
 		if m.readinessMaxLatency == 0 || time.Since(lastSeenBlock.Time) < m.readinessMaxLatency {
 			m.setReadinessProbeOn()
 		} else {
@@ -74,7 +79,18 @@ func (m *MetricsAndReadinessManager) Launch() {
 	}
 }
 
-func (m *MetricsAndReadinessManager) UpdateHeadBlock(headBlock *manageos.HeadBlock) {
-	// TODO: increase channel size to make it none blocking?
-	m.headBlockChan <- headBlock
+func (m *MetricsAndReadinessManager) UpdateHeadBlock(num uint64, ID string, t time.Time) {
+	m.headBlockChan <- &headBlock{
+		ID:   ID,
+		Num:  num,
+		Time: t,
+	}
 }
+
+type headBlock struct {
+	ID   string
+	Num  uint64
+	Time time.Time
+}
+
+type HeadBlockUpdater func(uint64, string, time.Time)

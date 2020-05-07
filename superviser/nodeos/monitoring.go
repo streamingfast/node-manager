@@ -18,8 +18,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/dfuse-io/manageos"
-
 	"github.com/dfuse-io/manageos/metrics"
 	"go.uber.org/zap"
 )
@@ -58,11 +56,7 @@ func (s *NodeosSuperviser) Monitor() {
 		lastHeadBlockTime = chainInfo.HeadBlockTime.Time
 
 		if s.headBlockUpdateFunc != nil {
-			s.headBlockUpdateFunc(&manageos.HeadBlock{
-				ID:   chainInfo.HeadBlockID.String(),
-				Num:  uint64(chainInfo.HeadBlockNum),
-				Time: chainInfo.HeadBlockTime.Time,
-			})
+			s.headBlockUpdateFunc(uint64(chainInfo.HeadBlockNum), chainInfo.HeadBlockID.String(), chainInfo.HeadBlockTime.Time)
 		}
 
 		// monitor if BP is producer (should be 1 and only 1)

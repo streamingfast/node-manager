@@ -37,12 +37,12 @@ type Operator struct {
 	options   *Options
 	ReadyFunc func()
 
-	logger        *zap.Logger
-	commandChan   chan *Command
-	httpServer    *http.Server
-	superviser    manageos.ChainSuperviser
-	chainMonitor  manageos.Monitor
-	snapshotStore dstore.Store
+	logger         *zap.Logger
+	commandChan    chan *Command
+	httpServer     *http.Server
+	superviser     manageos.ChainSuperviser
+	chainReadiness manageos.Readiness
+	snapshotStore  dstore.Store
 }
 
 type Options struct {
@@ -77,15 +77,15 @@ type Command struct {
 	logger   *zap.Logger
 }
 
-func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, chainMonitor manageos.Monitor, options *Options) (*Operator, error) {
+func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, chainReadiness manageos.Readiness, options *Options) (*Operator, error) {
 	m := &Operator{
-		Shutter:      shutter.New(),
-		chainMonitor: chainMonitor,
-		logger:       logger,
-		commandChan:  make(chan *Command, 10),
-		options:      options,
-		superviser:   chainSuperviser,
-		ReadyFunc:    options.ReadyFunc,
+		Shutter:        shutter.New(),
+		chainReadiness: chainReadiness,
+		logger:         logger,
+		commandChan:    make(chan *Command, 10),
+		options:        options,
+		superviser:     chainSuperviser,
+		ReadyFunc:      options.ReadyFunc,
 	}
 
 	if options.SnapshotStoreURL != "" {

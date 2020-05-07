@@ -285,11 +285,7 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 
 	if p.headBlockUpdateFunc != nil {
-		p.headBlockUpdateFunc(&manageos.HeadBlock{
-			ID:   block.ID(),
-			Num:  block.Num(),
-			Time: block.Time(),
-		})
+		p.headBlockUpdateFunc(block.Num(), block.ID(), block.Time())
 	}
 
 	blocks <- block
