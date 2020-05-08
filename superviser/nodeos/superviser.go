@@ -235,12 +235,8 @@ func (s *NodeosSuperviser) getArguments() []string {
 		args = append(args, "--genesis-json="+filepath.Join(s.options.ConfigDir, "genesis.json"))
 	}
 
-	if s.snapshotRestoreOnNextStart {
-		if s.snapshotRestoreFilename == "" {
-			s.Logger.Error("snapshot restore on next start flag activated, but no restore filename provided")
-		} else {
-			args = append(args, "--snapshot="+s.snapshotRestoreFilename)
-		}
+	if s.snapshotRestoreOnNextStart && s.snapshotRestoreFilename != "" {
+		args = append(args, "--snapshot="+s.snapshotRestoreFilename)
 	}
 
 	if !s.IsActiveProducer() {

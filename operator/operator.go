@@ -598,15 +598,6 @@ func (m *Operator) restoreSnapshot(snapshotable manageos.SnapshotableChainSuperv
 		m.Shutdown(errors.New("trying to get snapshot store, but instance is nil, have you provided --snapshot-store-url flag?"))
 	}
 
-	if snapshotName == "latest" {
-		var err error
-		snapshotName, err = m.getHighestSnapshotName()
-		if err != nil {
-			return err
-		}
-	}
-
-	m.logger.Info("performing actual snapshot restore work", zap.String("snapshot_name", snapshotName))
 	if err := snapshotable.RestoreSnapshot(snapshotName, m.snapshotStore); err != nil {
 		return fmt.Errorf("unable to restore snapshot %q: %s", snapshotName, err)
 	}
@@ -620,32 +611,6 @@ func (m *Operator) getSnapshotStore() dstore.Store {
 	}
 
 	return m.snapshotStore
-}
-
-func (m *Operator) getHighestSnapshotName() (string, error) {
-	if m.snapshotStore == nil {
-		m.Shutdown(errors.New("trying to get snapshot store, but instance is nil, have you provided --snapshot-store-url flag?"))
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
-	m.logger.Info("resolving latest snapshot name to an actual name")
-	latestSnapshot := ""
-	err := m.snapshotStore.Walk(ctx, "", "", func(filename string) (err error) {
-		latestSnapshot = filename
-		return dstore.StopIteration
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("unable to find latest snapshot: %s", err)
-	}
-
-	if latestSnapshot == "" {
-		return "", fmt.Errorf("no snapshot present in %q, are you sure there is snapshots available for this environment?", m.options.SnapshotStoreURL)
-	}
-
-	return latestSnapshot, nil
 }
 
 func (m *Operator) ConfigureAutoBackup(autoBackupInterval time.Duration, autoBackupBlockFrequency int) {

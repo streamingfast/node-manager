@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -59,49 +58,93 @@ func (s *NodeosSuperviser) TakeSnapshot(snapshotStore dstore.Store) error {
 	return os.Remove(snapshot.SnapshotName)
 }
 
-func (s *NodeosSuperviser) RestoreSnapshot(snapshotName string, snapshotStore dstore.Store) error {
-	s.Logger.Info("getting snapshot from store", zap.String("snapshot_name", snapshotName))
+func (s *NodeosSuperviser) ReplayFromBlocksLog() {
+	s.snapshotRestoreOnNextStart = true
+	s.snapshotRestoreFilename = ""
+}
 
+func findLatestSnapshotName(snapshotStore dstore.Store) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	latestSnapshot := ""
+	err := snapshotStore.Walk(ctx, "", "", func(filename string) (err error) {
+		latestSnapshot = filename
+		return dstore.StopIteration
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("unable to find latest snapshot: %s", err)
+	}
+	return latestSnapshot, nil
+
+}
+
+func (s *NodeosSuperviser) downloadSnapshotFile(snapshotName string, snapshotStore dstore.Store) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
 	reader, err := snapshotStore.OpenObject(ctx, snapshotName)
 	if err != nil {
-		return fmt.Errorf("cannot get snapshot from gstore: %s", err)
+		return "", fmt.Errorf("cannot get snapshot from gstore: %s", err)
 	}
 	defer reader.Close()
 
 	os.MkdirAll(s.snapshotsDir, 0755)
-	snapshotFile := filepath.Join(s.snapshotsDir, snapshotName)
-	w, err := os.Create(snapshotFile)
+	snapshotPath := filepath.Join(s.snapshotsDir, snapshotName)
+	w, err := os.Create(snapshotPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer w.Close()
 
 	_, err = io.Copy(w, reader)
 	if err != nil {
+		return "", err
+	}
+	return snapshotPath, nil
+
+}
+
+func (s *NodeosSuperviser) RestoreSnapshot(snapshotName string, snapshotStore dstore.Store) error {
+	if snapshotStore == nil {
+		return fmt.Errorf("trying to get snapshot store, but instance is nil, have you provided --snapshot-store-url flag?")
+	}
+
+	if snapshotName == "latest" {
+		var err error
+		snapshotName, err = findLatestSnapshotName(snapshotStore)
+		if err != nil {
+			return err
+		}
+	}
+
+	if snapshotName == "" {
+		s.Logger.Warn("Cannot find latest snapshot, will replay from blocks.log")
+		s.snapshotRestoreFilename = ""
+	} else {
+		s.Logger.Info("getting snapshot from store", zap.String("snapshot_name", snapshotName))
+		snapshotPath, err := s.downloadSnapshotFile(snapshotName, snapshotStore)
+		if err != nil {
+			return err
+		}
+		s.snapshotRestoreFilename = snapshotPath
+	}
+
+	err := s.removeState()
+	if err != nil {
 		return err
 	}
-
-	stateDir := path.Join(s.options.DataDir, "state")
-	err = os.RemoveAll(stateDir)
+	err = s.removeReversibleBlocks()
 	if err != nil {
-		return fmt.Errorf("unable to delete %q directory: %s", stateDir, err)
+		return err
 	}
-
-	reversibleState := path.Join(s.options.DataDir, "blocks", "reversible")
-	err = os.RemoveAll(reversibleState)
-	if err != nil {
-		return fmt.Errorf("unable to delete %q directory: %s", reversibleState, err)
-	}
-
-	s.snapshotRestoreOnNextStart = true
-	s.snapshotRestoreFilename = snapshotFile
 
 	if s.HandlePostRestore != nil {
 		s.HandlePostRestore()
 	}
+
+	s.snapshotRestoreOnNextStart = true
 
 	return nil
 }
