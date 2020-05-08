@@ -27,7 +27,9 @@ var DisableDebugDeepmindOption = StartOption("disable-debug-deep-mind")
 
 type ChainSuperviser interface {
 	GetCommand() string
-	RegisterStartFailureHandler(func())
+	GetName() string
+	LastExitCode() int
+
 	RegisterPostRestoreHandler(func())
 
 	Start(options ...StartOption) error
@@ -35,6 +37,7 @@ type ChainSuperviser interface {
 
 	HasData() bool
 	IsRunning() bool
+	Stopped() <-chan struct{}
 	ServerID() (string, error)
 
 	LastSeenBlockNum() uint64

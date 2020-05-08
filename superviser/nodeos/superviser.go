@@ -35,6 +35,7 @@ import (
 
 type NodeosSuperviser struct {
 	*superviser.Superviser
+	name string
 
 	api          *eos.API
 	blocksDir    string
@@ -57,6 +58,10 @@ type NodeosSuperviser struct {
 	snapshotRestoreFilename    string
 
 	headBlockUpdateFunc manageos.HeadBlockUpdater
+}
+
+func (s *NodeosSuperviser) GetName() string {
+	return "nodeos"
 }
 
 type SuperviserOptions struct {
@@ -146,8 +151,35 @@ func (s *NodeosSuperviser) GetCommand() string {
 }
 
 func (s *NodeosSuperviser) HasData() bool {
-	_, err := os.Stat(s.blocksDir)
-	return err == nil
+	_, blockErr := os.Stat(s.blocksDir)
+	_, stateErr := os.Stat(path.Join(s.options.DataDir, "state"))
+	return blockErr == nil && stateErr == nil
+}
+
+func (s *NodeosSuperviser) removeState() error {
+	err := os.RemoveAll(path.Join(path.Join(s.options.DataDir, "state")))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot delete state directory: %w", err)
+	}
+	return nil
+}
+func (s *NodeosSuperviser) removeBlocksLog() error {
+	err := os.Remove(path.Join(s.blocksDir, "blocks.log"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot delete blocks.log before starting: %w", err)
+	}
+	err = os.Remove(path.Join(s.blocksDir, "blocks.index"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot delete blocks.index directory before starting: %w", err)
+	}
+	return nil
+}
+func (s *NodeosSuperviser) removeReversibleBlocks() error {
+	err := os.RemoveAll(path.Join(s.blocksDir, "reversible"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot delete blocks/reversible directory before starting: %w", err)
+	}
+	return nil
 }
 
 func (s *NodeosSuperviser) Start(options ...manageos.StartOption) error {
@@ -155,14 +187,14 @@ func (s *NodeosSuperviser) Start(options ...manageos.StartOption) error {
 	s.Superviser.Arguments = s.getArguments()
 
 	// Clears transient snapshot arguments now that we've computed binary arguments
+	if s.snapshotRestoreOnNextStart {
+		s.removeState()
+		s.removeReversibleBlocks()
+	}
 	s.snapshotRestoreOnNextStart = false
 	s.snapshotRestoreFilename = ""
-
 	if s.options.NoBlocksLog {
-		err := os.Remove(path.Join(s.blocksDir, "blocks.log"))
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("cannot delete blocks.log before starting and no-blocks-log is set: %w", err)
-		}
+		s.removeBlocksLog()
 	}
 	err := s.Superviser.Start(options...)
 	if err != nil {

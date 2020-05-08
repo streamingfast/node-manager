@@ -52,7 +52,7 @@ type Config struct {
 	BootstrapDataURL    string
 	DebugDeepMind       bool
 	LogToZap            bool
-	AutoRestoreLatest   bool
+	AutoRestoreSource   string // backup, snapshot, none
 	RestoreBackupName   string
 	RestoreSnapshotName string
 	SnapshotStoreURL    string
@@ -121,10 +121,6 @@ func (a *App) Run() error {
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
-	if a.Config.StartFailureHandlerFunc != nil {
-		chainSuperviser.Superviser.RegisterStartFailureHandler(a.Config.StartFailureHandlerFunc)
-	}
-
 	var p *profiler.Profiler
 	if !a.Config.DisableProfiler {
 		p = profiler.MaybeNew()
@@ -134,15 +130,17 @@ func (a *App) Run() error {
 		BootstrapDataURL:           a.Config.BootstrapDataURL,
 		BackupTag:                  a.Config.BackupTag,
 		BackupStoreURL:             a.Config.BackupStoreURL,
-		AutoRestoreLatest:          a.Config.AutoRestoreLatest,
+		AutoRestoreSource:          a.Config.AutoRestoreSource,
 		ShutdownDelay:              a.Config.ShutdownDelay,
 		RestoreBackupName:          a.Config.RestoreBackupName,
 		RestoreSnapshotName:        a.Config.RestoreSnapshotName,
 		SnapshotStoreURL:           a.Config.SnapshotStoreURL,
+		StartFailureHandlerFunc:    a.Config.StartFailureHandlerFunc,
 		EnableSupervisorMonitoring: true,
 		Profiler:                   p,
 		ReadyFunc:                  a.ReadyFunc,
 	})
+
 	if err != nil {
 		return fmt.Errorf("unable to create chain operator: %w", err)
 	}

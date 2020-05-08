@@ -34,8 +34,10 @@ import (
 
 type Operator struct {
 	*shutter.Shutter
-	options   *Options
-	ReadyFunc func()
+	options              *Options
+	lastStartCommand     time.Time
+	attemptedAutoRestore bool
+	ReadyFunc            func()
 
 	logger         *zap.Logger
 	commandChan    chan *Command
@@ -55,11 +57,12 @@ type Options struct {
 	PVCPrefix            string
 	Project              string //gcp project
 
-	BootstrapDataURL    string
-	AutoRestoreLatest   bool
-	RestoreBackupName   string
-	RestoreSnapshotName string
-	Profiler            *profiler.Profiler
+	BootstrapDataURL        string
+	AutoRestoreSource       string
+	RestoreBackupName       string
+	RestoreSnapshotName     string
+	Profiler                *profiler.Profiler
+	StartFailureHandlerFunc func()
 
 	EnableSupervisorMonitoring bool
 
@@ -96,15 +99,6 @@ func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, chainRead
 		}
 	}
 
-	if options.AutoRestoreLatest {
-		chainSuperviser.RegisterStartFailureHandler(func() {
-			m.commandChan <- &Command{
-				cmd:    "restore",
-				logger: m.logger,
-			}
-		})
-	}
-
 	return m, nil
 }
 
@@ -137,6 +131,39 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	for {
 		m.logger.Info("operator ready to receive commands")
 		select {
+		case <-m.superviser.Stopped(): // stopped outside of a command that was expecting it
+			if m.attemptedAutoRestore || time.Since(m.lastStartCommand) > 10*time.Second {
+				m.Shutdown(fmt.Errorf("Instance `%s` stopped (exit code: %d). Shutting down.", m.superviser.GetName(), m.superviser.LastExitCode()))
+				if m.options.StartFailureHandlerFunc != nil {
+					m.options.StartFailureHandlerFunc()
+				}
+				break
+			}
+			m.logger.Warn("Instance stopped. Attempting restore from snapshot", zap.String("command", m.superviser.GetCommand()))
+			m.attemptedAutoRestore = true
+			switch m.options.AutoRestoreSource {
+			case "backup":
+				if err := m.runCommand(&Command{
+					cmd:    "restore",
+					logger: m.logger,
+				}); err != nil {
+					m.Shutdown(fmt.Errorf("attempted restore failed"))
+					if m.options.StartFailureHandlerFunc != nil {
+						m.options.StartFailureHandlerFunc()
+					}
+				}
+			case "snapshot":
+				if err := m.runCommand(&Command{
+					cmd:    "snapshot_restore",
+					logger: m.logger,
+				}); err != nil {
+					m.Shutdown(fmt.Errorf("attempted restore failed"))
+					if m.options.StartFailureHandlerFunc != nil {
+						m.options.StartFailureHandlerFunc()
+					}
+				}
+			}
+
 		case <-m.Terminating():
 			m.logger.Info("operator terminating, ending run/loop")
 			m.runCommand(&Command{cmd: "maintenance"})
@@ -144,6 +171,10 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			return nil
 
 		case cmd := <-m.commandChan:
+			if cmd.cmd == "start" { // start 'sub' commands after a restore do NOT come through here
+				m.lastStartCommand = time.Now()
+				m.attemptedAutoRestore = false
+			}
 			err := m.runCommand(cmd)
 			cmd.Return(err)
 			if err != nil {
@@ -315,7 +346,7 @@ func (m *Operator) runCommand(cmd *Command) error {
 			return err
 		}
 
-		m.logger.Info("restarting node from snapshot, the restart will perform the actual snapshot restoration")
+		m.logger.Warn("restarting node from snapshot, the restart will perform the actual snapshot restoration")
 		return m.runSubCommand("start", cmd)
 
 	case "reload":
@@ -475,17 +506,35 @@ func (m *Operator) bootstrap() error {
 		m.logger.Info("Performing Bootstrap from Snapshot")
 		return m.bootstrapFromSnapshot(m.options.RestoreSnapshotName)
 	}
-	if !m.superviser.HasData() {
-		if m.options.BootstrapDataURL != "" {
-			m.logger.Info("chain has no prior data and bootstrapDataURL is set. Performing bootstrap from URL")
-			return m.bootstrapFromDataURL(m.options.BootstrapDataURL)
-		}
-		if m.options.AutoRestoreLatest {
-			m.logger.Info("chain has no prior data and autoRestoreLatest is set. Performing restore from backup")
-			return m.bootstrapFromBackup("latest")
+
+	if m.superviser.HasData() {
+		return nil
+	}
+
+	if m.options.BootstrapDataURL != "" {
+		m.logger.Info("chain has no prior data and bootstrapDataURL is set. Attempting bootstrap from URL")
+		err := m.bootstrapFromDataURL(m.options.BootstrapDataURL)
+		if err != nil {
+			m.logger.Warn("could not bootstrap from URL", zap.Error(err))
+		} else {
+			m.logger.Info("success bootstrap from URL")
+			return nil
 		}
 	}
-	m.logger.Info("no options provided to perform initial bootstrap, skipping")
+
+	switch m.options.AutoRestoreSource {
+	case "backup":
+		m.logger.Info("chain has no prior data and autoRestoreMethod is set to backup. Attempting restore from backup")
+		err := m.bootstrapFromBackup("latest")
+		m.logger.Warn("could not bootstrap from Backup", zap.Error(err))
+
+	case "snapshot":
+		m.logger.Info("chain has no prior data and autoRestoreMethod is set to snapshot. Attempting restore from snapshot")
+		err := m.bootstrapFromSnapshot("latest")
+		m.logger.Info("could not bootstrap from snapshot", zap.Error(err))
+
+	}
+
 	return nil
 }
 

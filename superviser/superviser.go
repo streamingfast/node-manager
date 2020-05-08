@@ -39,10 +39,9 @@ type Superviser struct {
 	cmd     *overseer.Cmd
 	cmdLock sync.Mutex
 
-	logPlugins             []logplugin.LogPlugin
-	logPluginsLock         sync.RWMutex
-	handleStartFailureOnce func()
-	HandlePostRestore      func()
+	logPlugins        []logplugin.LogPlugin
+	logPluginsLock    sync.RWMutex
+	HandlePostRestore func()
 
 	enableDeepMind bool
 }
@@ -50,10 +49,6 @@ type Superviser struct {
 // RegisterPostRestoreHandler adds a function called after a restore from backup or from snapshot
 func (s *Superviser) RegisterPostRestoreHandler(f func()) {
 	s.HandlePostRestore = f
-}
-
-func (s *Superviser) RegisterStartFailureHandler(f func()) {
-	s.handleStartFailureOnce = f
 }
 
 func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
@@ -78,6 +73,20 @@ func (s *Superviser) setDeepMindDebug(enabled bool) {
 			v.DebugDeepMind(enabled)
 		}
 	}
+}
+
+func (s *Superviser) Stopped() <-chan struct{} {
+	if s.cmd != nil {
+		return s.cmd.Done()
+	}
+	return nil
+}
+
+func (s *Superviser) LastExitCode() int {
+	if s.cmd != nil {
+		return s.cmd.Status().Exit
+	}
+	return 0
 }
 
 func (s *Superviser) Start(options ...manageos.StartOption) error {
@@ -162,13 +171,12 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 	for {
 		select {
 		case status := <-statusChan:
-			s.Logger.Info("command terminated", zap.Any("status", status))
-			if (status.Exit == -1 || (status.Exit > 0 && status.Runtime < 10)) && s.handleStartFailureOnce != nil {
-				s.Logger.Warn("notifying starting failure handler because process exited with non-success code within 10 seconds")
-				s.handleStartFailureOnce()
-				s.handleStartFailureOnce = nil
+			if status.Exit == 0 {
+				s.Logger.Info("command terminated with zero status")
+			} else {
+				s.Logger.Error("command terminated with non-zero status", zap.Any("status", status))
 			}
-			break
+			return
 		case line := <-cmd.Stdout:
 			s.processLogLine(line)
 		case line := <-cmd.Stderr:
