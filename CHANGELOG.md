@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * Possibility to auto-restore from latest snapshot (useful for BP), deleting correct files to make it work
+* NumberOfSnapshotsToKeep flag to maintain a small list of snapshots
 
 ## 2020-03-21
 
