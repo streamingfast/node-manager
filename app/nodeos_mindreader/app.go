@@ -63,8 +63,9 @@ type Config struct {
 	AutoBackupPeriod time.Duration
 
 	// Snapshot Flags
-	AutoSnapshotModulo int
-	AutoSnapshotPeriod time.Duration
+	AutoSnapshotModulo      int
+	AutoSnapshotPeriod      time.Duration
+	NumberOfSnapshotsToKeep int
 
 	BootstrapDataURL    string
 	DebugDeepMind       bool
