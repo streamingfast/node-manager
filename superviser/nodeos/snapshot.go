@@ -29,7 +29,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *NodeosSuperviser) TakeSnapshot(snapshotStore dstore.Store) error {
+func (s *NodeosSuperviser) TakeSnapshot(snapshotStore dstore.Store, numberOfSnapshotsToKeep int) error {
 	s.Logger.Info("asking nodeos API to create a snapshot")
 	api := s.api
 	snapshot, err := api.CreateSnapshot(context.Background())
@@ -55,12 +55,42 @@ func (s *NodeosSuperviser) TakeSnapshot(snapshotStore dstore.Store) error {
 	}
 
 	metrics.NodeosSuccessfulSnapshots.Inc()
+
+	if numberOfSnapshotsToKeep > 0 {
+		err := cleanupSnapshots(snapshotStore, numberOfSnapshotsToKeep)
+		if err != nil {
+			s.Logger.Warn("cannot cleanup snapshots", zap.Error(err))
+		}
+	}
+
 	return os.Remove(snapshot.SnapshotName)
 }
 
-func (s *NodeosSuperviser) ReplayFromBlocksLog() {
-	s.snapshotRestoreOnNextStart = true
-	s.snapshotRestoreFilename = ""
+func cleanupSnapshots(snapshotStore dstore.Store, keep int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	var snapshots []string
+	err := snapshotStore.Walk(ctx, "", "", func(filename string) (err error) {
+		snapshots = append(snapshots, filename)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(snapshots) <= keep {
+		return nil
+	}
+
+	for _, s := range snapshots[:len(snapshots)-keep] {
+		err := snapshotStore.DeleteObject(ctx, s)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+
 }
 
 func findLatestSnapshotName(snapshotStore dstore.Store) (string, error) {
@@ -70,7 +100,7 @@ func findLatestSnapshotName(snapshotStore dstore.Store) (string, error) {
 	latestSnapshot := ""
 	err := snapshotStore.Walk(ctx, "", "", func(filename string) (err error) {
 		latestSnapshot = filename
-		return dstore.StopIteration
+		return nil
 	})
 
 	if err != nil {

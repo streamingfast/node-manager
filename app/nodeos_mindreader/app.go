@@ -160,6 +160,7 @@ func (a *App) Run() error {
 		RestoreBackupName:          a.Config.RestoreBackupName,
 		RestoreSnapshotName:        a.Config.RestoreSnapshotName,
 		SnapshotStoreURL:           a.Config.SnapshotStoreURL,
+		NumberOfSnapshotsToKeep:    a.Config.NumberOfSnapshotsToKeep,
 		EnableSupervisorMonitoring: false,
 		Profiler:                   p,
 		ReadyFunc:                  a.ReadyFunc,

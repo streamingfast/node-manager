@@ -59,6 +59,7 @@ type Options struct {
 
 	BootstrapDataURL        string
 	AutoRestoreSource       string
+	NumberOfSnapshotsToKeep int
 	RestoreBackupName       string
 	RestoreSnapshotName     string
 	Profiler                *profiler.Profiler
@@ -316,7 +317,7 @@ func (m *Operator) runCommand(cmd *Command) error {
 			return nil
 		}
 
-		if err := snapshotable.TakeSnapshot(m.getSnapshotStore()); err != nil {
+		if err := snapshotable.TakeSnapshot(m.getSnapshotStore(), m.options.NumberOfSnapshotsToKeep); err != nil {
 			cmd.Return(fmt.Errorf("unable to take snapshot: %s", err))
 			return nil
 		}

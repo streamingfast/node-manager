@@ -64,8 +64,9 @@ type Config struct {
 	AutoBackupPeriod time.Duration
 
 	// Snapshot Flags
-	AutoSnapshotModulo int
-	AutoSnapshotPeriod time.Duration
+	AutoSnapshotModulo      int
+	AutoSnapshotPeriod      time.Duration
+	NumberOfSnapshotsToKeep int // do not delete if 0
 
 	StartFailureHandlerFunc func()
 
@@ -136,6 +137,7 @@ func (a *App) Run() error {
 		RestoreSnapshotName:        a.Config.RestoreSnapshotName,
 		SnapshotStoreURL:           a.Config.SnapshotStoreURL,
 		StartFailureHandlerFunc:    a.Config.StartFailureHandlerFunc,
+		NumberOfSnapshotsToKeep:    a.Config.NumberOfSnapshotsToKeep,
 		EnableSupervisorMonitoring: true,
 		Profiler:                   p,
 		ReadyFunc:                  a.ReadyFunc,

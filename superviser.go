@@ -67,7 +67,7 @@ type BackupableChainSuperviser interface {
 }
 
 type SnapshotableChainSuperviser interface {
-	TakeSnapshot(snapshotStore dstore.Store) error
+	TakeSnapshot(snapshotStore dstore.Store, numberOfSnapshotsToKeep int) error
 	RestoreSnapshot(snapshotName string, snapshotStore dstore.Store) error
 }
 
