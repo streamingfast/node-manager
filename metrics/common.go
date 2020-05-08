@@ -20,6 +20,7 @@ import (
 
 var Metricset = dmetrics.NewSet()
 
+//FIXME this may be covered by another metric's registration in dmetrics. Minor Race condition alert
 var SuccessfulBackups = Metricset.NewCounter("successful_backups", "This counter increments every time that a backup is completed successfully")
 
 func NewHeadBlockTimeDrift(serviceName string) *dmetrics.HeadTimeDrift {
