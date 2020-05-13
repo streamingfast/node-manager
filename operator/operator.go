@@ -523,18 +523,20 @@ func (m *Operator) bootstrap() error {
 		}
 	}
 
-	switch m.options.AutoRestoreSource {
-	case "backup":
-		m.logger.Info("chain has no prior data and autoRestoreMethod is set to backup. Attempting restore from backup")
-		err := m.bootstrapFromBackup("latest")
-		m.logger.Warn("could not bootstrap from Backup", zap.Error(err))
+	// TODO: use BootstrapDataURL here to support backup:///pitreos-backupname, snapshot:///snapshotname, ...
+	// using AutoRestore as a bootstrap source is confusing
+	//switch m.options.AutoRestoreSource {
+	//case "backup":
+	//	m.logger.Info("chain has no prior data and autoRestoreMethod is set to backup. Attempting restore from backup")
+	//	err := m.bootstrapFromBackup("latest")
+	//	m.logger.Warn("could not bootstrap from Backup", zap.Error(err))
 
-	case "snapshot":
-		m.logger.Info("chain has no prior data and autoRestoreMethod is set to snapshot. Attempting restore from snapshot")
-		err := m.bootstrapFromSnapshot("latest")
-		m.logger.Info("could not bootstrap from snapshot", zap.Error(err))
+	//case "snapshot":
+	//	m.logger.Info("chain has no prior data and autoRestoreMethod is set to snapshot. Attempting restore from snapshot")
+	//	err := m.bootstrapFromSnapshot("latest")
+	//	m.logger.Info("could not bootstrap from snapshot", zap.Error(err))
 
-	}
+	//}
 
 	return nil
 }
