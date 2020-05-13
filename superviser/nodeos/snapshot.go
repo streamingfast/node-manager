@@ -159,6 +159,7 @@ func (s *NodeosSuperviser) RestoreSnapshot(snapshotName string, snapshotStore ds
 			return err
 		}
 		s.snapshotRestoreFilename = snapshotPath
+		s.snapshotRestoreOnNextStart = true
 	}
 
 	err := s.removeState()
@@ -173,8 +174,6 @@ func (s *NodeosSuperviser) RestoreSnapshot(snapshotName string, snapshotStore ds
 	if s.HandlePostRestore != nil {
 		s.HandlePostRestore()
 	}
-
-	s.snapshotRestoreOnNextStart = true
 
 	return nil
 }
