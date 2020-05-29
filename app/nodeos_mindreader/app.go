@@ -74,10 +74,12 @@ type Config struct {
 	ShutdownDelay       time.Duration
 
 	ArchiveStoreURL            string
+	MergeArchiveStoreURL       string
 	MergeUploadDirectly        bool
 	GRPCAddr                   string
 	StartBlockNum              uint64
 	StopBlockNum               uint64
+	DiscardAfterStopBlock      bool
 	MindReadBlocksChanCapacity int
 	WorkingDir                 string
 
@@ -179,7 +181,9 @@ func (a *App) Run() error {
 	zlog.Info("launching mindreader plugin")
 	mindreaderLogPlugin, err := mindreader.RunMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
+		a.Config.MergeArchiveStoreURL,
 		a.Config.MergeUploadDirectly,
+		a.Config.DiscardAfterStopBlock,
 		a.Config.WorkingDir,
 		nodeosMindreader.BlockFileNamer,
 		a.modules.ConsoleReaderFactory,

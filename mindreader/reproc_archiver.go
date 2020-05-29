@@ -28,8 +28,10 @@ import (
 
 // ReprocArchiver does the merging in one swift, no need for a merger here.
 type ReprocArchiver struct {
-	store              dstore.Store
-	blockWriterFactory bstream.BlockWriterFactory
+	store                    dstore.Store
+	blockWriterFactory       bstream.BlockWriterFactory
+	stopBlock                uint64
+	passthroughFromStopBlock Archiver
 
 	eg          *llerrgroup.Group
 	expectBlock uint64
@@ -40,11 +42,32 @@ type ReprocArchiver struct {
 func NewReprocArchiver(
 	store dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
+	options ...ReprocOption,
 ) *ReprocArchiver {
-	return &ReprocArchiver{
+	ra := &ReprocArchiver{
 		eg:                 llerrgroup.New(2),
 		store:              store,
 		blockWriterFactory: blockWriterFactory,
+	}
+	for _, opt := range options {
+		opt(ra)
+	}
+	return ra
+}
+
+type ReprocOption func(*ReprocArchiver)
+
+func WithReprocDiscardFromStopBlock(stopBlock uint64) ReprocOption {
+	return func(r *ReprocArchiver) {
+		r.stopBlock = stopBlock
+	}
+}
+
+func WithReprocPassthroughFromStopBlock(stopBlock uint64, archiver Archiver) ReprocOption {
+	return func(r *ReprocArchiver) {
+		r.passthroughFromStopBlock = archiver
+		r.stopBlock = stopBlock
+		r.passthroughFromStopBlock.init()
 	}
 }
 
@@ -60,6 +83,14 @@ func (s *ReprocArchiver) newBuffer() error {
 	}
 	s.blockWriter = blockWriter
 	return nil
+}
+
+// cleanup assumes that no more 'storeBlock' command is coming
+func (s *ReprocArchiver) cleanup() {
+	s.eg.Wait()
+	if s.passthroughFromStopBlock != nil {
+		s.passthroughFromStopBlock.cleanup()
+	}
 }
 
 func (s *ReprocArchiver) storeBlock(block *bstream.Block) error {
@@ -84,6 +115,14 @@ func (s *ReprocArchiver) storeBlock(block *bstream.Block) error {
 
 	if s.buffer == nil {
 		zlog.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
+		return nil
+	}
+
+	if s.stopBlock != 0 && block.Num() >= s.stopBlock {
+		if s.passthroughFromStopBlock != nil {
+			return s.passthroughFromStopBlock.storeBlock(block)
+		}
+		zlog.Debug("ignoring block after stop_block because no passthrough is set", zap.Uint64("block_num", block.Num()))
 		return nil
 	}
 

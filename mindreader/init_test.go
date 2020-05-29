@@ -45,6 +45,9 @@ func (s *TestStore) init() error {
 	return nil
 }
 
+func (s *TestStore) cleanup() {
+}
+
 func (s *TestStore) storeBlock(block *bstream.Block) error {
 	s.blocks = append(s.blocks, block)
 	s.receivedBlock <- block

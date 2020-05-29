@@ -65,7 +65,9 @@ type MindReaderPlugin struct {
 
 func RunMindReaderPlugin(
 	archiveStoreURL string,
+	mergeArchiveStoreURL string,
 	mergeUploadDirectly bool,
+	discardAfterStopBlock bool,
 	workingDirectory string,
 	blockFileNamer BlockFileNamer,
 	consoleReaderFactory ConsolerReaderFactory,
@@ -108,10 +110,33 @@ func RunMindReaderPlugin(
 		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
 	}
 	if mergeUploadDirectly {
-		ra := NewReprocArchiver(archiveStore, bstream.GetBlockWriterFactory)
+		zlog.Debug("using merge-upload-directly")
+		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+		if err != nil {
+			return nil, fmt.Errorf("setting up merge dbin store: %s", err)
+		}
+		mergeArchiveStore.SetOverwrite(true)
+
+		var options []ReprocOption
+		if stopBlockNum != 0 {
+			if discardAfterStopBlock {
+				zlog.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
+				options = append(options, WithReprocDiscardFromStopBlock(stopBlockNum))
+			} else {
+				defaultArchiver := NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory)
+				options = append(options, WithReprocPassthroughFromStopBlock(stopBlockNum, defaultArchiver))
+			}
+		}
+		ra := NewReprocArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, options...)
 		archiver = ra
 	} else {
-		archiver = NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory)
+		var options []DefaultArchiverOption
+		if stopBlockNum != 0 && discardAfterStopBlock {
+			zlog.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
+			options = append(options, WithDiscardFromStopBlock(stopBlockNum))
+		}
+
+		archiver = NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, options...)
 	}
 
 	if err = archiver.init(); err != nil {
@@ -199,9 +224,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 
 func (p *MindReaderPlugin) alwaysUploadFiles() {
 	for {
-		// We continue to upload files as long as the plugin is not terminated yet,
-		// so that blocks created while in the terminating steps are correctly processed!
-		if p.IsTerminated() {
+		if p.IsTerminating() { // the uploadFiles will be called again in 'cleanup()', we can leave here early
 			return
 		}
 
@@ -210,15 +233,20 @@ func (p *MindReaderPlugin) alwaysUploadFiles() {
 		}
 
 		select {
-		case <-p.Terminated():
+		case <-p.Terminating():
 			return
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
 
+// consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
-	defer close(p.consumeReadFlowDone)
+	defer func() {
+		p.archiver.cleanup()
+		zlog.Debug("archiver cleanup done")
+		close(p.consumeReadFlowDone)
+	}()
 
 	for {
 		select {
@@ -276,11 +304,6 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 
 	if !p.gator.pass(block) {
-		return nil
-	}
-
-	// TODO: this is an ugly hack, for no data chain, this will prevent filling the buffer for reprocessing
-	if p.stopAtBlockNum != 0 && block.Num() > p.stopAtBlockNum {
 		return nil
 	}
 

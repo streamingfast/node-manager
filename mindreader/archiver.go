@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -38,6 +39,14 @@ type Archiver interface {
 	init() error
 	storeBlock(block *bstream.Block) error
 	uploadFiles() error
+	cleanup()
+}
+type DefaultArchiverOption func(*DefaultArchiver)
+
+func WithDiscardFromStopBlock(stopBlock uint64) DefaultArchiverOption {
+	return func(a *DefaultArchiver) {
+		a.stopBlock = stopBlock
+	}
 }
 
 type DefaultArchiver struct {
@@ -45,6 +54,8 @@ type DefaultArchiver struct {
 	blockFileNamer     BlockFileNamer
 	blockWriterFactory bstream.BlockWriterFactory
 	workDir            string
+	uploadMutex        sync.Mutex
+	stopBlock          uint64
 }
 
 func NewDefaultArchiver(
@@ -52,13 +63,23 @@ func NewDefaultArchiver(
 	store dstore.Store,
 	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
+	options ...DefaultArchiverOption,
 ) *DefaultArchiver {
-	return &DefaultArchiver{
+	da := &DefaultArchiver{
 		store:              store,
 		blockFileNamer:     blockFileNamer,
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
 	}
+	for _, opt := range options {
+		opt(da)
+	}
+	return da
+}
+
+// cleanup assumes that no more 'storeBlock' command is coming
+func (s *DefaultArchiver) cleanup() {
+	s.uploadFiles()
 }
 
 func (s *DefaultArchiver) init() error {
@@ -116,6 +137,8 @@ func (s *DefaultArchiver) storeBlock(block *bstream.Block) error {
 }
 
 func (s *DefaultArchiver) uploadFiles() error {
+	s.uploadMutex.Lock()
+	defer s.uploadMutex.Unlock()
 	filesToUpload, err := findFilesToUpload(s.workDir)
 	if err != nil {
 		return fmt.Errorf("unable to find files to upload: %s", err)
