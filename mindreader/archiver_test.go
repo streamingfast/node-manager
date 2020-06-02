@@ -180,8 +180,8 @@ func TestNewGSStore(t *testing.T) {
 	require.True(t, exists)
 }
 
-func testNewArchiver(path string, store dstore.Store) *DefaultArchiver {
-	return NewDefaultArchiver(path, store, testBlockFileNamer, testBlockWriteFactory)
+func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
+	return NewOneblockArchiver(path, store, testBlockFileNamer, testBlockWriteFactory, 0)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint64) (*MindReaderPlugin, error) {

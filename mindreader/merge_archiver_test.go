@@ -32,9 +32,9 @@ func init() {
 		}, nil
 	})
 }
-func TestReprocArchiver(t *testing.T) {
+func TestMergeArchiver(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
-	a := &ReprocArchiver{
+	a := &MergeArchiver{
 		store:              mStore,
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 		eg:                 llerrgroup.New(2),
@@ -62,9 +62,9 @@ func TestReprocArchiver(t *testing.T) {
 	assert.Equal(t, uint64(200), a.expectBlock)
 }
 
-func TestReprocArchiverSpecialCase(t *testing.T) {
+func TestMergeArchiverSpecialCase(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
-	a := &ReprocArchiver{
+	a := &MergeArchiver{
 		store:              mStore,
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 	}

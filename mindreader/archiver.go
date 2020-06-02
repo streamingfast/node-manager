@@ -41,15 +41,15 @@ type Archiver interface {
 	uploadFiles() error
 	cleanup()
 }
-type DefaultArchiverOption func(*DefaultArchiver)
+type OneblockArchiverOption func(*OneblockArchiver)
 
-func WithDiscardFromStopBlock(stopBlock uint64) DefaultArchiverOption {
-	return func(a *DefaultArchiver) {
+func WithDiscardFromStopBlock(stopBlock uint64) OneblockArchiverOption {
+	return func(a *OneblockArchiver) {
 		a.stopBlock = stopBlock
 	}
 }
 
-type DefaultArchiver struct {
+type OneblockArchiver struct {
 	store              dstore.Store
 	blockFileNamer     BlockFileNamer
 	blockWriterFactory bstream.BlockWriterFactory
@@ -58,18 +58,20 @@ type DefaultArchiver struct {
 	stopBlock          uint64
 }
 
-func NewDefaultArchiver(
+func NewOneblockArchiver(
 	workDir string,
 	store dstore.Store,
 	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
-	options ...DefaultArchiverOption,
-) *DefaultArchiver {
-	da := &DefaultArchiver{
+	stopBlock uint64,
+	options ...OneblockArchiverOption,
+) *OneblockArchiver {
+	da := &OneblockArchiver{
 		store:              store,
 		blockFileNamer:     blockFileNamer,
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
+		stopBlock:          stopBlock,
 	}
 	for _, opt := range options {
 		opt(da)
@@ -78,11 +80,11 @@ func NewDefaultArchiver(
 }
 
 // cleanup assumes that no more 'storeBlock' command is coming
-func (s *DefaultArchiver) cleanup() {
+func (s *OneblockArchiver) cleanup() {
 	s.uploadFiles()
 }
 
-func (s *DefaultArchiver) init() error {
+func (s *OneblockArchiver) init() error {
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
 		return fmt.Errorf("mkdir work folder: %s", err)
 	}
@@ -90,7 +92,7 @@ func (s *DefaultArchiver) init() error {
 	return nil
 }
 
-func (s *DefaultArchiver) storeBlock(block *bstream.Block) error {
+func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
 	fileName := s.blockFileNamer(block)
 
 	// Store the actual file using multiple folders instead of a single one.
@@ -136,7 +138,7 @@ func (s *DefaultArchiver) storeBlock(block *bstream.Block) error {
 	return nil
 }
 
-func (s *DefaultArchiver) uploadFiles() error {
+func (s *OneblockArchiver) uploadFiles() error {
 	s.uploadMutex.Lock()
 	defer s.uploadMutex.Unlock()
 	filesToUpload, err := findFilesToUpload(s.workDir)

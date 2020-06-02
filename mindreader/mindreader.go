@@ -109,6 +109,7 @@ func RunMindReaderPlugin(
 	if cc.IsLocked() {
 		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
 	}
+
 	if mergeUploadDirectly {
 		zlog.Debug("using merge-upload-directly")
 		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
@@ -117,26 +118,26 @@ func RunMindReaderPlugin(
 		}
 		mergeArchiveStore.SetOverwrite(true)
 
-		var options []ReprocOption
+		var options []MergeArchiverOption
 		if stopBlockNum != 0 {
 			if discardAfterStopBlock {
-				zlog.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
-				options = append(options, WithReprocDiscardFromStopBlock(stopBlockNum))
+				zlog.Info("archivestore will discard any block after stop-block-num -- this will create a hole in block files after restart", zap.Uint64("stop-block-num", stopBlockNum))
 			} else {
-				defaultArchiver := NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory)
-				options = append(options, WithReprocPassthroughFromStopBlock(stopBlockNum, defaultArchiver))
+				zlog.Info("blocks after stop-block-num will be saved to Oneblock files to be merged afterwards", zap.Uint64("stop-block-num", stopBlockNum))
+				oneblockArchiver := NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, 0)
+				options = append(options, WithOverflowArchiver(oneblockArchiver))
 			}
 		}
-		ra := NewReprocArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, options...)
+		ra := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, stopBlockNum, options...)
 		archiver = ra
 	} else {
-		var options []DefaultArchiverOption
+		var options []OneblockArchiverOption
 		if stopBlockNum != 0 && discardAfterStopBlock {
 			zlog.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
 			options = append(options, WithDiscardFromStopBlock(stopBlockNum))
 		}
 
-		archiver = NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, options...)
+		archiver = NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, stopBlockNum, options...)
 	}
 
 	if err = archiver.init(); err != nil {
