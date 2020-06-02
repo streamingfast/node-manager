@@ -74,10 +74,12 @@ type Config struct {
 	ShutdownDelay       time.Duration
 
 	ArchiveStoreURL            string
+	MergeArchiveStoreURL       string
 	MergeUploadDirectly        bool
 	GRPCAddr                   string
 	StartBlockNum              uint64
 	StopBlockNum               uint64
+	DiscardAfterStopBlock      bool
 	MindReadBlocksChanCapacity int
 	WorkingDir                 string
 
@@ -179,7 +181,9 @@ func (a *App) Run() error {
 	zlog.Info("launching mindreader plugin")
 	mindreaderLogPlugin, err := mindreader.RunMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
+		a.Config.MergeArchiveStoreURL,
 		a.Config.MergeUploadDirectly,
+		a.Config.DiscardAfterStopBlock,
 		a.Config.WorkingDir,
 		nodeosMindreader.BlockFileNamer,
 		a.modules.ConsoleReaderFactory,
@@ -219,7 +223,13 @@ func (a *App) Run() error {
 		go chainSuperviser.LaunchConnectionWatchdog(chainOperator.Terminating())
 	}
 
-	startNodeosOnLaunch := !mindreaderLogPlugin.ContinuityChecker.IsLocked()
+	var startNodeosOnLaunch bool
+	if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
+		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
+	} else {
+		startNodeosOnLaunch = true
+	}
+
 	httpOptions := []operator.HTTPOption{
 		func(r *mux.Router) {
 			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {

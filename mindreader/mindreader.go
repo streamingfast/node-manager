@@ -65,7 +65,9 @@ type MindReaderPlugin struct {
 
 func RunMindReaderPlugin(
 	archiveStoreURL string,
+	mergeArchiveStoreURL string,
 	mergeUploadDirectly bool,
+	discardAfterStopBlock bool,
 	workingDirectory string,
 	blockFileNamer BlockFileNamer,
 	consoleReaderFactory ConsolerReaderFactory,
@@ -86,7 +88,6 @@ func RunMindReaderPlugin(
 	archiveStore.SetOverwrite(true)
 
 	gator := NewBlockNumberGator(startBlockNum)
-	var archiver Archiver
 
 	blockServer := blockstream.NewServer(grpcServer)
 
@@ -104,19 +105,41 @@ func RunMindReaderPlugin(
 	if err != nil {
 		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
 	}
-	if cc.IsLocked() {
-		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
-	}
+
+	var archiver Archiver
 	if mergeUploadDirectly {
-		ra := NewReprocArchiver(archiveStore, bstream.GetBlockWriterFactory)
+		zlog.Debug("using merge-upload-directly")
+		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+		if err != nil {
+			return nil, fmt.Errorf("setting up merge dbin store: %s", err)
+		}
+		mergeArchiveStore.SetOverwrite(true)
+
+		var options []MergeArchiverOption
+		if stopBlockNum != 0 {
+			if discardAfterStopBlock {
+				zlog.Info("archivestore will discard any block after stop-block-num -- this will create a hole in block files after restart", zap.Uint64("stop-block-num", stopBlockNum))
+			} else {
+				zlog.Info("blocks after stop-block-num will be saved to Oneblock files to be merged afterwards", zap.Uint64("stop-block-num", stopBlockNum))
+				oneblockArchiver := NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, 0)
+				options = append(options, WithOverflowArchiver(oneblockArchiver))
+			}
+		}
+		ra := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, stopBlockNum, options...)
 		archiver = ra
 	} else {
-		archiver = NewDefaultArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory)
+		var archiverStopBlockNum uint64
+		if stopBlockNum != 0 && discardAfterStopBlock {
+			zlog.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
+			archiverStopBlockNum = stopBlockNum
+		}
+		archiver = NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, archiverStopBlockNum)
 	}
 
-	if err = archiver.init(); err != nil {
+	if err := archiver.init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %s", err)
 	}
+
 	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
 	if err != nil {
 		return nil, err
@@ -199,9 +222,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 
 func (p *MindReaderPlugin) alwaysUploadFiles() {
 	for {
-		// We continue to upload files as long as the plugin is not terminated yet,
-		// so that blocks created while in the terminating steps are correctly processed!
-		if p.IsTerminated() {
+		if p.IsTerminating() { // the uploadFiles will be called again in 'cleanup()', we can leave here early
 			return
 		}
 
@@ -210,15 +231,20 @@ func (p *MindReaderPlugin) alwaysUploadFiles() {
 		}
 
 		select {
-		case <-p.Terminated():
+		case <-p.Terminating():
 			return
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
 
+// consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
-	defer close(p.consumeReadFlowDone)
+	defer func() {
+		p.archiver.cleanup()
+		zlog.Debug("archiver cleanup done")
+		close(p.consumeReadFlowDone)
+	}()
 
 	for {
 		select {
@@ -276,11 +302,6 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 
 	if !p.gator.pass(block) {
-		return nil
-	}
-
-	// TODO: this is an ugly hack, for no data chain, this will prevent filling the buffer for reprocessing
-	if p.stopAtBlockNum != 0 && block.Num() > p.stopAtBlockNum {
 		return nil
 	}
 

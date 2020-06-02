@@ -26,10 +26,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// ReprocArchiver does the merging in one swift, no need for a merger here.
-type ReprocArchiver struct {
+// MergeArchiver does the merging in one swift, no need for a merger here.
+type MergeArchiver struct {
 	store              dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
+	stopBlock          uint64
+	overflowArchiver   Archiver
 
 	eg          *llerrgroup.Group
 	expectBlock uint64
@@ -37,75 +39,109 @@ type ReprocArchiver struct {
 	blockWriter bstream.BlockWriter
 }
 
-func NewReprocArchiver(
+func NewMergeArchiver(
 	store dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
-) *ReprocArchiver {
-	return &ReprocArchiver{
+	stopBlock uint64,
+	options ...MergeArchiverOption,
+) *MergeArchiver {
+	ra := &MergeArchiver{
 		eg:                 llerrgroup.New(2),
 		store:              store,
+		stopBlock:          stopBlock,
 		blockWriterFactory: blockWriterFactory,
+	}
+	for _, opt := range options {
+		opt(ra)
+	}
+	return ra
+}
+
+type MergeArchiverOption func(*MergeArchiver)
+
+func WithOverflowArchiver(archiver Archiver) MergeArchiverOption {
+	return func(r *MergeArchiver) {
+		r.overflowArchiver = archiver
 	}
 }
 
-func (s *ReprocArchiver) init() error {
+func (m *MergeArchiver) init() error {
+	if m.overflowArchiver != nil {
+		return m.overflowArchiver.init()
+	}
 	return nil
 }
 
-func (s *ReprocArchiver) newBuffer() error {
-	s.buffer = &bytes.Buffer{}
-	blockWriter, err := s.blockWriterFactory.New(s.buffer)
+func (m *MergeArchiver) newBuffer() error {
+	m.buffer = &bytes.Buffer{}
+	blockWriter, err := m.blockWriterFactory.New(m.buffer)
 	if err != nil {
 		return fmt.Errorf("blockWriteFactory: %s", err)
 	}
-	s.blockWriter = blockWriter
+	m.blockWriter = blockWriter
 	return nil
 }
 
-func (s *ReprocArchiver) storeBlock(block *bstream.Block) error {
-	if s.buffer == nil && block.Num() < 3 {
+// cleanup assumes that no more 'storeBlock' command is coming
+func (m *MergeArchiver) cleanup() {
+	m.eg.Wait()
+	if m.overflowArchiver != nil {
+		m.overflowArchiver.cleanup()
+	}
+}
+
+func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
+	if m.buffer == nil && block.Num() < 3 {
 		// Special case the beginning of the EOS chain
 
-		if err := s.newBuffer(); err != nil {
+		if err := m.newBuffer(); err != nil {
 			return err
 		}
-		s.expectBlock = block.Num()
+		m.expectBlock = block.Num()
 	}
 
 	if block.Num()%100 == 0 {
-		if err := s.newBuffer(); err != nil {
+		if err := m.newBuffer(); err != nil {
 			return err
 		}
 
-		if s.expectBlock == 0 {
-			s.expectBlock = block.Num()
+		if m.expectBlock == 0 {
+			m.expectBlock = block.Num()
 		}
 	}
 
-	if s.buffer == nil {
+	if m.buffer == nil {
 		zlog.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
 		return nil
 	}
 
-	if s.expectBlock != block.Num() {
-		return fmt.Errorf("blocks non contiguous, expectedBlock: %d, got block: %d", s.expectBlock, block.Num())
+	if m.stopBlock != 0 && block.Num() >= m.stopBlock {
+		if m.overflowArchiver != nil {
+			return m.overflowArchiver.storeBlock(block)
+		}
+		zlog.Debug("ignoring block after stop_block because no passthrough is set", zap.Uint64("block_num", block.Num()))
+		return nil
 	}
-	s.expectBlock++
 
-	if err := s.blockWriter.Write(block); err != nil {
+	if m.expectBlock != block.Num() {
+		return fmt.Errorf("blocks non contiguous, expectedBlock: %d, got block: %d", m.expectBlock, block.Num())
+	}
+	m.expectBlock++
+
+	if err := m.blockWriter.Write(block); err != nil {
 		return fmt.Errorf("blockWriter.Write: %s", err)
 	}
 
 	if block.Num()%100 == 99 {
 
-		if s.eg.Stop() {
+		if m.eg.Stop() {
 			return nil // already errored
 		}
 
 		baseNum := block.Num() - 99
 		baseName := fmt.Sprintf("%010d", baseNum)
-		buffer := s.buffer
-		s.eg.Go(func() error {
+		buffer := m.buffer
+		m.eg.Go(func() error {
 			if baseNum%1000 == 0 {
 				zlog.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
 			}
@@ -113,7 +149,7 @@ func (s *ReprocArchiver) storeBlock(block *bstream.Block) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
 
-			err := s.store.WriteObject(ctx, baseName, bytes.NewReader(buffer.Bytes()))
+			err := m.store.WriteObject(ctx, baseName, bytes.NewReader(buffer.Bytes()))
 			if err != nil {
 				return fmt.Errorf("uploading merged file: %s", err)
 			}
@@ -125,6 +161,6 @@ func (s *ReprocArchiver) storeBlock(block *bstream.Block) error {
 }
 
 // uploadFiles does nothing here, it's managed by `storeBlock` when needed
-func (s *ReprocArchiver) uploadFiles() error {
+func (m *MergeArchiver) uploadFiles() error {
 	return nil
 }

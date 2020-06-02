@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -38,30 +39,40 @@ type Archiver interface {
 	init() error
 	storeBlock(block *bstream.Block) error
 	uploadFiles() error
+	cleanup()
 }
 
-type DefaultArchiver struct {
+type OneblockArchiver struct {
 	store              dstore.Store
 	blockFileNamer     BlockFileNamer
 	blockWriterFactory bstream.BlockWriterFactory
 	workDir            string
+	uploadMutex        sync.Mutex
+	stopBlock          uint64
 }
 
-func NewDefaultArchiver(
+func NewOneblockArchiver(
 	workDir string,
 	store dstore.Store,
 	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
-) *DefaultArchiver {
-	return &DefaultArchiver{
+	stopBlock uint64,
+) *OneblockArchiver {
+	return &OneblockArchiver{
 		store:              store,
 		blockFileNamer:     blockFileNamer,
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
+		stopBlock:          stopBlock,
 	}
 }
 
-func (s *DefaultArchiver) init() error {
+// cleanup assumes that no more 'storeBlock' command is coming
+func (s *OneblockArchiver) cleanup() {
+	s.uploadFiles()
+}
+
+func (s *OneblockArchiver) init() error {
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
 		return fmt.Errorf("mkdir work folder: %s", err)
 	}
@@ -69,7 +80,7 @@ func (s *DefaultArchiver) init() error {
 	return nil
 }
 
-func (s *DefaultArchiver) storeBlock(block *bstream.Block) error {
+func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
 	fileName := s.blockFileNamer(block)
 
 	// Store the actual file using multiple folders instead of a single one.
@@ -115,7 +126,9 @@ func (s *DefaultArchiver) storeBlock(block *bstream.Block) error {
 	return nil
 }
 
-func (s *DefaultArchiver) uploadFiles() error {
+func (s *OneblockArchiver) uploadFiles() error {
+	s.uploadMutex.Lock()
+	defer s.uploadMutex.Unlock()
 	filesToUpload, err := findFilesToUpload(s.workDir)
 	if err != nil {
 		return fmt.Errorf("unable to find files to upload: %s", err)
