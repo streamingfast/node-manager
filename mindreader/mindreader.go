@@ -105,9 +105,6 @@ func RunMindReaderPlugin(
 	if err != nil {
 		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
 	}
-	if cc.IsLocked() {
-		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
-	}
 
 	var archiver Archiver
 	if mergeUploadDirectly {

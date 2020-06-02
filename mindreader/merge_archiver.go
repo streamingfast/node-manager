@@ -67,7 +67,7 @@ func WithOverflowArchiver(archiver Archiver) MergeArchiverOption {
 
 func (m *MergeArchiver) init() error {
 	if m.overflowArchiver != nil {
-		m.overflowArchiver.init()
+		return m.overflowArchiver.init()
 	}
 	return nil
 }

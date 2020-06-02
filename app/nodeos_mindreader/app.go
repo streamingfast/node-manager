@@ -223,7 +223,13 @@ func (a *App) Run() error {
 		go chainSuperviser.LaunchConnectionWatchdog(chainOperator.Terminating())
 	}
 
-	startNodeosOnLaunch := !mindreaderLogPlugin.ContinuityChecker.IsLocked()
+	var startNodeosOnLaunch bool
+	if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
+		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
+	} else {
+		startNodeosOnLaunch = true
+	}
+
 	httpOptions := []operator.HTTPOption{
 		func(r *mux.Router) {
 			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
