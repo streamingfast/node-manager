@@ -88,7 +88,6 @@ func RunMindReaderPlugin(
 	archiveStore.SetOverwrite(true)
 
 	gator := NewBlockNumberGator(startBlockNum)
-	var archiver Archiver
 
 	blockServer := blockstream.NewServer(grpcServer)
 
@@ -110,6 +109,7 @@ func RunMindReaderPlugin(
 		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
 	}
 
+	var archiver Archiver
 	if mergeUploadDirectly {
 		zlog.Debug("using merge-upload-directly")
 		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
@@ -131,18 +131,18 @@ func RunMindReaderPlugin(
 		ra := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, stopBlockNum, options...)
 		archiver = ra
 	} else {
-		var options []OneblockArchiverOption
+		var archiverStopBlockNum uint64
 		if stopBlockNum != 0 && discardAfterStopBlock {
 			zlog.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
-			options = append(options, WithDiscardFromStopBlock(stopBlockNum))
+			archiverStopBlockNum = stopBlockNum
 		}
-
-		archiver = NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, stopBlockNum, options...)
+		archiver = NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, archiverStopBlockNum)
 	}
 
-	if err = archiver.init(); err != nil {
+	if err := archiver.init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %s", err)
 	}
+
 	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
 	if err != nil {
 		return nil, err

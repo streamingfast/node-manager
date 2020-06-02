@@ -41,13 +41,6 @@ type Archiver interface {
 	uploadFiles() error
 	cleanup()
 }
-type OneblockArchiverOption func(*OneblockArchiver)
-
-func WithDiscardFromStopBlock(stopBlock uint64) OneblockArchiverOption {
-	return func(a *OneblockArchiver) {
-		a.stopBlock = stopBlock
-	}
-}
 
 type OneblockArchiver struct {
 	store              dstore.Store
@@ -64,19 +57,14 @@ func NewOneblockArchiver(
 	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
 	stopBlock uint64,
-	options ...OneblockArchiverOption,
 ) *OneblockArchiver {
-	da := &OneblockArchiver{
+	return &OneblockArchiver{
 		store:              store,
 		blockFileNamer:     blockFileNamer,
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
 		stopBlock:          stopBlock,
 	}
-	for _, opt := range options {
-		opt(da)
-	}
-	return da
 }
 
 // cleanup assumes that no more 'storeBlock' command is coming
