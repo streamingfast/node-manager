@@ -102,12 +102,16 @@ func RunMindReaderPlugin(
 		}
 	}
 
-	var cc ContinuityChecker // cannot use *continuityChecker here, because of golang caveat with checking nil value on interface{}
+	var continuityChecker ContinuityChecker // cannot use *continuityChecker here, because of golang caveat with checking nil value on interface{}
+
+	cc, err := newContinuityChecker(filepath.Join(workingDirectory, "continuity_check"))
+	if err != nil {
+		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
+	}
 	if failOnNonContinuousBlocks {
-		cc, err = newContinuityChecker(filepath.Join(workingDirectory, "continuity_check"))
-		if err != nil {
-			return nil, fmt.Errorf("error setting up continuity checker: %s", err)
-		}
+		continuityChecker = cc
+	} else {
+		cc.Reset()
 	}
 
 	var archiver Archiver
@@ -144,7 +148,7 @@ func RunMindReaderPlugin(
 		return nil, fmt.Errorf("failed to init archiver: %s", err)
 	}
 
-	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, cc, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
+	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, continuityChecker, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
 	if err != nil {
 		return nil, err
 	}

@@ -242,8 +242,6 @@ func (a *App) Run() error {
 				w.Write([]byte("ok"))
 			})
 		})
-	} else {
-		mindreaderLogPlugin.ContinuityChecker.Reset()
 	}
 
 	zlog.Info("launching operator")
