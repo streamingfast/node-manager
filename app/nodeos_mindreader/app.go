@@ -227,20 +227,23 @@ func (a *App) Run() error {
 		go chainSuperviser.LaunchConnectionWatchdog(chainOperator.Terminating())
 	}
 
-	var startNodeosOnLaunch bool
-	if a.Config.FailOnNonContinuousBlocks && mindreaderLogPlugin.ContinuityChecker.IsLocked() {
-		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
-	} else {
-		startNodeosOnLaunch = true
-	}
+	startNodeosOnLaunch := true
+	var httpOptions []operator.HTTPOption
 
-	httpOptions := []operator.HTTPOption{
-		func(r *mux.Router) {
+	if a.Config.FailOnNonContinuousBlocks {
+		if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
+			zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
+			startNodeosOnLaunch = false
+		}
+
+		httpOptions = append(httpOptions, func(r *mux.Router) {
 			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
 				mindreaderLogPlugin.ContinuityChecker.Reset()
 				w.Write([]byte("ok"))
 			})
-		},
+		})
+	} else {
+		mindreaderLogPlugin.ContinuityChecker.Reset()
 	}
 
 	zlog.Info("launching operator")
