@@ -37,17 +37,18 @@ import (
 )
 
 type Config struct {
-	MetricID            string
-	ManagerAPIAddress   string
-	NodeosAPIAddress    string
-	ConnectionWatchdog  bool
-	NodeosConfigDir     string
-	NodeosBinPath       string
-	NodeosDataDir       string
-	NoBlocksLog         bool
-	ProducerHostname    string
-	TrustedProducer     string
-	ReadinessMaxLatency time.Duration
+	MetricID                  string
+	ManagerAPIAddress         string
+	NodeosAPIAddress          string
+	ConnectionWatchdog        bool
+	NodeosConfigDir           string
+	NodeosBinPath             string
+	NodeosDataDir             string
+	NoBlocksLog               bool
+	ProducerHostname          string
+	TrustedProducer           string
+	ReadinessMaxLatency       time.Duration
+	FailOnNonContinuousBlocks bool // Will enable the ContinuityChecker, which stops nodeos if a block was produced with a gap, to prevent a restart from going over problem blocks
 
 	NodeosExtraArgs []string
 
@@ -197,6 +198,7 @@ func (a *App) Run() error {
 		func() {
 			chainOperator.Shutdown(nil)
 		},
+		a.Config.FailOnNonContinuousBlocks,
 	)
 	if err != nil {
 		return err
@@ -208,7 +210,9 @@ func (a *App) Run() error {
 	}
 
 	chainSuperviser.RegisterLogPlugin(mindreaderLogPlugin)
-	chainSuperviser.RegisterPostRestoreHandler(mindreaderLogPlugin.ContinuityChecker.Reset)
+	if a.Config.FailOnNonContinuousBlocks {
+		chainSuperviser.RegisterPostRestoreHandler(mindreaderLogPlugin.ContinuityChecker.Reset)
+	}
 
 	chainOperator.OnTerminating(mindreaderLogPlugin.Shutdown)
 	mindreaderLogPlugin.OnTerminated(chainOperator.Shutdown)
@@ -224,7 +228,7 @@ func (a *App) Run() error {
 	}
 
 	var startNodeosOnLaunch bool
-	if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
+	if a.Config.FailOnNonContinuousBlocks && mindreaderLogPlugin.ContinuityChecker.IsLocked() {
 		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
 	} else {
 		startNodeosOnLaunch = true

@@ -6,10 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
+* ContinuousChecker is not enabled by default now, use FailOnNonContinuousBlocks
 * AutoRestoreLatest(bool) option becomes AutoRestoreSource (`backup`, `snapshot`)
 * Nodeos unexpectedly shutting down now triggers a Shutdown of the app
 
 ### Added
+* Add FailOnNonContinuousBlocks Option to use continuousChecker or not
 * Possibility to auto-restore from latest snapshot (useful for BP), deleting correct files to make it work
 * NumberOfSnapshotsToKeep flag to maintain a small list of snapshots
 

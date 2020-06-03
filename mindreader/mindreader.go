@@ -79,6 +79,7 @@ func RunMindReaderPlugin(
 	headBlockUpdateFunc manageos.HeadBlockUpdater,
 	setMaintenanceFunc func(),
 	stopBlockReachFunc func(),
+	failOnNonContinuousBlocks bool,
 ) (*MindReaderPlugin, error) {
 	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
 	if err != nil {
@@ -101,9 +102,12 @@ func RunMindReaderPlugin(
 		}
 	}
 
-	cc, err := newContinuityChecker(filepath.Join(workingDirectory, "continuity_check"))
-	if err != nil {
-		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
+	var cc *continuityChecker
+	if failOnNonContinuousBlocks {
+		cc, err = newContinuityChecker(filepath.Join(workingDirectory, "continuity_check"))
+		if err != nil {
+			return nil, fmt.Errorf("error setting up continuity checker: %s", err)
+		}
 	}
 
 	var archiver Archiver
@@ -268,11 +272,13 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 				return
 			}
 
-			err = p.ContinuityChecker.Write(block.Num())
-			if err != nil {
-				zlog.Error("failed continuity check", zap.Error(err))
-				p.setMaintenanceFunc()
-				continue
+			if p.ContinuityChecker != nil {
+				err = p.ContinuityChecker.Write(block.Num())
+				if err != nil {
+					zlog.Error("failed continuity check", zap.Error(err))
+					p.setMaintenanceFunc()
+					continue
+				}
 			}
 
 			err = p.blockServer.PushBlock(block)
@@ -307,7 +313,7 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 
 	blocks <- block
 
-	if p.stopAtBlockNum != 0 && block.Num() >= p.stopAtBlockNum {
+	if p.stopAtBlockNum != 0 && block.Num() >= p.stopAtBlockNum && !p.IsTerminating() {
 		zlog.Info("shutting down because requested end block reached", zap.Uint64("block_num", block.Num()))
 		go p.Shutdown(nil)
 	}
