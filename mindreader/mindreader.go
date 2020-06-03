@@ -102,7 +102,7 @@ func RunMindReaderPlugin(
 		}
 	}
 
-	var cc *continuityChecker
+	var cc ContinuityChecker // cannot use *continuityChecker here, because of golang caveat with checking nil value on interface{}
 	if failOnNonContinuousBlocks {
 		cc, err = newContinuityChecker(filepath.Join(workingDirectory, "continuity_check"))
 		if err != nil {
