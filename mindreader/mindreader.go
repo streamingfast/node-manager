@@ -282,10 +282,6 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 				return
 			}
 
-			if p.stopAtBlockNum != 0 && block.Num() >= p.stopAtBlockNum {
-				zlog.Info("shutting down because requested end block reached", zap.Uint64("block_num", block.Num()))
-				go p.Shutdown(nil)
-			}
 		}
 	}
 }
@@ -310,9 +306,12 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 
 	blocks <- block
-	//if len(blocks) > 9*cap(blocks)/10 { // when channel is 90%, returning an error here will trigger a shutdown of the emitting process, but it may generate more blocks before it is completely stopped, so we keep a buffer
-	//	return fmt.Errorf("blocks chan streaming out of mindreader is getting full, shutting down to prevent catastrophic failure")
-	//}
+
+	if p.stopAtBlockNum != 0 && block.Num() >= p.stopAtBlockNum {
+		zlog.Info("shutting down because requested end block reached", zap.Uint64("block_num", block.Num()))
+		go p.Shutdown(nil)
+	}
+
 	return nil
 }
 
