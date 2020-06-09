@@ -64,17 +64,15 @@ type Modules struct {
 
 type App struct {
 	*shutter.Shutter
-	Config    *Config
-	ReadyFunc func()
-	modules   *Modules
+	Config  *Config
+	modules *Modules
 }
 
 func New(c *Config, modules *Modules) *App {
 	n := &App{
-		Shutter:   shutter.New(),
-		Config:    c,
-		ReadyFunc: func() {},
-		modules:   modules,
+		Shutter: shutter.New(),
+		Config:  c,
+		modules: modules,
 	}
 	return n
 }
@@ -151,10 +149,6 @@ func (a *App) Run() error {
 	go a.modules.Operator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
 
 	return nil
-}
-
-func (a *App) OnReady(f func()) {
-	a.ReadyFunc = f
 }
 
 func (a *App) IsReady() bool {

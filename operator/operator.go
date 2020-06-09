@@ -69,8 +69,6 @@ type Options struct {
 
 	// Delay before shutting manager when sigterm received
 	ShutdownDelay time.Duration
-
-	ReadyFunc func()
 }
 
 type Command struct {
@@ -88,7 +86,6 @@ func New(chainSuperviser manageos.ChainSuperviser, chainReadiness manageos.Readi
 		commandChan:    make(chan *Command, 10),
 		options:        options,
 		superviser:     chainSuperviser,
-		ReadyFunc:      options.ReadyFunc,
 	}
 
 	if options.SnapshotStoreURL != "" {
