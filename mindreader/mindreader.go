@@ -28,7 +28,6 @@ import (
 	"github.com/dfuse-io/dstore"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 )
 
 type ConsolerReader interface {
@@ -63,7 +62,7 @@ type MindReaderPlugin struct {
 	stopBlockReachFunc func()
 }
 
-func RunMindReaderPlugin(
+func NewMindReaderPlugin(
 	archiveStoreURL string,
 	mergeArchiveStoreURL string,
 	mergeUploadDirectly bool,
@@ -72,7 +71,6 @@ func RunMindReaderPlugin(
 	blockFileNamer BlockFileNamer,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
-	grpcServer *grpc.Server,
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
@@ -89,8 +87,6 @@ func RunMindReaderPlugin(
 	archiveStore.SetOverwrite(true)
 
 	gator := NewBlockNumberGator(startBlockNum)
-
-	blockServer := blockstream.NewServer(grpcServer)
 
 	// checking if working directory exists, if it does not create it....
 
@@ -148,7 +144,7 @@ func RunMindReaderPlugin(
 		return nil, fmt.Errorf("failed to init archiver: %s", err)
 	}
 
-	mindReaderPlugin, err := NewMindReaderPlugin(archiver, blockServer, consoleReaderFactory, consoleReaderTransformer, continuityChecker, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
+	mindReaderPlugin, err := newMindReaderPlugin(archiver, consoleReaderFactory, consoleReaderTransformer, continuityChecker, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -164,14 +160,17 @@ func RunMindReaderPlugin(
 		}
 	})
 
-	go mindReaderPlugin.ReadFlow()
-
 	return mindReaderPlugin, nil
 }
 
-func NewMindReaderPlugin(
+func (p *MindReaderPlugin) Run(server *blockstream.Server) {
+	p.blockServer = server
+	go p.ReadFlow()
+}
+
+func newMindReaderPlugin(
 	archiver Archiver,
-	blockServer *blockstream.Server,
+
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	continuityChecker ContinuityChecker,
@@ -192,7 +191,6 @@ func NewMindReaderPlugin(
 		ContinuityChecker:   continuityChecker,
 		consumeReadFlowDone: make(chan interface{}),
 		transformer:         consoleReaderTransformer,
-		blockServer:         blockServer,
 		writer:              pipeWriter,
 		archiver:            archiver,
 		gator:               gator,

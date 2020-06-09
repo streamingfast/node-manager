@@ -81,11 +81,10 @@ type Command struct {
 	logger   *zap.Logger
 }
 
-func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, chainReadiness manageos.Readiness, options *Options) (*Operator, error) {
+func New(chainSuperviser manageos.ChainSuperviser, chainReadiness manageos.Readiness, options *Options) (*Operator, error) {
 	m := &Operator{
 		Shutter:        shutter.New(),
 		chainReadiness: chainReadiness,
-		logger:         logger,
 		commandChan:    make(chan *Command, 10),
 		options:        options,
 		superviser:     chainSuperviser,

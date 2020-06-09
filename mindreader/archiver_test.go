@@ -185,7 +185,7 @@ func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
 }
 
 func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint64) (*MindReaderPlugin, error) {
-	return NewMindReaderPlugin(
+	return newMindReaderPlugin(
 		archiver,
 		blockstream.NewServer(dgrpc.NewServer(dgrpc.WithLogger(zlog))),
 		testConsoleReaderFactory,

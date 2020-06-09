@@ -17,6 +17,8 @@ package manageos
 import (
 	"time"
 
+	logplugin "github.com/dfuse-io/manageos/log_plugin"
+
 	"github.com/dfuse-io/dstore"
 )
 
@@ -31,7 +33,7 @@ type ChainSuperviser interface {
 	LastExitCode() int
 
 	RegisterPostRestoreHandler(func())
-
+	RegisterLogPlugin(plugin logplugin.LogPlugin)
 	Start(options ...StartOption) error
 	Stop() error
 

@@ -21,76 +21,45 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/manageos"
+
+	"github.com/dfuse-io/bstream/blockstream"
+
+	logplugin "github.com/dfuse-io/manageos/log_plugin"
+
+	"github.com/dfuse-io/dmetrics"
 
 	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/mindreader"
-	nodeosMindreader "github.com/dfuse-io/manageos/mindreader/nodeos"
 	"github.com/dfuse-io/manageos/operator"
-	"github.com/dfuse-io/manageos/profiler"
-	"github.com/dfuse-io/manageos/superviser/nodeos"
 	"github.com/dfuse-io/shutter"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
 
 type Config struct {
-	MetricID                  string
-	ManagerAPIAddress         string
-	NodeosAPIAddress          string
-	ConnectionWatchdog        bool
-	NodeosConfigDir           string
-	NodeosBinPath             string
-	NodeosDataDir             string
-	NoBlocksLog               bool
-	ProducerHostname          string
-	TrustedProducer           string
-	ReadinessMaxLatency       time.Duration
-	FailOnNonContinuousBlocks bool // Will enable the ContinuityChecker, which stops nodeos if a block was produced with a gap, to prevent a restart from going over problem blocks
-
-	NodeosExtraArgs []string
-
-	// Common Flags
-	BackupStoreURL string
-
+	NodeosAPIAddress    string
+	ManagerAPIAddress   string
+	ConnectionWatchdog  bool
+	NoBlocksLog         bool
+	ReadinessMaxLatency time.Duration
 	// Backup Flags
-	BackupTag        string
 	AutoBackupModulo int
 	AutoBackupPeriod time.Duration
-
 	// Snapshot Flags
 	AutoSnapshotModulo      int
 	AutoSnapshotPeriod      time.Duration
 	NumberOfSnapshotsToKeep int
-
-	BootstrapDataURL    string
-	DebugDeepMind       bool
-	LogToZap            bool
-	AutoRestoreSource   string
-	RestoreBackupName   string
-	RestoreSnapshotName string
-	SnapshotStoreURL    string
-	ShutdownDelay       time.Duration
-
-	ArchiveStoreURL            string
-	MergeArchiveStoreURL       string
-	MergeUploadDirectly        bool
-	GRPCAddr                   string
-	StartBlockNum              uint64
-	StopBlockNum               uint64
-	DiscardAfterStopBlock      bool
-	MindReadBlocksChanCapacity int
-	WorkingDir                 string
-
-	DisableProfiler         bool
+	DebugDeepMind           bool
+	GRPCAddr                string
 	StartFailureHandlerFunc func()
 }
 
 type Modules struct {
-	ConsoleReaderFactory     mindreader.ConsolerReaderFactory
-	ConsoleReaderTransformer mindreader.ConsoleReaderBlockTransformer
+	Operator                     *operator.Operator
+	MetricsAndReadinessManager   *manageos.MetricsAndReadinessManager
+	LogPlugin                    logplugin.LogPlugin
+	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 }
 
 type App struct {
@@ -116,137 +85,70 @@ func (a *App) Run() error {
 	hostname, _ := os.Hostname()
 	zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
-	metricID := a.Config.MetricID
-	if metricID == "" {
-		metricID = "manager"
-	}
-	zlog.Info("setting up metrics", zap.String("metric_id", metricID))
-
-	headBlockTimeDrift := metrics.NewHeadBlockTimeDrift(metricID)
-	headBlockNumber := metrics.NewHeadBlockNumber(metricID)
-
-	metricsAndReadinessManager := manageos.NewMetricsAndReadinessManager(headBlockTimeDrift, headBlockNumber, a.Config.ReadinessMaxLatency)
-
-	chainSuperviser, err := nodeos.NewSuperviser(zlog, zlogNodeos, a.Config.DebugDeepMind, nil, &nodeos.SuperviserOptions{
-		LocalNodeEndpoint: a.Config.NodeosAPIAddress,
-		ConfigDir:         a.Config.NodeosConfigDir,
-		BinPath:           a.Config.NodeosBinPath,
-		DataDir:           a.Config.NodeosDataDir,
-		Hostname:          hostname,
-		NoBlocksLog:       a.Config.NoBlocksLog,
-		ProducerHostname:  a.Config.ProducerHostname,
-		TrustedProducer:   a.Config.TrustedProducer,
-		AdditionalArgs:    a.Config.NodeosExtraArgs,
-		LogToZap:          a.Config.LogToZap,
-	})
-
-	if err != nil {
-		return fmt.Errorf("unable to create nodeos chain superviser: %w", err)
-	}
-
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
-	var p *profiler.Profiler
-	if !a.Config.DisableProfiler {
-		p = profiler.MaybeNew()
-	}
-
-	chainOperator, err := operator.New(zlog, chainSuperviser, metricsAndReadinessManager, &operator.Options{
-		BootstrapDataURL:           a.Config.BootstrapDataURL,
-		BackupTag:                  a.Config.BackupTag,
-		BackupStoreURL:             a.Config.BackupStoreURL,
-		AutoRestoreSource:          a.Config.AutoRestoreSource,
-		ShutdownDelay:              a.Config.ShutdownDelay,
-		RestoreBackupName:          a.Config.RestoreBackupName,
-		RestoreSnapshotName:        a.Config.RestoreSnapshotName,
-		SnapshotStoreURL:           a.Config.SnapshotStoreURL,
-		NumberOfSnapshotsToKeep:    a.Config.NumberOfSnapshotsToKeep,
-		EnableSupervisorMonitoring: false,
-		Profiler:                   p,
-		ReadyFunc:                  a.ReadyFunc,
-	})
-	//if a.Config.StartFailureHandlerFunc != nil {
-	//	chainOperator.RegisterStartFailureHandler(a.Config.StartFailureHandlerFunc)
-	//}
-
-	if err != nil {
-		return fmt.Errorf("unable to create chain operator: %w", err)
-	}
-
-	chainOperator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
-	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
+	a.modules.Operator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
+	a.modules.Operator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
 
 	gs := dgrpc.NewServer(dgrpc.WithLogger(zlog))
 
-	zlog.Info("launching mindreader plugin")
-	mindreaderLogPlugin, err := mindreader.RunMindReaderPlugin(
-		a.Config.ArchiveStoreURL,
-		a.Config.MergeArchiveStoreURL,
-		a.Config.MergeUploadDirectly,
-		a.Config.DiscardAfterStopBlock,
-		a.Config.WorkingDir,
-		nodeosMindreader.BlockFileNamer,
-		a.modules.ConsoleReaderFactory,
-		a.modules.ConsoleReaderTransformer,
-		gs,
-		a.Config.StartBlockNum,
-		a.Config.StopBlockNum,
-		a.Config.MindReadBlocksChanCapacity,
-		metricsAndReadinessManager.UpdateHeadBlock,
-		chainOperator.SetMaintenance,
-		func() {
-			chainOperator.Shutdown(nil)
-		},
-		a.Config.FailOnNonContinuousBlocks,
-	)
+	//some magic here
+	if s, ok := a.modules.LogPlugin.(logplugin.BlockStreamer); ok {
+		server := blockstream.NewServer(gs)
+		s.Run(server)
+	}
+
+	err := mindreader.RunGRPCServer(gs, a.Config.GRPCAddr)
 	if err != nil {
 		return err
 	}
 
-	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr)
-	if err != nil {
-		return err
+	//TODO: ContinuityChecker
+	//TODO: ContinuityChecker
+	//TODO: ContinuityChecker
+	//TODO: ContinuityChecker
+	//TODO: ContinuityChecker
+
+	//if a.Config.FailOnNonContinuousBlocks {
+	//	a.modules.Superviser.RegisterPostRestoreHandler(mindreaderLogPlugin.ContinuityChecker.Reset)
+	//}
+
+	if p, ok := a.modules.LogPlugin.(logplugin.Shutter); ok {
+		a.modules.Operator.OnTerminating(p.Shutdown)
+		p.OnTerminated(a.modules.Operator.Shutdown)
 	}
 
-	chainSuperviser.RegisterLogPlugin(mindreaderLogPlugin)
-	if a.Config.FailOnNonContinuousBlocks {
-		chainSuperviser.RegisterPostRestoreHandler(mindreaderLogPlugin.ContinuityChecker.Reset)
-	}
-
-	chainOperator.OnTerminating(mindreaderLogPlugin.Shutdown)
-	mindreaderLogPlugin.OnTerminated(chainOperator.Shutdown)
-
-	a.OnTerminating(chainOperator.Shutdown)
-	chainOperator.OnTerminated(func(err error) {
+	a.OnTerminating(a.modules.Operator.Shutdown)
+	a.modules.Operator.OnTerminated(func(err error) {
 		zlog.Info("chain operator terminated shutting down mindreader app")
 		a.Shutdown(err)
 	})
 
 	if a.Config.ConnectionWatchdog {
-		go chainSuperviser.LaunchConnectionWatchdog(chainOperator.Terminating())
+		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
 	startNodeosOnLaunch := true
 	var httpOptions []operator.HTTPOption
 
-	if a.Config.FailOnNonContinuousBlocks {
-		if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
-			zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
-			startNodeosOnLaunch = false
-		}
-
-		httpOptions = append(httpOptions, func(r *mux.Router) {
-			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
-				mindreaderLogPlugin.ContinuityChecker.Reset()
-				w.Write([]byte("ok"))
-			})
-		})
-	}
+	//if a.Config.FailOnNonContinuousBlocks {
+	//	if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
+	//		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
+	//		startNodeosOnLaunch = false
+	//	}
+	//
+	//	httpOptions = append(httpOptions, func(r *mux.Router) {
+	//		r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
+	//			mindreaderLogPlugin.ContinuityChecker.Reset()
+	//			w.Write([]byte("ok"))
+	//		})
+	//	})
+	//}
 
 	zlog.Info("launching operator")
-	go metricsAndReadinessManager.Launch()
-	go chainOperator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
+	go a.modules.MetricsAndReadinessManager.Launch()
+	go a.modules.Operator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
 
 	return nil
 }

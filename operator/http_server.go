@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/dfuse-io/manageos/superviser"
-
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
