@@ -24,7 +24,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func RunGRPCServer(s *grpc.Server, listenAddr string) error {
+func RunGRPCServer(s *grpc.Server, listenAddr string, zlog *zap.Logger) error {
 	zlog.Info("starting grpc listener", zap.String("listen_addr", listenAddr))
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {

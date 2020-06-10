@@ -19,13 +19,17 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/logging"
 )
 
+var testLogger = zap.NewNop()
+
 func init() {
 	if os.Getenv("DEBUG") != "" {
-		zlog = logging.MustCreateLogger()
+		testLogger = logging.MustCreateLogger()
 	}
 }
 

@@ -49,6 +49,7 @@ type OneblockArchiver struct {
 	workDir            string
 	uploadMutex        sync.Mutex
 	stopBlock          uint64
+	zlog               *zap.Logger
 }
 
 func NewOneblockArchiver(
@@ -57,6 +58,7 @@ func NewOneblockArchiver(
 	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
 	stopBlock uint64,
+	zlog *zap.Logger,
 ) *OneblockArchiver {
 	return &OneblockArchiver{
 		store:              store,
@@ -64,6 +66,7 @@ func NewOneblockArchiver(
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
 		stopBlock:          stopBlock,
+		zlog:               zlog,
 	}
 }
 
@@ -129,7 +132,7 @@ func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
 func (s *OneblockArchiver) uploadFiles() error {
 	s.uploadMutex.Lock()
 	defer s.uploadMutex.Unlock()
-	filesToUpload, err := findFilesToUpload(s.workDir)
+	filesToUpload, err := s.findFilesToUpload(s.workDir)
 	if err != nil {
 		return fmt.Errorf("unable to find files to upload: %s", err)
 	}
@@ -148,7 +151,6 @@ func (s *OneblockArchiver) uploadFiles() error {
 		toBaseName := strings.TrimSuffix(filepath.Base(file), ".dat")
 
 		eg.Go(func() error {
-			zlog.Debug("about to move file", zap.String("file", file))
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
 
@@ -162,10 +164,10 @@ func (s *OneblockArchiver) uploadFiles() error {
 	return eg.Wait()
 }
 
-func findFilesToUpload(workingDirectory string) (filesToUpload []string, err error) {
+func (s *OneblockArchiver) findFilesToUpload(workingDirectory string) (filesToUpload []string, err error) {
 	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
 		if os.IsNotExist(err) {
-			zlog.Debug("filesToUpload skipping file that disappeared", zap.Error(err))
+			s.zlog.Debug("filesToUpload skipping file that disappeared", zap.Error(err))
 			return nil
 		}
 		if err != nil {
@@ -181,7 +183,7 @@ func findFilesToUpload(workingDirectory string) (filesToUpload []string, err err
 			if isDirEmpty(path) && time.Since(info.ModTime()) > 60*time.Second {
 				err := os.Remove(path)
 				if err != nil {
-					zlog.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
+					s.zlog.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
 				}
 			}
 			return nil

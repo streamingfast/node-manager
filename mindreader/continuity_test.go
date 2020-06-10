@@ -31,7 +31,7 @@ func tempFileName() string {
 func TestContinuityChecker(t *testing.T) {
 	tmp := tempFileName()
 
-	cc, err := newContinuityChecker(tmp)
+	cc, err := newContinuityChecker(tmp, testLogger)
 	require.NoError(t, err)
 
 	defer func() {
@@ -49,7 +49,7 @@ func TestContinuityChecker(t *testing.T) {
 	assert.Error(t, cc.Write(13))
 	assert.True(t, cc.locked)
 
-	cc2, err := newContinuityChecker(tmp)
+	cc2, err := newContinuityChecker(tmp, testLogger)
 	require.NoError(t, err)
 	assert.True(t, cc2.locked)
 	assert.Error(t, cc2.Write(10))

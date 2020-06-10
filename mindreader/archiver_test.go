@@ -179,7 +179,7 @@ func TestNewGSStore(t *testing.T) {
 }
 
 func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
-	return NewOneblockArchiver(path, store, testBlockFileNamer, testBlockWriteFactory, 0)
+	return NewOneblockArchiver(path, store, testBlockFileNamer, testBlockWriteFactory, 0, testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint64) (*MindReaderPlugin, error) {
@@ -191,6 +191,7 @@ func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint6
 		startBlockNum,
 		10,
 		nil,
+		testLogger,
 	)
 }
 

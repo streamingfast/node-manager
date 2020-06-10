@@ -66,22 +66,24 @@ type App struct {
 	*shutter.Shutter
 	Config  *Config
 	modules *Modules
+	zlog    *zap.Logger
 }
 
-func New(c *Config, modules *Modules) *App {
+func New(c *Config, modules *Modules, zlog *zap.Logger) *App {
 	n := &App{
 		Shutter: shutter.New(),
 		Config:  c,
 		modules: modules,
+		zlog:    zlog,
 	}
 	return n
 }
 
 func (a *App) Run() error {
-	zlog.Info("launching nodeos mindreader", zap.Reflect("config", a.Config))
+	a.zlog.Info("launching nodeos mindreader", zap.Reflect("config", a.Config))
 
 	hostname, _ := os.Hostname()
-	zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
+	a.zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
@@ -89,7 +91,7 @@ func (a *App) Run() error {
 	a.modules.Operator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
 	a.modules.Operator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
 
-	gs := dgrpc.NewServer(dgrpc.WithLogger(zlog))
+	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlog))
 
 	//some magic here
 	if s, ok := a.modules.LogPlugin.(logplugin.BlockStreamer); ok {
@@ -97,7 +99,7 @@ func (a *App) Run() error {
 		s.Run(server)
 	}
 
-	err := mindreader.RunGRPCServer(gs, a.Config.GRPCAddr)
+	err := mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlog)
 	if err != nil {
 		return err
 	}
@@ -119,7 +121,7 @@ func (a *App) Run() error {
 
 	a.OnTerminating(a.modules.Operator.Shutdown)
 	a.modules.Operator.OnTerminated(func(err error) {
-		zlog.Info("chain operator terminated shutting down mindreader app")
+		a.zlog.Info("chain operator terminated shutting down mindreader app")
 		a.Shutdown(err)
 	})
 
@@ -132,7 +134,7 @@ func (a *App) Run() error {
 
 	//if a.Config.FailOnNonContinuousBlocks {
 	//	if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
-	//		zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
+	//		a.zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
 	//		startNodeosOnLaunch = false
 	//	}
 	//
@@ -144,7 +146,7 @@ func (a *App) Run() error {
 	//	})
 	//}
 
-	zlog.Info("launching operator")
+	a.zlog.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
 	go a.modules.Operator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
 
@@ -158,14 +160,14 @@ func (a *App) IsReady() bool {
 	url := fmt.Sprintf("http://%s/healthz", a.Config.ManagerAPIAddress)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		zlog.Warn("unable to build get health request", zap.Error(err))
+		a.zlog.Warn("unable to build get health request", zap.Error(err))
 		return false
 	}
 
 	client := http.DefaultClient
 	res, err := client.Do(req)
 	if err != nil {
-		zlog.Debug("unable to execute get health request", zap.Error(err))
+		a.zlog.Debug("unable to execute get health request", zap.Error(err))
 		return false
 	}
 
