@@ -52,16 +52,15 @@ type Modules struct {
 
 type App struct {
 	*shutter.Shutter
-	Config    *Config
-	Modules   *Modules
-	ReadyFunc func()
+	Config  *Config
+	Modules *Modules
 }
 
 func New(config *Config, modules *Modules) *App {
 	return &App{
-		Shutter:   shutter.New(),
-		Config:    config,
-		ReadyFunc: func() {},
+		Shutter: shutter.New(),
+		Config:  config,
+		Modules: modules,
 	}
 }
 
@@ -89,10 +88,6 @@ func (a *App) Run() error {
 	go a.Shutdown(a.Modules.Operator.Launch(true, a.Config.ManagerAPIAddress))
 
 	return nil
-}
-
-func (a *App) OnReady(f func()) {
-	a.ReadyFunc = f
 }
 
 func (a *App) IsReady() bool {

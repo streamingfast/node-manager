@@ -25,4 +25,8 @@ var zlogNodeos *zap.Logger
 func init() {
 	logging.Register("github.com/dfuse-io/manageos/app/nodeos_mindreader", &zlog)
 	logging.Register("github.com/dfuse-io/manageos/app/nodeos_mindreader/nodeos", &zlogNodeos)
+
+	zlog.With(zap.String("type", "mindreader"))
+	zlogNodeos.With(zap.String("type", "mindreader"))
+
 }

@@ -54,7 +54,7 @@ func (m *Operator) RunHTTPServer(httpListenAddr string, options ...HTTPOption) *
 		opt(r)
 	}
 
-	m.logger.Info("starting webserver", zap.String("http_addr", httpListenAddr))
+	zlog.Info("starting webserver", zap.String("http_addr", httpListenAddr))
 	err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 		pathTemplate, err := route.GetPathTemplate()
 		if err == nil {
@@ -66,19 +66,19 @@ func (m *Operator) RunHTTPServer(httpListenAddr string, options ...HTTPOption) *
 				methods = "GET"
 			}
 
-			m.logger.Debug("walked route methods", zap.String("methods", methods), zap.String("path_template", pathTemplate))
+			zlog.Debug("walked route methods", zap.String("methods", methods), zap.String("path_template", pathTemplate))
 		}
 		return nil
 	})
 
 	if err != nil {
-		m.logger.Error("walking route methods", zap.Error(err))
+		zlog.Error("walking route methods", zap.Error(err))
 	}
 
 	srv := &http.Server{Addr: httpListenAddr, Handler: r}
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			m.logger.Info("http server did not close correctly")
+			zlog.Info("http server did not close correctly")
 			m.Shutdown(err)
 		}
 	}()
@@ -163,7 +163,7 @@ func (m *Operator) listBackupsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	offset, err := strconv.ParseInt(r.FormValue("offset"), 10, 64)
 
-	backups, err := superviser.ListPitreosBackup(m.logger, backupTag, m.options.BackupStoreURL, prefix, int(limit), int(offset))
+	backups, err := superviser.ListPitreosBackup(zlog, backupTag, m.options.BackupStoreURL, prefix, int(limit), int(offset))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(fmt.Sprintf("ERROR: listBackups failed: %s\n", err)))
@@ -237,7 +237,7 @@ func (m *Operator) resumeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Operator) triggerWebCommand(cmdName string, params map[string]string, w http.ResponseWriter, r *http.Request) {
-	c := &Command{cmd: cmdName, logger: m.logger}
+	c := &Command{cmd: cmdName, logger: zlog}
 	c.params = params
 	sync := r.FormValue("sync")
 	if sync == "true" {

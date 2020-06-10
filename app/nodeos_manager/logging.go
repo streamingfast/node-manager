@@ -23,6 +23,10 @@ var zlog *zap.Logger
 var zlogNodeos *zap.Logger
 
 func init() {
+
 	logging.Register("github.com/dfuse-io/manageos/app/nodeos_manager", &zlog)
 	logging.Register("github.com/dfuse-io/manageos/app/nodeos_manager/nodeos", &zlogNodeos)
+
+	zlog.With(zap.String("type", "node-manager"))
+	zlogNodeos.With(zap.String("type", "node-manager"))
 }

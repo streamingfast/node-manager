@@ -37,9 +37,7 @@ type Operator struct {
 	options              *Options
 	lastStartCommand     time.Time
 	attemptedAutoRestore bool
-	ReadyFunc            func()
 
-	logger         *zap.Logger
 	commandChan    chan *Command
 	httpServer     *http.Server
 	superviser     manageos.ChainSuperviser
@@ -100,13 +98,13 @@ func New(chainSuperviser manageos.ChainSuperviser, chainReadiness manageos.Readi
 }
 
 func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...HTTPOption) error {
-	m.logger.Info("starting chain operator")
+	zlog.Info("starting chain operator")
 	m.OnTerminating(func(_ error) {
-		m.logger.Info("chain operator terminating")
+		zlog.Info("chain operator terminating")
 		m.cleanUp()
 	})
 
-	m.logger.Info("launching operator HTTP server", zap.String("http_listen_addr", httpListenAddr))
+	zlog.Info("launching operator HTTP server", zap.String("http_listen_addr", httpListenAddr))
 	m.httpServer = m.RunHTTPServer(httpListenAddr, options...)
 
 	if m.options.EnableSupervisorMonitoring {
@@ -121,12 +119,12 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	}
 
 	if startOnLaunch {
-		m.logger.Debug("sending initial start command")
-		m.commandChan <- &Command{cmd: "start", logger: m.logger}
+		zlog.Debug("sending initial start command")
+		m.commandChan <- &Command{cmd: "start", logger: zlog}
 	}
 
 	for {
-		m.logger.Info("operator ready to receive commands")
+		zlog.Info("operator ready to receive commands")
 		select {
 		case <-m.superviser.Stopped(): // stopped outside of a command that was expecting it
 			if m.attemptedAutoRestore || time.Since(m.lastStartCommand) > 10*time.Second {
@@ -136,13 +134,13 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 				}
 				break
 			}
-			m.logger.Warn("Instance stopped. Attempting restore from snapshot", zap.String("command", m.superviser.GetCommand()))
+			zlog.Warn("Instance stopped. Attempting restore from snapshot", zap.String("command", m.superviser.GetCommand()))
 			m.attemptedAutoRestore = true
 			switch m.options.AutoRestoreSource {
 			case "backup":
 				if err := m.runCommand(&Command{
 					cmd:    "restore",
-					logger: m.logger,
+					logger: zlog,
 				}); err != nil {
 					m.Shutdown(fmt.Errorf("attempted restore failed"))
 					if m.options.StartFailureHandlerFunc != nil {
@@ -152,7 +150,7 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			case "snapshot":
 				if err := m.runCommand(&Command{
 					cmd:    "snapshot_restore",
-					logger: m.logger,
+					logger: zlog,
 				}); err != nil {
 					m.Shutdown(fmt.Errorf("attempted restore failed"))
 					if m.options.StartFailureHandlerFunc != nil {
@@ -162,9 +160,9 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			}
 
 		case <-m.Terminating():
-			m.logger.Info("operator terminating, ending run/loop")
+			zlog.Info("operator terminating, ending run/loop")
 			m.runCommand(&Command{cmd: "maintenance"})
-			m.logger.Info("operator run maintenance command")
+			zlog.Info("operator run maintenance command")
 			return nil
 
 		case cmd := <-m.commandChan:
@@ -185,7 +183,7 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 }
 
 func (m *Operator) cleanUp() {
-	m.logger.Info("chain operator shutting down")
+	zlog.Info("chain operator shutting down")
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
@@ -197,7 +195,7 @@ func (m *Operator) cleanUp() {
 
 		if m.httpServer != nil {
 			if err := m.httpServer.Shutdown(ctx); err != nil {
-				m.logger.Error("unable to close http server gracefully", zap.Error(err))
+				zlog.Error("unable to close http server gracefully", zap.Error(err))
 			}
 		}
 
@@ -207,44 +205,44 @@ func (m *Operator) cleanUp() {
 	go func() {
 		err := m.superviser.Stop()
 		if err != nil {
-			m.logger.Error("unable to close superviser gracefully", zap.Error(err))
+			zlog.Error("unable to close superviser gracefully", zap.Error(err))
 		}
 
 		wg.Done()
 	}()
 
 	// FIXME: How could we have a timeout or so we do not wait forever!
-	m.logger.Info("chain operator wait on group")
+	zlog.Info("chain operator wait on group")
 	wg.Wait()
-	m.logger.Info("chain operator clean up done")
+	zlog.Info("chain operator clean up done")
 }
 
 func (m *Operator) runSubCommand(name string, parentCmd *Command) error {
-	return m.runCommand(&Command{cmd: name, returnch: parentCmd.returnch, logger: m.logger})
+	return m.runCommand(&Command{cmd: name, returnch: parentCmd.returnch, logger: zlog})
 }
 
 // runCommand does its work, and returns an error for irrecoverable states.
 func (m *Operator) runCommand(cmd *Command) error {
-	m.logger.Info("received operator command", zap.String("command", cmd.cmd), zap.Reflect("params", cmd.params))
+	zlog.Info("received operator command", zap.String("command", cmd.cmd), zap.Reflect("params", cmd.params))
 	switch cmd.cmd {
 	case "maintenance":
-		m.logger.Info("preparing to stop process")
+		zlog.Info("preparing to stop process")
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
 
 		// Careful, we are now "stopped". Every other case can handle that state.
-		m.logger.Info("successfully put in maintenance")
+		zlog.Info("successfully put in maintenance")
 
 	case "restore":
-		m.logger.Info("preparing for restore")
+		zlog.Info("preparing for restore")
 		backupable, ok := m.superviser.(manageos.BackupableChainSuperviser)
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support backups"))
 			return nil
 		}
 
-		m.logger.Info("asking chain superviser to restore a backup")
+		zlog.Info("asking chain superviser to restore a backup")
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
@@ -261,7 +259,7 @@ func (m *Operator) runCommand(cmd *Command) error {
 		return m.runSubCommand("start", cmd)
 
 	case "volumesnapshot":
-		m.logger.Info("preparing for volumesnapshot")
+		zlog.Info("preparing for volumesnapshot")
 		volumesnapshotable, ok := m.superviser.(manageos.VolumeSnapshotableChainSuperviser)
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support volume snapshot"))
@@ -274,7 +272,7 @@ func (m *Operator) runCommand(cmd *Command) error {
 			return nil
 		}
 
-		m.logger.Info("asking chain superviser to take a volume snapshot")
+		zlog.Info("asking chain superviser to take a volume snapshot")
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
@@ -287,14 +285,14 @@ func (m *Operator) runCommand(cmd *Command) error {
 		return m.runSubCommand("start", cmd)
 
 	case "backup":
-		m.logger.Info("preparing for backup")
+		zlog.Info("preparing for backup")
 		backupable, ok := m.superviser.(manageos.BackupableChainSuperviser)
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support backups"))
 			return nil
 		}
 
-		m.logger.Info("asking chain superviser to take a backup")
+		zlog.Info("asking chain superviser to take a backup")
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
@@ -306,7 +304,7 @@ func (m *Operator) runCommand(cmd *Command) error {
 		return m.runSubCommand("start", cmd)
 
 	case "snapshot":
-		m.logger.Info("preparing for snapshot")
+		zlog.Info("preparing for snapshot")
 		snapshotable, ok := m.superviser.(manageos.SnapshotableChainSuperviser)
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support snapshots"))
@@ -318,17 +316,17 @@ func (m *Operator) runCommand(cmd *Command) error {
 			return nil
 		}
 
-		m.logger.Info("snapshot completed")
+		zlog.Info("snapshot completed")
 
 	case "snapshot_restore":
-		m.logger.Info("preparing for performing a snapshot restore")
+		zlog.Info("preparing for performing a snapshot restore")
 		snapshotable, ok := m.superviser.(manageos.SnapshotableChainSuperviser)
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support snapshots"))
 			return nil
 		}
 
-		m.logger.Info("asking chain superviser to stop due to snapshot restore command")
+		zlog.Info("asking chain superviser to stop due to snapshot restore command")
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
@@ -343,11 +341,11 @@ func (m *Operator) runCommand(cmd *Command) error {
 			return err
 		}
 
-		m.logger.Warn("restarting node from snapshot, the restart will perform the actual snapshot restoration")
+		zlog.Warn("restarting node from snapshot, the restart will perform the actual snapshot restoration")
 		return m.runSubCommand("start", cmd)
 
 	case "reload":
-		m.logger.Info("preparing for reload")
+		zlog.Info("preparing for reload")
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
@@ -355,7 +353,7 @@ func (m *Operator) runCommand(cmd *Command) error {
 		return m.runSubCommand("start", cmd)
 
 	case "safely_resume_production":
-		m.logger.Info("preparing for safely resume production")
+		zlog.Info("preparing for safely resume production")
 		producer, ok := m.superviser.(manageos.ProducerChainSuperviser)
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support producing blocks"))
@@ -369,23 +367,23 @@ func (m *Operator) runCommand(cmd *Command) error {
 		}
 
 		if !isProducing {
-			m.logger.Info("resuming production of blocks")
+			zlog.Info("resuming production of blocks")
 			err := producer.ResumeProduction()
 			if err != nil {
 				cmd.Return(fmt.Errorf("error resuming production of blocks: %s", err))
 				return nil
 			}
 
-			m.logger.Info("successfully resumed producer")
+			zlog.Info("successfully resumed producer")
 
 		} else {
-			m.logger.Info("block production was already running, doing nothing")
+			zlog.Info("block production was already running, doing nothing")
 		}
 
-		m.logger.Info("successfully resumed block production")
+		zlog.Info("successfully resumed block production")
 
 	case "safely_pause_production":
-		m.logger.Info("preparing for safely pause production")
+		zlog.Info("preparing for safely pause production")
 		producer, ok := m.superviser.(manageos.ProducerChainSuperviser)
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support producing blocks"))
@@ -399,31 +397,31 @@ func (m *Operator) runCommand(cmd *Command) error {
 		}
 
 		if !isProducing {
-			m.logger.Info("block production is already paused, command is a no-op")
+			zlog.Info("block production is already paused, command is a no-op")
 			return nil
 		}
 
-		m.logger.Info("waiting to pause the producer")
+		zlog.Info("waiting to pause the producer")
 		err = producer.WaitUntilEndOfNextProductionRound(3 * time.Minute)
 		if err != nil {
 			cmd.Return(fmt.Errorf("timeout waiting for production round: %s", err))
 			return nil
 		}
 
-		m.logger.Info("pausing block production")
+		zlog.Info("pausing block production")
 		err = producer.PauseProduction()
 		if err != nil {
 			cmd.Return(fmt.Errorf("unable to pause production correctly: %s", err))
 			return nil
 		}
 
-		m.logger.Info("successfully paused block production")
+		zlog.Info("successfully paused block production")
 
 	case "safely_reload":
-		m.logger.Info("preparing for safely reload")
+		zlog.Info("preparing for safely reload")
 		producer, ok := m.superviser.(manageos.ProducerChainSuperviser)
 		if ok && producer.IsActiveProducer() {
-			m.logger.Info("waiting right after production round")
+			zlog.Info("waiting right after production round")
 			err := producer.WaitUntilEndOfNextProductionRound(3 * time.Minute)
 			if err != nil {
 				cmd.Return(fmt.Errorf("timeout waiting for production round: %s", err))
@@ -431,12 +429,12 @@ func (m *Operator) runCommand(cmd *Command) error {
 			}
 		}
 
-		m.logger.Info("issuing 'reload' now")
+		zlog.Info("issuing 'reload' now")
 		emptied := false
 		for !emptied {
 			select {
 			case interimCmd := <-m.commandChan:
-				m.logger.Info("emptying command queue while safely_reload was running, dropped", zap.Any("interim_cmd", interimCmd))
+				zlog.Info("emptying command queue while safely_reload was running, dropped", zap.Any("interim_cmd", interimCmd))
 			default:
 				emptied = true
 			}
@@ -445,13 +443,13 @@ func (m *Operator) runCommand(cmd *Command) error {
 		return m.runSubCommand("reload", cmd)
 
 	case "start", "resume":
-		m.logger.Info("preparing for start")
+		zlog.Info("preparing for start")
 		if m.superviser.IsRunning() {
-			m.logger.Info("chain is already running")
+			zlog.Info("chain is already running")
 			return nil
 		}
 
-		m.logger.Info("preparing to start chain")
+		zlog.Info("preparing to start chain")
 
 		var options []manageos.StartOption
 		if value := cmd.params["debug-deep-mind"]; value != "" {
@@ -466,13 +464,12 @@ func (m *Operator) runCommand(cmd *Command) error {
 			return fmt.Errorf("error starting chain superviser: %s", err)
 		}
 
-		m.logger.Info("successfully start service")
-		m.ReadyFunc()
+		zlog.Info("successfully start service")
 
 	case "shutdown":
-		m.logger.Info("preparing for shutdown")
+		zlog.Info("preparing for shutdown")
 		if err := m.superviser.Stop(); err != nil {
-			m.logger.Error("stopping nodeos failed, continuing shutdown anyway", zap.Error(err))
+			zlog.Error("stopping nodeos failed, continuing shutdown anyway", zap.Error(err))
 		}
 
 		return ErrCleanExit
@@ -496,11 +493,11 @@ func (c *Command) Return(err error) {
 func (m *Operator) bootstrap() error {
 	// forcing restore here
 	if m.options.RestoreBackupName != "" {
-		m.logger.Info("Performing Bootstrap from Backup")
+		zlog.Info("Performing Bootstrap from Backup")
 		return m.bootstrapFromBackup(m.options.RestoreBackupName)
 	}
 	if m.options.RestoreSnapshotName != "" {
-		m.logger.Info("Performing Bootstrap from Snapshot")
+		zlog.Info("Performing Bootstrap from Snapshot")
 		return m.bootstrapFromSnapshot(m.options.RestoreSnapshotName)
 	}
 
@@ -509,12 +506,12 @@ func (m *Operator) bootstrap() error {
 	}
 
 	if m.options.BootstrapDataURL != "" {
-		m.logger.Info("chain has no prior data and bootstrapDataURL is set. Attempting bootstrap from URL")
+		zlog.Info("chain has no prior data and bootstrapDataURL is set. Attempting bootstrap from URL")
 		err := m.bootstrapFromDataURL(m.options.BootstrapDataURL)
 		if err != nil {
-			m.logger.Warn("could not bootstrap from URL", zap.Error(err))
+			zlog.Warn("could not bootstrap from URL", zap.Error(err))
 		} else {
-			m.logger.Info("success bootstrap from URL")
+			zlog.Info("success bootstrap from URL")
 			return nil
 		}
 	}
@@ -523,14 +520,14 @@ func (m *Operator) bootstrap() error {
 	// using AutoRestore as a bootstrap source is confusing
 	//switch m.options.AutoRestoreSource {
 	//case "backup":
-	//	m.logger.Info("chain has no prior data and autoRestoreMethod is set to backup. Attempting restore from backup")
+	//	zlog.Info("chain has no prior data and autoRestoreMethod is set to backup. Attempting restore from backup")
 	//	err := m.bootstrapFromBackup("latest")
-	//	m.logger.Warn("could not bootstrap from Backup", zap.Error(err))
+	//	zlog.Warn("could not bootstrap from Backup", zap.Error(err))
 
 	//case "snapshot":
-	//	m.logger.Info("chain has no prior data and autoRestoreMethod is set to snapshot. Attempting restore from snapshot")
+	//	zlog.Info("chain has no prior data and autoRestoreMethod is set to snapshot. Attempting restore from snapshot")
 	//	err := m.bootstrapFromSnapshot("latest")
-	//	m.logger.Info("could not bootstrap from snapshot", zap.Error(err))
+	//	zlog.Info("could not bootstrap from snapshot", zap.Error(err))
 
 	//}
 
@@ -538,7 +535,7 @@ func (m *Operator) bootstrap() error {
 }
 
 func (m *Operator) bootstrapFromDataURL(dataURL string) error {
-	m.logger.Debug("bootstraping from pre-existing data prior starting process")
+	zlog.Debug("bootstraping from pre-existing data prior starting process")
 	bootstrapable, ok := m.superviser.(manageos.BootstrapableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support bootstrap")
@@ -564,7 +561,7 @@ func (m *Operator) bootstrapFromDataURL(dataURL string) error {
 }
 
 func (m *Operator) bootstrapFromSnapshot(snapshotName string) error {
-	m.logger.Debug("restoring snapshot prior starting process")
+	zlog.Debug("restoring snapshot prior starting process")
 	snapshotable, ok := m.superviser.(manageos.SnapshotableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support snapshots")
@@ -574,7 +571,7 @@ func (m *Operator) bootstrapFromSnapshot(snapshotName string) error {
 }
 
 func (m *Operator) bootstrapFromBackup(backupName string) error {
-	m.logger.Debug("restoring backup prior starting process")
+	zlog.Debug("restoring backup prior starting process")
 	backupable, ok := m.superviser.(manageos.BackupableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support backups")
@@ -588,8 +585,8 @@ func (m *Operator) bootstrapFromBackup(backupName string) error {
 	return nil
 }
 func (m *Operator) SetMaintenance() {
-	m.logger.Info("setting maintenance mode")
-	m.commandChan <- &Command{cmd: "maintenance", logger: m.logger}
+	zlog.Info("setting maintenance mode")
+	m.commandChan <- &Command{cmd: "maintenance", logger: zlog}
 }
 
 func (m *Operator) restoreSnapshot(snapshotable manageos.SnapshotableChainSuperviser, snapshotName string) error {
@@ -660,14 +657,14 @@ func (m *Operator) RunEveryPeriod(period time.Duration, commandName string) {
 		select {
 		case <-ticker.C:
 			if m.superviser.IsRunning() {
-				m.commandChan <- &Command{cmd: commandName, logger: m.logger}
+				m.commandChan <- &Command{cmd: commandName, logger: zlog}
 			}
 		}
 	}
 }
 
 func (m *Operator) RunAtSpecificBlocks(specificBlocks []uint64, commandName string) {
-	m.logger.Info("Scheduled for running a job a specific blocks", zap.String("command_name", commandName), zap.Any("specific_blocks", specificBlocks))
+	zlog.Info("Scheduled for running a job a specific blocks", zap.String("command_name", commandName), zap.Any("specific_blocks", specificBlocks))
 	sort.Slice(specificBlocks, func(i, j int) bool { return specificBlocks[i] < specificBlocks[j] })
 	nextIndex := 0
 	for {
@@ -678,7 +675,7 @@ func (m *Operator) RunAtSpecificBlocks(specificBlocks []uint64, commandName stri
 		}
 
 		if head > specificBlocks[nextIndex] {
-			m.commandChan <- &Command{cmd: commandName, logger: m.logger}
+			m.commandChan <- &Command{cmd: commandName, logger: zlog}
 			for {
 				nextIndex++
 				if nextIndex >= len(specificBlocks) {
@@ -706,7 +703,7 @@ func (m *Operator) RunEveryXBlock(freq uint32, commandName string) {
 		}
 
 		if lastSeenBlockNum > lastHeadReference+uint64(freq) {
-			m.commandChan <- &Command{cmd: commandName, logger: m.logger}
+			m.commandChan <- &Command{cmd: commandName, logger: zlog}
 			lastHeadReference = lastSeenBlockNum
 		}
 	}
