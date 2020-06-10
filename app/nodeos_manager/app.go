@@ -150,7 +150,7 @@ func (a *App) Run() error {
 	}
 
 	chainOperator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo, a.Config.AutoBackupHostnameMatch, hostname)
-	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo, a.Config.AutoBackupHostnameMatch, hostname)
+	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo, a.Config.AutoSnapshotHostnameMatch, hostname)
 
 	a.OnTerminating(chainOperator.Shutdown)
 	chainOperator.OnTerminating(a.Shutdown)
