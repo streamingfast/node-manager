@@ -29,6 +29,7 @@ import (
 	"github.com/dfuse-io/manageos"
 	"github.com/dfuse-io/manageos/profiler"
 	"github.com/dfuse-io/shutter"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
@@ -43,6 +44,7 @@ type Operator struct {
 	commandChan    chan *Command
 	httpServer     *http.Server
 	superviser     manageos.ChainSuperviser
+	aboutToStop    *atomic.Bool
 	chainReadiness manageos.Readiness
 	snapshotStore  dstore.Store
 }
@@ -90,6 +92,7 @@ func New(logger *zap.Logger, chainSuperviser manageos.ChainSuperviser, chainRead
 		options:        options,
 		superviser:     chainSuperviser,
 		ReadyFunc:      options.ReadyFunc,
+		aboutToStop:    atomic.NewBool(false),
 	}
 
 	if options.SnapshotStoreURL != "" {
@@ -233,6 +236,13 @@ func (m *Operator) runCommand(cmd *Command) error {
 	switch cmd.cmd {
 	case "maintenance":
 		m.logger.Info("preparing to stop process")
+
+		m.aboutToStop.Store(true)
+		defer m.aboutToStop.Store(false)
+		if m.options.ShutdownDelay != 0 {
+			m.logger.Info("marked as not_ready, waiting delay before actually stopping for maintenance", zap.Duration("delay", m.options.ShutdownDelay))
+			time.Sleep(m.options.ShutdownDelay)
+		}
 		if err := m.superviser.Stop(); err != nil {
 			return err
 		}
@@ -246,6 +256,9 @@ func (m *Operator) runCommand(cmd *Command) error {
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support backups"))
 			return nil
+		}
+		if err := m.superviser.Stop(); err != nil {
+			return err
 		}
 
 		m.logger.Info("asking chain superviser to restore a backup")
@@ -270,6 +283,12 @@ func (m *Operator) runCommand(cmd *Command) error {
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support volume snapshot"))
 			return nil
+		}
+		m.aboutToStop.Store(true)
+		defer m.aboutToStop.Store(false)
+		if m.options.ShutdownDelay != 0 {
+			m.logger.Info("marked as not_ready, waiting delay before actually stopping for volume snapshot", zap.Duration("delay", m.options.ShutdownDelay))
+			time.Sleep(m.options.ShutdownDelay)
 		}
 
 		lastBlockSeen := m.superviser.LastSeenBlockNum()
@@ -297,6 +316,12 @@ func (m *Operator) runCommand(cmd *Command) error {
 			cmd.Return(errors.New("the chain superviser does not support backups"))
 			return nil
 		}
+		m.aboutToStop.Store(true)
+		defer m.aboutToStop.Store(false)
+		if m.options.ShutdownDelay != 0 {
+			m.logger.Info("marked as not_ready, waiting delay before actually stopping for backup", zap.Duration("delay", m.options.ShutdownDelay))
+			time.Sleep(m.options.ShutdownDelay)
+		}
 
 		m.logger.Info("asking chain superviser to take a backup")
 		if err := m.superviser.Stop(); err != nil {
@@ -315,6 +340,13 @@ func (m *Operator) runCommand(cmd *Command) error {
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support snapshots"))
 			return nil
+		}
+
+		m.aboutToStop.Store(true)
+		defer m.aboutToStop.Store(false)
+		if m.options.ShutdownDelay != 0 {
+			m.logger.Info("marked as not_ready, waiting delay before actually taking snapshot", zap.Duration("delay", m.options.ShutdownDelay))
+			time.Sleep(m.options.ShutdownDelay)
 		}
 
 		if err := snapshotable.TakeSnapshot(m.getSnapshotStore(), m.options.NumberOfSnapshotsToKeep); err != nil {
@@ -475,6 +507,13 @@ func (m *Operator) runCommand(cmd *Command) error {
 
 	case "shutdown":
 		m.logger.Info("preparing for shutdown")
+		m.aboutToStop.Store(true)
+		defer m.aboutToStop.Store(false)
+		if m.options.ShutdownDelay != 0 {
+			m.logger.Info("marked as not_ready, waiting delay before actually stopping for shutdown", zap.Duration("delay", m.options.ShutdownDelay))
+			time.Sleep(m.options.ShutdownDelay)
+		}
+
 		if err := m.superviser.Stop(); err != nil {
 			m.logger.Error("stopping nodeos failed, continuing shutdown anyway", zap.Error(err))
 		}
