@@ -59,14 +59,16 @@ type Config struct {
 	ShutdownDelay       time.Duration
 
 	// Backup Flags
-	BackupTag        string
-	AutoBackupModulo int
-	AutoBackupPeriod time.Duration
+	BackupTag               string
+	AutoBackupModulo        int
+	AutoBackupPeriod        time.Duration
+	AutoBackupHostnameMatch string // If non-empty, will only apply autobackup if we have that hostname
 
 	// Snapshot Flags
-	AutoSnapshotModulo      int
-	AutoSnapshotPeriod      time.Duration
-	NumberOfSnapshotsToKeep int // do not delete if 0
+	AutoSnapshotModulo        int
+	AutoSnapshotPeriod        time.Duration
+	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
+	NumberOfSnapshotsToKeep   int    // do not delete if 0
 
 	StartFailureHandlerFunc func()
 
@@ -147,8 +149,8 @@ func (a *App) Run() error {
 		return fmt.Errorf("unable to create chain operator: %w", err)
 	}
 
-	chainOperator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
-	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
+	chainOperator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo, a.Config.AutoBackupHostnameMatch, hostname)
+	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo, a.Config.AutoBackupHostnameMatch, hostname)
 
 	a.OnTerminating(chainOperator.Shutdown)
 	chainOperator.OnTerminating(a.Shutdown)

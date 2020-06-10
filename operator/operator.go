@@ -616,7 +616,11 @@ func (m *Operator) getSnapshotStore() dstore.Store {
 	return m.snapshotStore
 }
 
-func (m *Operator) ConfigureAutoBackup(autoBackupInterval time.Duration, autoBackupBlockFrequency int) {
+func (m *Operator) ConfigureAutoBackup(autoBackupInterval time.Duration, autoBackupBlockFrequency int, expectedHostname, hostname string) {
+	if expectedHostname != "" && hostname != expectedHostname {
+		m.logger.Info("not setting auto-backup because hostname does not match expected value", zap.String("hostname", hostname), zap.String("expected_hostname", expectedHostname))
+		return
+	}
 	if autoBackupInterval != 0 {
 		go m.RunEveryPeriod(autoBackupInterval, "backup")
 	}
@@ -626,7 +630,12 @@ func (m *Operator) ConfigureAutoBackup(autoBackupInterval time.Duration, autoBac
 	}
 }
 
-func (m *Operator) ConfigureAutoSnapshot(autoSnapshotInterval time.Duration, autoSnapshotBlockFrequency int) {
+func (m *Operator) ConfigureAutoSnapshot(autoSnapshotInterval time.Duration, autoSnapshotBlockFrequency int, expectedHostname, hostname string) {
+	if expectedHostname != "" && hostname != expectedHostname {
+		m.logger.Info("not setting auto-snapshot because hostname does not match expected value", zap.String("hostname", hostname), zap.String("expected_hostname", expectedHostname))
+		return
+	}
+
 	if autoSnapshotInterval != 0 {
 		go m.RunEveryPeriod(autoSnapshotInterval, "snapshot")
 	}
