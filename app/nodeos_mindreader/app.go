@@ -56,14 +56,16 @@ type Config struct {
 	BackupStoreURL string
 
 	// Backup Flags
-	BackupTag        string
-	AutoBackupModulo int
-	AutoBackupPeriod time.Duration
+	BackupTag               string
+	AutoBackupModulo        int
+	AutoBackupPeriod        time.Duration
+	AutoBackupHostnameMatch string // If non-empty, will only apply autobackup if we have that hostname
 
 	// Snapshot Flags
-	AutoSnapshotModulo      int
-	AutoSnapshotPeriod      time.Duration
-	NumberOfSnapshotsToKeep int
+	AutoSnapshotModulo        int
+	AutoSnapshotPeriod        time.Duration
+	NumberOfSnapshotsToKeep   int
+	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
 
 	BootstrapDataURL    string
 	DebugDeepMind       bool
@@ -174,8 +176,8 @@ func (a *App) Run() error {
 		return fmt.Errorf("unable to create chain operator: %w", err)
 	}
 
-	chainOperator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
-	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
+	chainOperator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo, a.Config.AutoBackupHostnameMatch, hostname)
+	chainOperator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo, a.Config.AutoSnapshotHostnameMatch, hostname)
 
 	gs := dgrpc.NewServer(dgrpc.WithLogger(zlog))
 

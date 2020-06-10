@@ -121,6 +121,11 @@ func (m *Operator) healthzHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if m.aboutToStop.Load() {
+		http.Error(w, "not ready: chain about to stop", http.StatusServiceUnavailable)
+		return
+	}
+
 	w.Write([]byte("ready\n"))
 }
 
