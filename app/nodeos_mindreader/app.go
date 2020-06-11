@@ -248,7 +248,7 @@ func (a *App) Run() error {
 
 	zlog.Info("launching operator")
 	go metricsAndReadinessManager.Launch()
-	go chainOperator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
+	go a.Shutdown(chainOperator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...))
 
 	return nil
 }
