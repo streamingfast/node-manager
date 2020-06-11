@@ -41,15 +41,15 @@ func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 
 func (p *ToZapLogPlugin) LogLine(in string) {
 	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
-		if strings.HasPrefix(in, "info") {
+		if strings.HasPrefix(in, "<6>info") || strings.HasPrefix(in, "info") {
 			p.logger.Info(in)
 			return
 		}
-		if strings.HasPrefix(in, "error") {
+		if strings.HasPrefix(in, "<3>error") || strings.HasPrefix(in, "error") {
 			p.logger.Error(in)
 			return
 		}
-		if strings.HasPrefix(in, "warn") {
+		if strings.HasPrefix(in, "<4>warn") || strings.HasPrefix(in, "warn") {
 			p.logger.Warn(in)
 			return
 		}
