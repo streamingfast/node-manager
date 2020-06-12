@@ -166,6 +166,7 @@ func NewMindReaderPlugin(
 }
 
 func (p *MindReaderPlugin) Run(server *blockstream.Server) {
+	p.zlog.Info("Running")
 	p.blockServer = server
 	go p.ReadFlow()
 }
@@ -186,7 +187,7 @@ func newMindReaderPlugin(
 	if err != nil {
 		return nil, err
 	}
-
+	zlog.Info("Creating new mindreader plugin")
 	return &MindReaderPlugin{
 		Shutter:             shutter.New(),
 		consoleReader:       consoleReader,
@@ -209,6 +210,7 @@ func (p *MindReaderPlugin) cleanUp() {
 }
 
 func (p *MindReaderPlugin) ReadFlow() {
+	p.zlog.Info("Starting read flow")
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	go p.consumeReadFlow(blocks)
@@ -230,6 +232,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 }
 
 func (p *MindReaderPlugin) alwaysUploadFiles() {
+	p.zlog.Info("Starting file upload")
 	for {
 		if p.IsTerminating() { // the uploadFiles will be called again in 'cleanup()', we can leave here early
 			return
@@ -249,6 +252,8 @@ func (p *MindReaderPlugin) alwaysUploadFiles() {
 
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
+	p.zlog.Info("Starting consume flow")
+
 	defer func() {
 		p.archiver.cleanup()
 		p.zlog.Debug("archiver cleanup done")

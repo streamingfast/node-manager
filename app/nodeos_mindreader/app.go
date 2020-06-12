@@ -50,7 +50,6 @@ type Config struct {
 	AutoSnapshotModulo      int
 	AutoSnapshotPeriod      time.Duration
 	NumberOfSnapshotsToKeep int
-	DebugDeepMind           bool
 	GRPCAddr                string
 	StartFailureHandlerFunc func()
 }
