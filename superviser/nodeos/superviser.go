@@ -152,9 +152,16 @@ func (s *NodeosSuperviser) GetCommand() string {
 }
 
 func (s *NodeosSuperviser) HasData() bool {
-	_, blockErr := os.Stat(s.blocksDir)
-	_, stateErr := os.Stat(path.Join(s.options.DataDir, "state"))
-	return blockErr == nil && stateErr == nil
+	dir, err := ioutil.ReadDir(s.blocksDir)
+	// there should be blocks.log, blocks.index and the reversible folder
+	if err != nil || len(dir) < 3 {
+		return false
+	}
+	dir, err = ioutil.ReadDir(path.Join(s.options.DataDir, "state"))
+	if err != nil || len(dir) == 0 {
+		return false
+	}
+	return true
 }
 
 func (s *NodeosSuperviser) removeState() error {
