@@ -153,8 +153,7 @@ func (s *NodeosSuperviser) GetCommand() string {
 
 func (s *NodeosSuperviser) HasData() bool {
 	dir, err := ioutil.ReadDir(s.blocksDir)
-	// there should be blocks.log, blocks.index and the reversible folder
-	if err != nil || len(dir) < 3 {
+	if err != nil || len(dir) == 0 {
 		return false
 	}
 	dir, err = ioutil.ReadDir(path.Join(s.options.DataDir, "state"))
@@ -173,7 +172,7 @@ func (s *NodeosSuperviser) removeState() error {
 	for _, file := range dir {
 		err = os.RemoveAll(path.Join(stateDir, file.Name()))
 		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("cannot delete state: %w", err)
+			return fmt.Errorf("cannot delete state element: %w", err)
 		}
 	}
 	return nil
