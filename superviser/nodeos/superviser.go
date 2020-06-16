@@ -16,6 +16,7 @@ package nodeos
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -157,9 +158,16 @@ func (s *NodeosSuperviser) HasData() bool {
 }
 
 func (s *NodeosSuperviser) removeState() error {
-	err := os.RemoveAll(path.Join(path.Join(s.options.DataDir, "state")))
+	stateDir := path.Join(s.options.DataDir, "state")
+	dir, err := ioutil.ReadDir(stateDir)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot delete state directory: %w", err)
+		return fmt.Errorf("cannot read state directory: %w", err)
+	}
+	for _, file := range dir {
+		err = os.RemoveAll(path.Join(stateDir, file.Name()))
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("cannot delete state: %w", err)
+		}
 	}
 	return nil
 }
