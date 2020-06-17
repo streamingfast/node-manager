@@ -143,10 +143,10 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 				}
 				break
 			}
-			m.logger.Warn("Instance stopped. Attempting restore from snapshot", zap.String("command", m.superviser.GetCommand()))
-			m.attemptedAutoRestore = true
 			switch m.options.AutoRestoreSource {
 			case "backup":
+				m.logger.Warn("Instance stopped. Attempting restore from pitreos backup", zap.String("command", m.superviser.GetCommand()))
+				m.attemptedAutoRestore = true
 				if err := m.runCommand(&Command{
 					cmd:    "restore",
 					logger: m.logger,
@@ -157,6 +157,8 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 					}
 				}
 			case "snapshot":
+				m.logger.Warn("Instance stopped. Attempting restore from snapshot", zap.String("command", m.superviser.GetCommand()))
+				m.attemptedAutoRestore = true
 				if err := m.runCommand(&Command{
 					cmd:    "snapshot_restore",
 					logger: m.logger,
@@ -166,6 +168,15 @@ func (m *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 						m.options.StartFailureHandlerFunc()
 					}
 				}
+			case "shutdown":
+				m.Shutdown(fmt.Errorf("Instance `%s` stopped (exit code: %d). Shutting down.", m.superviser.GetName(), m.superviser.LastExitCode()))
+				if m.options.StartFailureHandlerFunc != nil {
+					m.options.StartFailureHandlerFunc()
+				}
+				break
+
+			default:
+				m.logger.Warn("Instance stopped. No auto-restore method chosen, leaving process running", zap.String("command", m.superviser.GetCommand()))
 			}
 
 		case <-m.Terminating():
