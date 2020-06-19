@@ -171,6 +171,14 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 	for {
 		select {
 		case status := <-statusChan:
+			select {
+			case line := <-cmd.Stdout:
+				s.processLogLine(line)
+			case line := <-cmd.Stderr:
+				s.processLogLine(line)
+			default:
+				s.endLogPlugins()
+			}
 			if status.Exit == 0 {
 				s.Logger.Info("command terminated with zero status")
 			} else {
@@ -185,6 +193,14 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 	}
 }
 
+func (s *Superviser) endLogPlugins() {
+	s.logPluginsLock.RLock()
+	defer s.logPluginsLock.RUnlock()
+
+	for _, plugin := range s.logPlugins {
+		plugin.Close(nil)
+	}
+}
 func (s *Superviser) processLogLine(line string) {
 	s.logPluginsLock.RLock()
 	defer s.logPluginsLock.RUnlock()

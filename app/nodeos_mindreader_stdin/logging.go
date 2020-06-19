@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package logplugin
+package nodeos_mindreader_stdin
 
-type LogPlugin interface {
-	LogLine(in string)
-	Close(err error)
+import (
+	"github.com/dfuse-io/logging"
+	"go.uber.org/zap"
+)
+
+var zlog *zap.Logger
+var zlogNodeos *zap.Logger
+
+func init() {
+	logging.Register("github.com/dfuse-io/manageos/app/nodeos_mindreader_stdin", &zlog)
+	logging.Register("github.com/dfuse-io/manageos/app/nodeos_mindreader_stdin/nodeos", &zlogNodeos)
 }
-
-type LogPluginFunc func(line string)
-
-func (f LogPluginFunc) LogLine(line string) { f(line) }
-
-func (f LogPluginFunc) Close(_ error) {}

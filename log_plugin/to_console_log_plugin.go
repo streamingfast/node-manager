@@ -46,6 +46,9 @@ func (p *ToConsoleLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
 }
 
+func (p *ToConsoleLogPlugin) Close(_ error) {
+}
+
 func (p *ToConsoleLogPlugin) LogLine(in string) {
 	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
 		logLineLength := int64(len(in))

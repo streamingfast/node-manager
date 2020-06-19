@@ -219,7 +219,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 		if err != nil {
 			if err == io.EOF {
 				zlog.Info("Mindreader plugin shut down correctly")
-				continue
+				return
 			}
 			zlog.Error("reading from console logs", zap.Error(err))
 			p.setMaintenanceFunc()
@@ -260,12 +260,11 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			// We keep going if more blocks to process, so we never skip writing blocks
 			zlog.Debug("received a terminating sig")
 			if len(blocks) == 0 {
-				// FIXME: consoleReader never gets done because LogLine does not signal EOF
-				//zlog.Info("will shutdown when console reader is done")
-				//<-p.consoleReader.Done()
+				zlog.Info("will shutdown when console reader is done")
+				<-p.consoleReader.Done()
+				zlog.Info("console reader is done")
 				return
 			}
-			// TODO: access consolereader Done
 			zlog.Info("will shutdown when block count == 0", zap.Int("block_count", len(blocks)))
 
 		case block := <-blocks:
@@ -323,6 +322,14 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 
 	return nil
+}
+
+func (p *MindReaderPlugin) Close(err error) {
+	e := p.writer.CloseWithError(err)
+	if e != nil {
+		zlog.Error("error closing mindreader writer", zap.Error(e))
+	}
+	p.Shutdown(err)
 }
 
 // LogLine receives log line and write it to "pipe" of the local console reader

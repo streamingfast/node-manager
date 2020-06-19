@@ -39,6 +39,9 @@ func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
 }
 
+func (p *ToZapLogPlugin) Close(_ error) {
+}
+
 func (p *ToZapLogPlugin) LogLine(in string) {
 	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
 		if strings.HasPrefix(in, "<6>info") || strings.HasPrefix(in, "info") {
