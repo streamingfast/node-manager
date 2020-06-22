@@ -92,6 +92,7 @@ func (a *App) Run() error {
 		return err
 	}
 	mindreaderLogPlugin.OnTerminated(a.Shutdown)
+	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
 	reader := bufio.NewReader(os.Stdin)
 	go func() {
