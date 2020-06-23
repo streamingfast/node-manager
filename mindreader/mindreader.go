@@ -278,13 +278,15 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 				}
 			}
 
-			err = p.blockServer.PushBlock(block)
-			if err != nil {
-				p.zlog.Error("failed passing block to blockServer", zap.Error(err))
-				p.Shutdown(fmt.Errorf("failed writing to blocks server handler: %s", err))
-				return
-			}
+			if p.blockServer != nil {
+				err = p.blockServer.PushBlock(block)
+				if err != nil {
+					p.zlog.Error("failed passing block to blockServer", zap.Error(err))
+					p.Shutdown(fmt.Errorf("failed writing to blocks server handler: %s", err))
+					return
+				}
 
+			}
 		}
 	}
 }
