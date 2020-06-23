@@ -21,8 +21,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream/blockstream"
-	"github.com/dfuse-io/dgrpc"
+	"google.golang.org/grpc"
+
 	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/manageos"
 	logplugin "github.com/dfuse-io/manageos/log_plugin"
@@ -57,6 +57,7 @@ type Modules struct {
 	LogPlugin                    logplugin.LogPlugin
 	ContinuityChecker            mindreader.ContinuityChecker
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
+	GRPCServer                   *grpc.Server
 }
 
 type App struct {
@@ -88,15 +89,7 @@ func (a *App) Run() error {
 	a.modules.Operator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
 	a.modules.Operator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
 
-	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlog))
-
-	//some magic here
-	if s, ok := a.modules.LogPlugin.(logplugin.BlockStreamer); ok {
-		server := blockstream.NewServer(gs)
-		s.Run(server)
-	}
-
-	err := mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlog)
+	err := mindreader.RunGRPCServer(a.modules.GRPCServer, a.Config.GRPCAddr, a.zlog)
 	if err != nil {
 		return err
 	}
