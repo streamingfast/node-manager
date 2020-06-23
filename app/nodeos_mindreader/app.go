@@ -21,19 +21,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/manageos"
-
 	"github.com/dfuse-io/bstream/blockstream"
-
-	logplugin "github.com/dfuse-io/manageos/log_plugin"
-
-	"github.com/dfuse-io/dmetrics"
-
 	"github.com/dfuse-io/dgrpc"
+	"github.com/dfuse-io/dmetrics"
+	"github.com/dfuse-io/manageos"
+	logplugin "github.com/dfuse-io/manageos/log_plugin"
 	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/mindreader"
 	"github.com/dfuse-io/manageos/operator"
 	"github.com/dfuse-io/shutter"
+	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
 
@@ -58,6 +55,7 @@ type Modules struct {
 	Operator                     *operator.Operator
 	MetricsAndReadinessManager   *manageos.MetricsAndReadinessManager
 	LogPlugin                    logplugin.LogPlugin
+	ContinuityChecker            mindreader.ContinuityChecker
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 }
 
@@ -103,16 +101,6 @@ func (a *App) Run() error {
 		return err
 	}
 
-	//TODO: ContinuityChecker
-	//TODO: ContinuityChecker
-	//TODO: ContinuityChecker
-	//TODO: ContinuityChecker
-	//TODO: ContinuityChecker
-
-	//if a.Config.FailOnNonContinuousBlocks {
-	//	a.modules.Superviser.RegisterPostRestoreHandler(mindreaderLogPlugin.ContinuityChecker.Reset)
-	//}
-
 	if p, ok := a.modules.LogPlugin.(logplugin.Shutter); ok {
 		a.modules.Operator.OnTerminating(p.Shutdown)
 		p.OnTerminated(a.modules.Operator.Shutdown)
@@ -131,19 +119,15 @@ func (a *App) Run() error {
 	startNodeosOnLaunch := true
 	var httpOptions []operator.HTTPOption
 
-	//if a.Config.FailOnNonContinuousBlocks {
-	//	if mindreaderLogPlugin.ContinuityChecker.IsLocked() {
-	//		a.zlog.Error("continuity checker shows that a hole was previously detected. NOT STARTING PROCESS WITHOUT MANUAL reset_cc or restore")
-	//		startNodeosOnLaunch = false
-	//	}
-	//
-	//	httpOptions = append(httpOptions, func(r *mux.Router) {
-	//		r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
-	//			mindreaderLogPlugin.ContinuityChecker.Reset()
-	//			w.Write([]byte("ok"))
-	//		})
-	//	})
-	//}
+	if a.modules.ContinuityChecker != nil {
+
+		httpOptions = append(httpOptions, func(r *mux.Router) {
+			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
+				a.modules.ContinuityChecker.Reset()
+				w.Write([]byte("ok"))
+			})
+		})
+	}
 
 	a.zlog.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()

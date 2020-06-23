@@ -30,7 +30,7 @@ type ContinuityChecker interface {
 	Write(lastSeenBlockNum uint64) error
 }
 
-func newContinuityChecker(filePath string, zlog *zap.Logger) (*continuityChecker, error) {
+func NewContinuityChecker(filePath string, zlog *zap.Logger) (*continuityChecker, error) {
 	cc := &continuityChecker{
 		filePath: filePath,
 		zlog:     zlog,

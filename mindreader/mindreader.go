@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/dfuse-io/manageos"
@@ -78,7 +77,7 @@ func NewMindReaderPlugin(
 	headBlockUpdateFunc manageos.HeadBlockUpdater,
 	setMaintenanceFunc func(),
 	stopBlockReachFunc func(),
-	failOnNonContinuousBlocks bool,
+	continuityChecker ContinuityChecker,
 	zlog *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
@@ -98,18 +97,6 @@ func NewMindReaderPlugin(
 			// TODO: maybe we should exist out?
 			zlog.Error("unable to create working directory", zap.String("working_directory", workingDirectory))
 		}
-	}
-
-	var continuityChecker ContinuityChecker // cannot use *continuityChecker here, because of golang caveat with checking nil value on interface{}
-
-	cc, err := newContinuityChecker(filepath.Join(workingDirectory, "continuity_check"), zlog)
-	if err != nil {
-		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
-	}
-	if failOnNonContinuousBlocks {
-		continuityChecker = cc
-	} else {
-		cc.Reset()
 	}
 
 	var archiver Archiver
