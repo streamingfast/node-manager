@@ -19,10 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/logging"
+	"go.uber.org/zap"
 )
 
 var testLogger = zap.NewNop()

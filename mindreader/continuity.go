@@ -30,10 +30,10 @@ type ContinuityChecker interface {
 	Write(lastSeenBlockNum uint64) error
 }
 
-func NewContinuityChecker(filePath string, zlog *zap.Logger) (*continuityChecker, error) {
+func NewContinuityChecker(filePath string, zlogger *zap.Logger) (*continuityChecker, error) {
 	cc := &continuityChecker{
 		filePath: filePath,
-		zlog:     zlog,
+		zlogger:  zlogger,
 	}
 	err := cc.load()
 	if err != nil {
@@ -47,7 +47,7 @@ type continuityChecker struct {
 	highestSeenBlock uint64
 	locked           bool
 	filePath         string
-	zlog             *zap.Logger
+	zlogger          *zap.Logger
 }
 
 func (cc *continuityChecker) IsLocked() bool {
@@ -55,18 +55,18 @@ func (cc *continuityChecker) IsLocked() bool {
 }
 
 func (cc *continuityChecker) Reset() {
-	cc.zlog.Info("resetting continuity checker")
+	cc.zlogger.Info("resetting continuity checker")
 	cc.highestSeenBlock = 0
 	cc.locked = false
 
 	err := os.Remove(cc.filePath)
 	if err != nil && !os.IsNotExist(err) {
-		cc.zlog.Error("cannot remove continuity file", zap.String("lock_file_path", cc.filePath), zap.Error(err))
+		cc.zlogger.Error("cannot remove continuity file", zap.String("lock_file_path", cc.filePath), zap.Error(err))
 	}
 
 	err = os.Remove(cc.lockFilePath())
 	if err != nil && !os.IsNotExist(err) {
-		cc.zlog.Error("cannot remove lock file", zap.String("lock_file_path", cc.lockFilePath()), zap.Error(err))
+		cc.zlogger.Error("cannot remove lock file", zap.String("lock_file_path", cc.lockFilePath()), zap.Error(err))
 	}
 }
 
@@ -75,7 +75,7 @@ func (cc *continuityChecker) load() error {
 		cc.locked = true
 	}
 
-	defer cc.zlog.Info("loading continuityChecker info", zap.Bool("locked", cc.locked), zap.Uint64("highest_seen_block", cc.highestSeenBlock))
+	defer cc.zlogger.Info("loading continuityChecker info", zap.Bool("locked", cc.locked), zap.Uint64("highest_seen_block", cc.highestSeenBlock))
 
 	b, err := ioutil.ReadFile(cc.filePath)
 	if err != nil {
@@ -95,7 +95,7 @@ func (cc *continuityChecker) setLock() {
 	cc.locked = true
 	_, err := os.Create(cc.lockFilePath())
 	if err != nil {
-		cc.zlog.Error("cannot create lock file", zap.String("lock_file_path", cc.lockFilePath()), zap.Error(err))
+		cc.zlogger.Error("cannot create lock file", zap.String("lock_file_path", cc.lockFilePath()), zap.Error(err))
 	}
 }
 
@@ -119,6 +119,6 @@ func (cc *continuityChecker) Write(val uint64) error {
 	cc.highestSeenBlock = val
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(val))
-	cc.zlog.Debug("writing through continuityChecker", zap.Uint64("highest_seen_block", cc.highestSeenBlock))
+	cc.zlogger.Debug("writing through continuityChecker", zap.Uint64("highest_seen_block", cc.highestSeenBlock))
 	return renameio.WriteFile(cc.filePath, b, os.FileMode(0644))
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nodeos_mindreader
+package node_mindreader
 
 import (
 	"context"
@@ -24,11 +24,11 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dfuse-io/dmetrics"
-	"github.com/dfuse-io/manageos"
-	logplugin "github.com/dfuse-io/manageos/log_plugin"
-	"github.com/dfuse-io/manageos/metrics"
-	"github.com/dfuse-io/manageos/mindreader"
-	"github.com/dfuse-io/manageos/operator"
+	nodeManager "github.com/dfuse-io/node-manager"
+	logplugin "github.com/dfuse-io/node-manager/log_plugin"
+	"github.com/dfuse-io/node-manager/metrics"
+	"github.com/dfuse-io/node-manager/mindreader"
+	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -53,7 +53,7 @@ type Config struct {
 
 type Modules struct {
 	Operator                     *operator.Operator
-	MetricsAndReadinessManager   *manageos.MetricsAndReadinessManager
+	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
 	LogPlugin                    logplugin.LogPlugin
 	ContinuityChecker            mindreader.ContinuityChecker
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
@@ -64,24 +64,24 @@ type App struct {
 	*shutter.Shutter
 	Config  *Config
 	modules *Modules
-	zlog    *zap.Logger
+	zlogger *zap.Logger
 }
 
-func New(c *Config, modules *Modules, zlog *zap.Logger) *App {
+func New(c *Config, modules *Modules, zlogger *zap.Logger) *App {
 	n := &App{
 		Shutter: shutter.New(),
 		Config:  c,
 		modules: modules,
-		zlog:    zlog,
+		zlogger: zlogger,
 	}
 	return n
 }
 
 func (a *App) Run() error {
-	a.zlog.Info("launching nodeos mindreader", zap.Reflect("config", a.Config))
+	a.zlogger.Info("launching nodeos mindreader", zap.Reflect("config", a.Config))
 
 	hostname, _ := os.Hostname()
-	a.zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
+	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
@@ -89,7 +89,7 @@ func (a *App) Run() error {
 	a.modules.Operator.ConfigureAutoBackup(a.Config.AutoBackupPeriod, a.Config.AutoBackupModulo)
 	a.modules.Operator.ConfigureAutoSnapshot(a.Config.AutoSnapshotPeriod, a.Config.AutoSnapshotModulo)
 
-	err := mindreader.RunGRPCServer(a.modules.GRPCServer, a.Config.GRPCAddr, a.zlog)
+	err := mindreader.RunGRPCServer(a.modules.GRPCServer, a.Config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (a *App) Run() error {
 
 	a.OnTerminating(a.modules.Operator.Shutdown)
 	a.modules.Operator.OnTerminated(func(err error) {
-		a.zlog.Info("chain operator terminated shutting down mindreader app")
+		a.zlogger.Info("chain operator terminated shutting down mindreader app")
 		a.Shutdown(err)
 	})
 
@@ -122,7 +122,7 @@ func (a *App) Run() error {
 		})
 	}
 
-	a.zlog.Info("launching operator")
+	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
 	go a.modules.Operator.Launch(startNodeosOnLaunch, a.Config.ManagerAPIAddress, httpOptions...)
 
@@ -136,14 +136,14 @@ func (a *App) IsReady() bool {
 	url := fmt.Sprintf("http://%s/healthz", a.Config.ManagerAPIAddress)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		a.zlog.Warn("unable to build get health request", zap.Error(err))
+		a.zlogger.Warn("unable to build get health request", zap.Error(err))
 		return false
 	}
 
 	client := http.DefaultClient
 	res, err := client.Do(req)
 	if err != nil {
-		a.zlog.Debug("unable to execute get health request", zap.Error(err))
+		a.zlogger.Debug("unable to execute get health request", zap.Error(err))
 		return false
 	}
 

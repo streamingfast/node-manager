@@ -37,14 +37,14 @@ type MergeArchiver struct {
 	expectBlock uint64
 	buffer      *bytes.Buffer
 	blockWriter bstream.BlockWriter
-	zlog        *zap.Logger
+	zlogger     *zap.Logger
 }
 
 func NewMergeArchiver(
 	store dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
 	stopBlock uint64,
-	zlog *zap.Logger,
+	zlogger *zap.Logger,
 	options ...MergeArchiverOption,
 ) *MergeArchiver {
 	ra := &MergeArchiver{
@@ -52,7 +52,7 @@ func NewMergeArchiver(
 		store:              store,
 		stopBlock:          stopBlock,
 		blockWriterFactory: blockWriterFactory,
-		zlog:               zlog,
+		zlogger:            zlogger,
 	}
 	for _, opt := range options {
 		opt(ra)
@@ -114,7 +114,7 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 	}
 
 	if m.buffer == nil {
-		m.zlog.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
+		m.zlogger.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
 		return nil
 	}
 
@@ -122,7 +122,7 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 		if m.overflowArchiver != nil {
 			return m.overflowArchiver.storeBlock(block)
 		}
-		m.zlog.Debug("ignoring block after stop_block because no passthrough is set", zap.Uint64("block_num", block.Num()))
+		m.zlogger.Debug("ignoring block after stop_block because no passthrough is set", zap.Uint64("block_num", block.Num()))
 		return nil
 	}
 
@@ -146,7 +146,7 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 		buffer := m.buffer
 		m.eg.Go(func() error {
 			if baseNum%1000 == 0 {
-				m.zlog.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
+				m.zlogger.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

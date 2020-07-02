@@ -1,4 +1,4 @@
-package manageos
+package node_manager
 
 import (
 	"time"

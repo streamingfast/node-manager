@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nodeos_manager
+package node_manager
 
 import (
 	"context"
@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"github.com/dfuse-io/dmetrics"
-	"github.com/dfuse-io/manageos"
+	nodeManager "github.com/dfuse-io/node-manager"
 
-	"github.com/dfuse-io/manageos/metrics"
-	"github.com/dfuse-io/manageos/operator"
+	"github.com/dfuse-io/node-manager/metrics"
+	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )
@@ -46,7 +46,7 @@ type Config struct {
 
 type Modules struct {
 	Operator                     *operator.Operator
-	MetricsAndReadinessManager   *manageos.MetricsAndReadinessManager
+	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 }
 
@@ -54,23 +54,23 @@ type App struct {
 	*shutter.Shutter
 	Config  *Config
 	Modules *Modules
-	zlog    *zap.Logger
+	zlogger *zap.Logger
 }
 
-func New(config *Config, modules *Modules, zlog *zap.Logger) *App {
+func New(config *Config, modules *Modules, zlogger *zap.Logger) *App {
 	return &App{
 		Shutter: shutter.New(),
 		Config:  config,
 		Modules: modules,
-		zlog:    zlog,
+		zlogger: zlogger,
 	}
 }
 
 func (a *App) Run() error {
-	a.zlog.Info("running nodeos manager app", zap.Reflect("config", a.Config))
+	a.zlogger.Info("running nodeos manager app", zap.Reflect("config", a.Config))
 
 	hostname, _ := os.Hostname()
-	a.zlog.Info("retrieved hostname from os", zap.String("hostname", hostname))
+	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
@@ -85,7 +85,7 @@ func (a *App) Run() error {
 		go a.Modules.LaunchConnectionWatchdogFunc(a.Terminating())
 	}
 
-	a.zlog.Info("launching operator")
+	a.zlogger.Info("launching operator")
 	go a.Modules.MetricsAndReadinessManager.Launch()
 	go a.Shutdown(a.Modules.Operator.Launch(true, a.Config.ManagerAPIAddress))
 
@@ -99,14 +99,14 @@ func (a *App) IsReady() bool {
 	url := fmt.Sprintf("http://%s/healthz", a.Config.ManagerAPIAddress)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		a.zlog.Warn("unable to build get health request", zap.Error(err))
+		a.zlogger.Warn("unable to build get health request", zap.Error(err))
 		return false
 	}
 
 	client := http.DefaultClient
 	res, err := client.Do(req)
 	if err != nil {
-		a.zlog.Debug("unable to execute get health request", zap.Error(err))
+		a.zlogger.Debug("unable to execute get health request", zap.Error(err))
 		return false
 	}
 

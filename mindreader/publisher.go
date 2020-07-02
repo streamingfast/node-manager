@@ -19,13 +19,12 @@ import (
 	"net"
 	"time"
 
-	"google.golang.org/grpc"
-
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
-func RunGRPCServer(s *grpc.Server, listenAddr string, zlog *zap.Logger) error {
-	zlog.Info("starting grpc listener", zap.String("listen_addr", listenAddr))
+func RunGRPCServer(s *grpc.Server, listenAddr string, zlogger *zap.Logger) error {
+	zlogger.Info("starting grpc listener", zap.String("listen_addr", listenAddr))
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %s", listener)
@@ -37,12 +36,12 @@ func RunGRPCServer(s *grpc.Server, listenAddr string, zlog *zap.Logger) error {
 		if err := s.Serve(listener); err != nil {
 			serverError <- err
 		}
-		zlog.Info("grpc server terminated")
+		zlogger.Info("grpc server terminated")
 	}()
 
 	select {
 	case <-time.After(1 * time.Second):
-		zlog.Info("grpc server listener ready")
+		zlogger.Info("grpc server listener ready")
 	case err := <-serverError:
 		return err
 	}

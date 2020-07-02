@@ -24,11 +24,10 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
+	"go.uber.org/zap"
 )
 
 type BlockMarshaller func(block *bstream.Block) ([]byte, error)
@@ -49,7 +48,7 @@ type OneblockArchiver struct {
 	workDir            string
 	uploadMutex        sync.Mutex
 	stopBlock          uint64
-	zlog               *zap.Logger
+	zlogger            *zap.Logger
 }
 
 func NewOneblockArchiver(
@@ -58,7 +57,7 @@ func NewOneblockArchiver(
 	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
 	stopBlock uint64,
-	zlog *zap.Logger,
+	zlogger *zap.Logger,
 ) *OneblockArchiver {
 	return &OneblockArchiver{
 		store:              store,
@@ -66,7 +65,7 @@ func NewOneblockArchiver(
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
 		stopBlock:          stopBlock,
-		zlog:               zlog,
+		zlogger:            zlogger,
 	}
 }
 
@@ -167,7 +166,7 @@ func (s *OneblockArchiver) uploadFiles() error {
 func (s *OneblockArchiver) findFilesToUpload(workingDirectory string) (filesToUpload []string, err error) {
 	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
 		if os.IsNotExist(err) {
-			s.zlog.Debug("filesToUpload skipping file that disappeared", zap.Error(err))
+			s.zlogger.Debug("filesToUpload skipping file that disappeared", zap.Error(err))
 			return nil
 		}
 		if err != nil {
@@ -183,7 +182,7 @@ func (s *OneblockArchiver) findFilesToUpload(workingDirectory string) (filesToUp
 			if isDirEmpty(path) && time.Since(info.ModTime()) > 60*time.Second {
 				err := os.Remove(path)
 				if err != nil {
-					s.zlog.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
+					s.zlogger.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
 				}
 			}
 			return nil

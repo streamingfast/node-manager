@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dfuse-io/manageos/superviser"
+	"github.com/dfuse-io/node-manager/superviser"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
@@ -54,7 +54,7 @@ func (o *Operator) RunHTTPServer(httpListenAddr string, options ...HTTPOption) *
 		opt(r)
 	}
 
-	o.zlog.Info("starting webserver", zap.String("http_addr", httpListenAddr))
+	o.zlogger.Info("starting webserver", zap.String("http_addr", httpListenAddr))
 	err := r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 		pathTemplate, err := route.GetPathTemplate()
 		if err == nil {
@@ -66,19 +66,19 @@ func (o *Operator) RunHTTPServer(httpListenAddr string, options ...HTTPOption) *
 				methods = "GET"
 			}
 
-			o.zlog.Debug("walked route methods", zap.String("methods", methods), zap.String("path_template", pathTemplate))
+			o.zlogger.Debug("walked route methods", zap.String("methods", methods), zap.String("path_template", pathTemplate))
 		}
 		return nil
 	})
 
 	if err != nil {
-		o.zlog.Error("walking route methods", zap.Error(err))
+		o.zlogger.Error("walking route methods", zap.Error(err))
 	}
 
 	srv := &http.Server{Addr: httpListenAddr, Handler: r}
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			o.zlog.Info("http server did not close correctly")
+			o.zlogger.Info("http server did not close correctly")
 			o.Shutdown(err)
 		}
 	}()
@@ -163,7 +163,7 @@ func (o *Operator) listBackupsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	offset, err := strconv.ParseInt(r.FormValue("offset"), 10, 64)
 
-	backups, err := superviser.ListPitreosBackup(o.zlog, backupTag, o.options.BackupStoreURL, prefix, int(limit), int(offset))
+	backups, err := superviser.ListPitreosBackup(o.zlogger, backupTag, o.options.BackupStoreURL, prefix, int(limit), int(offset))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(fmt.Sprintf("ERROR: listBackups failed: %s\n", err)))
@@ -237,7 +237,7 @@ func (o *Operator) resumeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *Operator) triggerWebCommand(cmdName string, params map[string]string, w http.ResponseWriter, r *http.Request) {
-	c := &Command{cmd: cmdName, logger: o.zlog}
+	c := &Command{cmd: cmdName, logger: o.zlogger}
 	c.params = params
 	sync := r.FormValue("sync")
 	if sync == "true" {

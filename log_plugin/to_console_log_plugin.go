@@ -36,13 +36,13 @@ func init() {
 // standard output
 type ToConsoleLogPlugin struct {
 	debugDeepMind bool
-	zlog          *zap.Logger
+	zlogger       *zap.Logger
 }
 
-func NewToConsoleLogPlugin(debugDeepMind bool, zlog *zap.Logger) *ToConsoleLogPlugin {
+func NewToConsoleLogPlugin(debugDeepMind bool, zlogger *zap.Logger) *ToConsoleLogPlugin {
 	return &ToConsoleLogPlugin{
 		debugDeepMind: debugDeepMind,
-		zlog:          zlog,
+		zlogger:       zlogger,
 	}
 }
 
@@ -57,7 +57,7 @@ func (p *ToConsoleLogPlugin) LogLine(in string) {
 		if logLineLength > DebugLineLength {
 			fmt.Printf("%s ... bytes: %d\n", in[:DebugLineLength], (logLineLength - DebugLineLength))
 		} else {
-			p.zlog.Debug(in)
+			p.zlogger.Debug(in)
 		}
 	}
 }
