@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manageos
+package node_manager
 
 import (
 	"time"
 
 	"github.com/dfuse-io/dstore"
+	logplugin "github.com/dfuse-io/node-manager/log_plugin"
 )
 
 type StartOption string
@@ -31,7 +32,7 @@ type ChainSuperviser interface {
 	LastExitCode() int
 
 	RegisterPostRestoreHandler(func())
-
+	RegisterLogPlugin(plugin logplugin.LogPlugin)
 	Start(options ...StartOption) error
 	Stop() error
 

@@ -14,9 +14,20 @@
 
 package logplugin
 
+import "github.com/dfuse-io/bstream/blockstream"
+
 type LogPlugin interface {
 	LogLine(in string)
 	Close(err error)
+}
+
+type Shutter interface {
+	OnTerminated(f func(error))
+	Shutdown(err error)
+}
+
+type BlockStreamer interface {
+	Run(blockServer *blockstream.Server)
 }
 
 type LogPluginFunc func(line string)

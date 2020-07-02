@@ -19,6 +19,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 var DebugLineLength = int64(1000)
@@ -34,11 +36,13 @@ func init() {
 // standard output
 type ToConsoleLogPlugin struct {
 	debugDeepMind bool
+	zlogger       *zap.Logger
 }
 
-func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
+func NewToConsoleLogPlugin(debugDeepMind bool, zlogger *zap.Logger) *ToConsoleLogPlugin {
 	return &ToConsoleLogPlugin{
 		debugDeepMind: debugDeepMind,
+		zlogger:       zlogger,
 	}
 }
 
@@ -56,8 +60,7 @@ func (p *ToConsoleLogPlugin) LogLine(in string) {
 		if logLineLength > DebugLineLength {
 			fmt.Printf("%s ... bytes: %d\n", in[:DebugLineLength], (logLineLength - DebugLineLength))
 		} else {
-			fmt.Println(in)
+			p.zlogger.Debug(in)
 		}
-
 	}
 }

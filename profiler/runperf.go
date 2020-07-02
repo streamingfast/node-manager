@@ -121,7 +121,7 @@ func (p *Profiler) Run() (string, error) {
 
 	name := perfPath
 	arguments := []string{"record", "-p", nodeosPid, "--call-graph", "dwarf", "sleep", "10"}
-	zlog.Info("executing command", zap.String("name", name), zap.Strings("arguments", arguments))
+	p.zlogger.Info("executing command", zap.String("name", name), zap.Strings("arguments", arguments))
 	runperf := exec.Command(name, arguments...)
 	err = runperf.Run()
 	if err != nil {
@@ -179,19 +179,21 @@ func (p *Profiler) Run() (string, error) {
 
 }
 
-func New() (*Profiler, error) {
+func New(zlogger *zap.Logger) (*Profiler, error) {
 	p := Profiler{
+
 		toolsBucketName:   "eoscanada-profiling-tools",
 		reportsBucketName: "eoscanada-profiling-reports",
+		zlogger:           zlogger,
 	}
 	err := p.SetupStorage()
 	return &p, err
 }
 
-func MaybeNew() *Profiler {
-	p, err := New()
+func GetInstance(zlogger *zap.Logger) *Profiler {
+	p, err := New(zlogger)
 	if err != nil {
-		zlog.Warn("unable to create profiler", zap.Error(err))
+		zlogger.Warn("unable to create profiler", zap.Error(err))
 		return nil
 	}
 
@@ -225,7 +227,7 @@ func (p *Profiler) downloadFile(srcpath, destpath string) error {
 	if err != nil {
 		return err
 	}
-	zlog.Info("wrote some data to file: bytes", zap.String("destpath", destpath), zap.Int("n", n))
+	p.zlogger.Info("wrote some data to file: bytes", zap.String("destpath", destpath), zap.Int("n", n))
 	return nil
 
 }
@@ -268,7 +270,7 @@ func (p *Profiler) writeFileToGoogleStorage(localFile, remoteFile string) error 
 
 	if _, err := io.Copy(w, f); err != nil {
 		f.Close()
-		zlog.Error("writing to gs, removing object", zap.Error(err))
+		p.zlogger.Error("writing to gs, removing object", zap.Error(err))
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = storageObj.Delete(ctx)
@@ -318,4 +320,5 @@ type Profiler struct {
 	toolsStorageBucket   *storage.BucketHandle
 	reportsStorageBucket *storage.BucketHandle
 	prepared             bool
+	zlogger              *zap.Logger
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package manageos
+package node_manager
 
 type DeepMindDebuggable interface {
 	DebugDeepMind(enabled bool)

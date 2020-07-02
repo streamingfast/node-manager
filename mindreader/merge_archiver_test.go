@@ -23,6 +23,7 @@ import (
 	"github.com/dfuse-io/dbin"
 	"github.com/dfuse-io/dstore"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -35,6 +36,7 @@ func init() {
 func TestMergeArchiver(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
 	a := &MergeArchiver{
+		zlogger:            zap.NewNop(),
 		store:              mStore,
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 		eg:                 llerrgroup.New(2),

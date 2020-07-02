@@ -18,8 +18,8 @@ import (
 	"sync"
 
 	"github.com/ShinyTrinkets/overseer"
-	"github.com/dfuse-io/manageos"
-	logplugin "github.com/dfuse-io/manageos/log_plugin"
+	nodeManager "github.com/dfuse-io/node-manager"
+	logplugin "github.com/dfuse-io/node-manager/log_plugin"
 	"go.uber.org/zap"
 )
 
@@ -69,7 +69,7 @@ func (s *Superviser) GetLogPlugins() []logplugin.LogPlugin {
 func (s *Superviser) setDeepMindDebug(enabled bool) {
 	s.Logger.Info("setting deep mind debug mode", zap.Bool("enabled", enabled))
 	for _, logPlugin := range s.logPlugins {
-		if v, ok := logPlugin.(manageos.DeepMindDebuggable); ok {
+		if v, ok := logPlugin.(nodeManager.DeepMindDebuggable); ok {
 			v.DebugDeepMind(enabled)
 		}
 	}
@@ -89,12 +89,12 @@ func (s *Superviser) LastExitCode() int {
 	return 0
 }
 
-func (s *Superviser) Start(options ...manageos.StartOption) error {
+func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	for _, opt := range options {
-		if opt == manageos.EnableDebugDeepmindOption {
+		if opt == nodeManager.EnableDebugDeepmindOption {
 			s.setDeepMindDebug(true)
 		}
-		if opt == manageos.DisableDebugDeepmindOption {
+		if opt == nodeManager.DisableDebugDeepmindOption {
 			s.setDeepMindDebug(false)
 		}
 	}
