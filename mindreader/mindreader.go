@@ -23,6 +23,7 @@ import (
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dstore"
+	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )
@@ -53,7 +54,7 @@ type MindReaderPlugin struct {
 	channelCapacity     int
 	blockServer         *blockstream.Server
 
-	headBlockUpdateFunc node_manager.HeadBlockUpdater
+	headBlockUpdateFunc nodeManager.HeadBlockUpdater
 
 	setMaintenanceFunc func()
 	stopBlockReachFunc func()
@@ -72,7 +73,7 @@ func NewMindReaderPlugin(
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
-	headBlockUpdateFunc node_manager.HeadBlockUpdater,
+	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
 	setMaintenanceFunc func(),
 	stopBlockReachFunc func(),
 	continuityChecker ContinuityChecker,
@@ -164,7 +165,7 @@ func newMindReaderPlugin(
 	gator Gator,
 	stopAtBlockNum uint64,
 	channelCapacity int,
-	headBlockUpdateFunc node_manager.HeadBlockUpdater,
+	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	pipeReader, pipeWriter := io.Pipe()
