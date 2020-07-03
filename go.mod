@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/storage v1.4.0
 	github.com/ShinyTrinkets/overseer v0.3.0
 	github.com/abourget/llerrgroup v0.0.0-20161118145731-75f536392d17
-	github.com/dfuse-io/bstream v0.0.0-20200427161155-5bc64e86c005
+	github.com/dfuse-io/bstream v0.0.2-0.20200703210323-f92a36d42ed3
 	github.com/dfuse-io/dbin v0.0.0-20200406215642-ec7f22e794eb
 	github.com/dfuse-io/dgrpc v0.0.0-20200406214416-6271093e544c
 	github.com/dfuse-io/dmetrics v0.0.0-20200508152325-93e7e9d576bb

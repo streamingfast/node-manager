@@ -42,24 +42,24 @@ func TestMergeArchiver(t *testing.T) {
 		eg:                 llerrgroup.New(2),
 	}
 
-	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 99}))
+	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
 	assert.Nil(t, a.buffer)
 
-	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 100}))
+	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 100, PayloadBuffer: []byte{0x01}}))
 	assert.NotNil(t, a.buffer)
 	assert.Equal(t, uint64(101), a.expectBlock)
 	size := a.buffer.Len()
 
-	assert.Error(t, a.storeBlock(&bstream.Block{Number: 99}))
+	assert.Error(t, a.storeBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
 
 	for i := 101; i < 199; i++ {
-		assert.NoError(t, a.storeBlock(&bstream.Block{Number: uint64(i)}))
+		assert.NoError(t, a.storeBlock(&bstream.Block{Number: uint64(i), PayloadBuffer: []byte{0x01}}))
 		assert.True(t, a.buffer.Len() > size)
 		assert.Equal(t, uint64(i+1), a.expectBlock)
 		size = a.buffer.Len()
 	}
 
-	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 199}))
+	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 199, PayloadBuffer: []byte{0x01}}))
 	assert.True(t, a.buffer.Len() > size)
 	assert.Equal(t, uint64(200), a.expectBlock)
 }
@@ -71,13 +71,13 @@ func TestMergeArchiverSpecialCase(t *testing.T) {
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 	}
 
-	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 1}))
+	assert.NoError(t, a.storeBlock(&bstream.Block{Number: 1, PayloadBuffer: []byte{0x01}}))
 	assert.NotNil(t, a.buffer)
 	assert.Equal(t, uint64(2), a.expectBlock)
 	size := a.buffer.Len()
 
 	for i := 2; i < 99; i++ {
-		assert.NoError(t, a.storeBlock(&bstream.Block{Number: uint64(i)}))
+		assert.NoError(t, a.storeBlock(&bstream.Block{Number: uint64(i), PayloadBuffer: []byte{0x01}}))
 		assert.True(t, a.buffer.Len() > size)
 		assert.Equal(t, uint64(i+1), a.expectBlock)
 		size = a.buffer.Len()
