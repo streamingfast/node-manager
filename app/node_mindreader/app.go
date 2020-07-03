@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
 	logplugin "github.com/dfuse-io/node-manager/log_plugin"

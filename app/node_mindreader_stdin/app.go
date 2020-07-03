@@ -16,13 +16,13 @@ package node_mindreader_stdin
 
 import (
 	"bufio"
+	"github.com/dfuse-io/bstream/blockstream"
 	"io"
 	"os"
 	"time"
 
 	"github.com/dfuse-io/dgrpc"
-	"github.com/dfuse-io/manageos/mindreader"
-	nodeosMindreader "github.com/dfuse-io/manageos/mindreader/nodeos"
+	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )
@@ -35,6 +35,7 @@ type Config struct {
 	GRPCAddr                   string
 	WorkingDir                 string
 	DisableProfiler            bool
+	BlockFileNamerFunc mindreader.BlockFileNamer
 }
 
 type Modules struct {
@@ -47,31 +48,33 @@ type App struct {
 	Config    *Config
 	ReadyFunc func()
 	modules   *Modules
+	zlogger *zap.Logger
 }
 
-func New(c *Config, modules *Modules) *App {
+func New(c *Config, modules *Modules, zlogger *zap.Logger) *App {
 	n := &App{
 		Shutter:   shutter.New(),
 		Config:    c,
 		ReadyFunc: func() {},
 		modules:   modules,
+		zlogger:   zlogger,
 	}
 	return n
 }
 
 func (a *App) Run() error {
-	zlog.Info("launching nodeos mindreader-stdin", zap.Reflect("config", a.Config))
+	a.zlogger.Info("launching nodeos mindreader-stdin", zap.Reflect("config", a.Config))
 
-	gs := dgrpc.NewServer(dgrpc.WithLogger(zlog))
+	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
 
-	zlog.Info("launching mindreader plugin")
+	a.zlogger.Info("launching mindreader plugin")
 	mindreaderLogPlugin, err := mindreader.RunMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
 		a.Config.MergeArchiveStoreURL,
 		a.Config.MergeUploadDirectly,
 		false,
 		a.Config.WorkingDir,
-		nodeosMindreader.BlockFileNamer,
+		a.Config.BlockFileNamerFunc,
 		a.modules.ConsoleReaderFactory,
 		a.modules.ConsoleReaderTransformer,
 		gs,
@@ -82,17 +85,21 @@ func (a *App) Run() error {
 		func() {},
 		func() {},
 		false,
+		a.zlogger,
 	)
 	if err != nil {
 		return err
 	}
 
-	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr)
+	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
 	}
 	mindreaderLogPlugin.OnTerminated(a.Shutdown)
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
+
+	blockServer := blockstream.NewServer(gs)
+	go mindreaderLogPlugin.Run(blockServer)
 
 	reader := bufio.NewReader(os.Stdin)
 	go func() {
@@ -100,16 +107,16 @@ func (a *App) Run() error {
 			in, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {
-					zlog.Error("got an error from readstring", zap.Error(err))
+					a.zlogger.Error("got an error from readstring", zap.Error(err))
 					mindreaderLogPlugin.Close(err)
 					return
 				}
 				if len(in) == 0 {
-					zlog.Info("done reading from stdin")
+					a.zlogger.Info("done reading from stdin")
 					mindreaderLogPlugin.Close(nil)
 					return
 				}
-				zlog.Debug("got io.EOF on stdin, but still had data to send")
+				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")
 			}
 			mindreaderLogPlugin.LogLine(in)
 		}

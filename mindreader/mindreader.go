@@ -16,8 +16,10 @@ package mindreader
 
 import (
 	"fmt"
+	"google.golang.org/grpc"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/dfuse-io/bstream"
@@ -60,6 +62,112 @@ type MindReaderPlugin struct {
 	stopBlockReachFunc func()
 	zlogger            *zap.Logger
 }
+
+func RunMindReaderPlugin(
+	archiveStoreURL string,
+	mergeArchiveStoreURL string,
+	mergeUploadDirectly bool,
+	discardAfterStopBlock bool,
+	workingDirectory string,
+	blockFileNamer BlockFileNamer,
+	consoleReaderFactory ConsolerReaderFactory,
+	consoleReaderTransformer ConsoleReaderBlockTransformer,
+	grpcServer *grpc.Server,
+	startBlockNum uint64,
+	stopBlockNum uint64,
+	channelCapacity int,
+	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
+	setMaintenanceFunc func(),
+	stopBlockReachFunc func(),
+	failOnNonContinuousBlocks bool,
+	zlogger *zap.Logger,
+) (*MindReaderPlugin, error) {
+	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
+	if err != nil {
+		return nil, fmt.Errorf("setting up dbin store: %s", err)
+	}
+
+	archiveStore.SetOverwrite(true)
+
+	gator := NewBlockNumberGator(startBlockNum)
+
+	// checking if working directory exists, if it does not create it....
+
+	if _, err := os.Stat(workingDirectory); os.IsNotExist(err) {
+		err = os.MkdirAll(workingDirectory, os.ModePerm)
+		if err != nil {
+			// TODO: maybe we should exist out?
+			zlogger.Error("unable to create working directory", zap.String("working_directory", workingDirectory))
+		}
+	}
+
+	var continuityChecker ContinuityChecker // cannot use *continuityChecker here, because of golang caveat with checking nil value on interface{}
+
+	cc, err := NewContinuityChecker(filepath.Join(workingDirectory, "continuity_check"), zlogger)
+	if err != nil {
+		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
+	}
+	if failOnNonContinuousBlocks {
+		continuityChecker = cc
+	} else {
+		cc.Reset()
+	}
+
+	var archiver Archiver
+	if mergeUploadDirectly {
+		zlogger.Debug("using merge-upload-directly")
+		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+		if err != nil {
+			return nil, fmt.Errorf("setting up merge dbin store: %s", err)
+		}
+		mergeArchiveStore.SetOverwrite(true)
+
+		var options []MergeArchiverOption
+		if stopBlockNum != 0 {
+			if discardAfterStopBlock {
+				zlogger.Info("archivestore will discard any block after stop-block-num -- this will create a hole in block files after restart", zap.Uint64("stop-block-num", stopBlockNum))
+			} else {
+				zlogger.Info("blocks after stop-block-num will be saved to Oneblock files to be merged afterwards", zap.Uint64("stop-block-num", stopBlockNum))
+				oneblockArchiver := NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, 0, zlogger)
+				options = append(options, WithOverflowArchiver(oneblockArchiver))
+			}
+		}
+		ra := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, stopBlockNum, zlogger, options...)
+		archiver = ra
+	} else {
+		var archiverStopBlockNum uint64
+		if stopBlockNum != 0 && discardAfterStopBlock {
+			zlogger.Info("setting ArchiveStore to discard any block after stop-block-num -- this will create a hole after restart", zap.Uint64("stop-block-num", stopBlockNum))
+			archiverStopBlockNum = stopBlockNum
+		}
+		archiver = NewOneblockArchiver(workingDirectory, archiveStore, blockFileNamer, bstream.GetBlockWriterFactory, archiverStopBlockNum, zlogger)
+	}
+
+	if err := archiver.init(); err != nil {
+		return nil, fmt.Errorf("failed to init archiver: %s", err)
+	}
+
+	mindReaderPlugin, err := newMindReaderPlugin(archiver, consoleReaderFactory, consoleReaderTransformer, continuityChecker, gator, stopBlockNum, channelCapacity, headBlockUpdateFunc, zlogger)
+	if err != nil {
+		return nil, err
+	}
+	mindReaderPlugin.setMaintenanceFunc = setMaintenanceFunc
+	mindReaderPlugin.stopBlockReachFunc = stopBlockReachFunc
+
+	mindReaderPlugin.OnTerminating(func(_ error) {
+		zlogger.Info("mindreader plugin OnTerminating called")
+		mindReaderPlugin.setMaintenanceFunc()
+		mindReaderPlugin.cleanUp()
+		if stopBlockNum != 0 {
+			mindReaderPlugin.stopBlockReachFunc()
+		}
+	})
+
+	go mindReaderPlugin.ReadFlow()
+
+	return mindReaderPlugin, nil
+}
+
 
 func NewMindReaderPlugin(
 	archiveStoreURL string,

@@ -87,6 +87,7 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		commandChan:    make(chan *Command, 10),
 		options:        options,
 		superviser:     chainSuperviser,
+		aboutToStop: atomic.NewBool(false),
 		zlogger:        zlogger,
 	}
 
