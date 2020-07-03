@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nodeos_mindreader_stdin
+package node_mindreader_stdin
 
 import (
 	"bufio"
