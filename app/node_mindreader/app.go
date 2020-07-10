@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"google.golang.org/grpc"
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
 	logplugin "github.com/dfuse-io/node-manager/log_plugin"
@@ -31,6 +30,7 @@ import (
 	"github.com/dfuse-io/shutter"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
@@ -41,16 +41,15 @@ type Config struct {
 	NoBlocksLog         bool
 
 	// Backup Flags
-	AutoBackupModulo int
-	AutoBackupPeriod time.Duration
+	AutoBackupModulo        int
+	AutoBackupPeriod        time.Duration
 	AutoBackupHostnameMatch string // If non-empty, will only apply autobackup if we have that hostname
 
 	// Snapshot Flags
-	AutoSnapshotModulo      int
-	AutoSnapshotPeriod      time.Duration
-	NumberOfSnapshotsToKeep int
+	AutoSnapshotModulo        int
+	AutoSnapshotPeriod        time.Duration
+	NumberOfSnapshotsToKeep   int
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
-
 
 	GRPCAddr                string
 	StartFailureHandlerFunc func()

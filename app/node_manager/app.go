@@ -23,7 +23,6 @@ import (
 
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
-
 	"github.com/dfuse-io/node-manager/metrics"
 	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
@@ -35,16 +34,16 @@ type Config struct {
 	ConnectionWatchdog bool
 
 	// Backup Flags
-	AutoBackupModulo int
-	AutoBackupPeriod time.Duration
+	AutoBackupModulo        int
+	AutoBackupPeriod        time.Duration
 	AutoBackupHostnameMatch string // If non-empty, will only apply autobackup if we have that hostname
 
 	// Snapshot Flags
-	AutoSnapshotModulo int
-	AutoSnapshotPeriod time.Duration
+	AutoSnapshotModulo        int
+	AutoSnapshotPeriod        time.Duration
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
 
-	DisableProfiler    bool
+	DisableProfiler bool
 }
 
 type Modules struct {
@@ -77,7 +76,6 @@ func (a *App) Run() error {
 
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
-
 
 	if a.config.AutoBackupPeriod != 0 {
 		a.modules.Operator.ConfigureAutoBackup(a.config.AutoBackupPeriod, a.config.AutoBackupModulo, a.config.AutoBackupHostnameMatch, hostname)

@@ -16,11 +16,11 @@ package node_mindreader_stdin
 
 import (
 	"bufio"
-	"github.com/dfuse-io/bstream/blockstream"
 	"io"
 	"os"
 	"time"
 
+	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/shutter"
@@ -29,13 +29,14 @@ import (
 
 type Config struct {
 	ArchiveStoreURL            string
+	DiscardAfterStopNum        bool
 	MergeArchiveStoreURL       string
 	MergeUploadDirectly        bool
 	MindReadBlocksChanCapacity int
 	GRPCAddr                   string
 	WorkingDir                 string
 	DisableProfiler            bool
-	BlockFileNamerFunc mindreader.BlockFileNamer
+	BlockFileNamerFunc         mindreader.BlockFileNamer
 }
 
 type Modules struct {
@@ -48,7 +49,7 @@ type App struct {
 	Config    *Config
 	ReadyFunc func()
 	modules   *Modules
-	zlogger *zap.Logger
+	zlogger   *zap.Logger
 }
 
 func New(c *Config, modules *Modules, zlogger *zap.Logger) *App {
@@ -72,12 +73,11 @@ func (a *App) Run() error {
 		a.Config.ArchiveStoreURL,
 		a.Config.MergeArchiveStoreURL,
 		a.Config.MergeUploadDirectly,
-		false,
+		a.Config.DiscardAfterStopNum,
 		a.Config.WorkingDir,
 		a.Config.BlockFileNamerFunc,
 		a.modules.ConsoleReaderFactory,
 		a.modules.ConsoleReaderTransformer,
-		gs,
 		0,
 		0,
 		a.Config.MindReadBlocksChanCapacity,
@@ -91,20 +91,28 @@ func (a *App) Run() error {
 		return err
 	}
 
+	// It's important that this call goes prior running gRPC server since it's doing
+	// some service registration. If it's call later on, the overall application exits.
+	blockServer := blockstream.NewServer(gs)
+
 	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
 	}
+
+	a.zlogger.Debug("configuring shutter")
 	mindreaderLogPlugin.OnTerminated(a.Shutdown)
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
-	blockServer := blockstream.NewServer(gs)
+	a.zlogger.Debug("running mindreader log plugin")
 	go mindreaderLogPlugin.Run(blockServer)
 
-	reader := bufio.NewReader(os.Stdin)
+	stdin := bufio.NewReader(os.Stdin)
+
 	go func() {
+		a.zlogger.Info("starting stdin reader")
 		for {
-			in, err := reader.ReadString('\n')
+			in, err := stdin.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {
 					a.zlogger.Error("got an error from readstring", zap.Error(err))

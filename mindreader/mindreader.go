@@ -21,8 +21,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"google.golang.org/grpc"
-
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dstore"
@@ -73,7 +71,6 @@ func RunMindReaderPlugin(
 	blockFileNamer BlockFileNamer,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
-	grpcServer *grpc.Server,
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
@@ -156,7 +153,7 @@ func RunMindReaderPlugin(
 	mindReaderPlugin.stopBlockReachFunc = stopBlockReachFunc
 
 	mindReaderPlugin.OnTerminating(func(_ error) {
-		zlogger.Info("mindreader plugin OnTerminating called")
+		zlogger.Info("mindreader plugin now terminating")
 		mindReaderPlugin.setMaintenanceFunc()
 		mindReaderPlugin.cleanUp()
 		if stopBlockNum != 0 {
@@ -360,19 +357,16 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			// We keep going if more blocks to process, so we never skip writing blocks
 			p.zlogger.Debug("received a terminating sig")
 			if len(blocks) == 0 {
-				// FIXME: consoleReader never gets done because LogLine does not signal EOF
-				//p.zlogger.Info("will shutdown when console reader is done")
-				//<-p.consoleReader.Done()
 				return
 			}
-			// TODO: access consolereader Done
-			p.zlogger.Info("will shutdown when block count == 0", zap.Int("block_count", len(blocks)))
+
+			p.zlogger.Info("waiting for blocks channel to drain, going to quit when no more blocks in channel", zap.Int("block_count", len(blocks)))
 
 		case block := <-blocks:
 			err := p.archiver.storeBlock(block)
 			if err != nil {
 				p.zlogger.Error("failed storing block in archiver", zap.Error(err))
-				p.Shutdown(fmt.Errorf("archiver.storeBlock failed: %s", err))
+				p.Shutdown(fmt.Errorf("archiver store block failed: %s", err))
 				return
 			}
 
@@ -428,10 +422,8 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 }
 
 func (p *MindReaderPlugin) Close(err error) {
-	e := p.writer.CloseWithError(err)
-	if e != nil {
-		p.zlogger.Error("error closing mindreader writer", zap.Error(e))
-	}
+	p.zlogger.Info("closing pipe writer and shutting down plugin")
+	p.writer.CloseWithError(err)
 	p.Shutdown(err)
 }
 
