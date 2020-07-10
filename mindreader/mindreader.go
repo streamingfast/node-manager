@@ -16,11 +16,12 @@ package mindreader
 
 import (
 	"fmt"
-	"google.golang.org/grpc"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
@@ -168,7 +169,6 @@ func RunMindReaderPlugin(
 	return mindReaderPlugin, nil
 }
 
-
 func NewMindReaderPlugin(
 	archiveStoreURL string,
 	mergeArchiveStoreURL string,
@@ -260,7 +260,7 @@ func NewMindReaderPlugin(
 }
 
 func (p *MindReaderPlugin) Run(server *blockstream.Server) {
-	p.zlogger.Info("Running")
+	p.zlogger.Info("running")
 	p.blockServer = server
 	go p.ReadFlow()
 }
@@ -281,7 +281,7 @@ func newMindReaderPlugin(
 	if err != nil {
 		return nil, err
 	}
-	zlogger.Info("Creating new mindreader plugin")
+	zlogger.Info("creating new mindreader plugin")
 	return &MindReaderPlugin{
 		Shutter:             shutter.New(),
 		consoleReader:       consoleReader,
@@ -304,7 +304,7 @@ func (p *MindReaderPlugin) cleanUp() {
 }
 
 func (p *MindReaderPlugin) ReadFlow() {
-	p.zlogger.Info("Starting read flow")
+	p.zlogger.Info("starting read flow")
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	go p.consumeReadFlow(blocks)
@@ -315,7 +315,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 		err := p.readOneMessage(blocks)
 		if err != nil {
 			if err == io.EOF {
-				p.zlogger.Info("Mindreader plugin shut down correctly")
+				p.zlogger.Info("mindreader plugin shut down correctly")
 				continue
 			}
 			p.zlogger.Error("reading from console logs", zap.Error(err))
@@ -326,7 +326,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 }
 
 func (p *MindReaderPlugin) alwaysUploadFiles() {
-	p.zlogger.Info("Starting file upload")
+	p.zlogger.Info("starting file upload")
 	for {
 		if p.IsTerminating() { // the uploadFiles will be called again in 'cleanup()', we can leave here early
 			return
@@ -346,7 +346,7 @@ func (p *MindReaderPlugin) alwaysUploadFiles() {
 
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
-	p.zlogger.Info("Starting consume flow")
+	p.zlogger.Info("starting consume flow")
 
 	defer func() {
 		p.archiver.cleanup()

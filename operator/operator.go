@@ -87,7 +87,7 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		commandChan:    make(chan *Command, 10),
 		options:        options,
 		superviser:     chainSuperviser,
-		aboutToStop: atomic.NewBool(false),
+		aboutToStop:    atomic.NewBool(false),
 		zlogger:        zlogger,
 	}
 
@@ -139,7 +139,7 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 				}
 				break
 			}
-			o.zlogger.Warn("Instance stopped. Attempting restore from snapshot", zap.String("command", o.superviser.GetCommand()))
+			o.zlogger.Warn("instance stopped. Attempting restore from snapshot", zap.String("command", o.superviser.GetCommand()))
 			o.attemptedAutoRestore = true
 			switch o.options.AutoRestoreSource {
 			case "backup":
@@ -512,7 +512,6 @@ func (o *Operator) runCommand(cmd *Command) error {
 			time.Sleep(o.options.ShutdownDelay)
 		}
 
-
 		if err := o.superviser.Stop(); err != nil {
 			o.zlogger.Error("stopping nodeos failed, continuing shutdown anyway", zap.Error(err))
 		}
@@ -538,11 +537,11 @@ func (c *Command) Return(err error) {
 func (o *Operator) bootstrap() error {
 	// forcing restore here
 	if o.options.RestoreBackupName != "" {
-		o.zlogger.Info("Performing Bootstrap from Backup")
+		o.zlogger.Info("performing Bootstrap from Backup")
 		return o.bootstrapFromBackup(o.options.RestoreBackupName)
 	}
 	if o.options.RestoreSnapshotName != "" {
-		o.zlogger.Info("Performing Bootstrap from Snapshot")
+		o.zlogger.Info("performing Bootstrap from Snapshot")
 		return o.bootstrapFromSnapshot(o.options.RestoreSnapshotName)
 	}
 
@@ -719,7 +718,7 @@ func (o *Operator) RunEveryPeriod(period time.Duration, commandName string) {
 }
 
 func (o *Operator) RunAtSpecificBlocks(specificBlocks []uint64, commandName string) {
-	o.zlogger.Info("Scheduled for running a job a specific blocks", zap.String("command_name", commandName), zap.Any("specific_blocks", specificBlocks))
+	o.zlogger.Info("scheduled for running a job a specific blocks", zap.String("command_name", commandName), zap.Any("specific_blocks", specificBlocks))
 	sort.Slice(specificBlocks, func(i, j int) bool { return specificBlocks[i] < specificBlocks[j] })
 	nextIndex := 0
 	for {
