@@ -42,8 +42,6 @@ type Config struct {
 	AutoSnapshotModulo        int
 	AutoSnapshotPeriod        time.Duration
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
-
-	DisableProfiler bool
 }
 
 type Modules struct {
@@ -77,11 +75,11 @@ func (a *App) Run() error {
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
-	if a.config.AutoBackupPeriod != 0 {
+	if a.config.AutoBackupPeriod != 0 || a.config.AutoBackupModulo != 0 {
 		a.modules.Operator.ConfigureAutoBackup(a.config.AutoBackupPeriod, a.config.AutoBackupModulo, a.config.AutoBackupHostnameMatch, hostname)
 	}
 
-	if a.config.AutoSnapshotPeriod != 0 {
+	if a.config.AutoSnapshotPeriod != 0 || a.config.AutoSnapshotModulo != 0 {
 		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
 	}
 

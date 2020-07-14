@@ -18,10 +18,10 @@ import (
 	"bufio"
 	"io"
 	"os"
-	"time"
 
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dgrpc"
+	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
@@ -41,8 +41,9 @@ type Config struct {
 }
 
 type Modules struct {
-	ConsoleReaderFactory     mindreader.ConsolerReaderFactory
-	ConsoleReaderTransformer mindreader.ConsoleReaderBlockTransformer
+	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
+	ConsoleReaderTransformer   mindreader.ConsoleReaderBlockTransformer
+	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
 }
 
 type App struct {
@@ -81,10 +82,10 @@ func (a *App) Run() error {
 		a.Config.StopBlockNum,
 		a.Config.DiscardAfterStopBlock,
 		a.Config.MindReadBlocksChanCapacity,
-		func(uint64, string, time.Time) {},
+		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func() {},
 		func() {},
-		false,
+		a.Config.FailOnNonContinuousBlocks,
 		a.zlogger,
 	)
 	if err != nil {
@@ -107,8 +108,9 @@ func (a *App) Run() error {
 	a.zlogger.Debug("running mindreader log plugin")
 	go mindreaderLogPlugin.Run(blockServer)
 
-	stdin := bufio.NewReader(os.Stdin)
+	go a.modules.MetricsAndReadinessManager.Launch()
 
+	stdin := bufio.NewReader(os.Stdin)
 	go func() {
 		a.zlogger.Info("starting stdin reader")
 		for {
@@ -126,6 +128,7 @@ func (a *App) Run() error {
 				}
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")
 			}
+
 			mindreaderLogPlugin.LogLine(in)
 		}
 	}()

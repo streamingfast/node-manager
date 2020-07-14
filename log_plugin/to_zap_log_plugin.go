@@ -20,18 +20,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// ToConsoleLogPlugin takes a line, and if it's not a DMLOG line or
-// if we are actively debugging deep mind, will print the line to the
-// standard output
+// ToZapLogPlugin takes a line, and if it's not a DMLOG line or
+// if we are actively debugging deep mind, will print the line to received
+// logger instance.
 type ToZapLogPlugin struct {
 	logger        *zap.Logger
 	debugDeepMind bool
 }
 
-func NewToZapLogPlugin(logger *zap.Logger, debugDeepMind bool) *ToZapLogPlugin {
+func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger) *ToZapLogPlugin {
 	return &ToZapLogPlugin{
-		logger:        logger,
 		debugDeepMind: debugDeepMind,
+		logger:        logger,
 	}
 }
 
@@ -43,19 +43,22 @@ func (p *ToZapLogPlugin) Close(_ error) {
 }
 
 func (p *ToZapLogPlugin) LogLine(in string) {
-	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
-		if strings.HasPrefix(in, "<6>info") || strings.HasPrefix(in, "info") {
-			p.logger.Info(in)
-			return
+	if strings.HasPrefix(in, "DMLOG ") {
+		if p.debugDeepMind {
+			p.logger.Debug(in)
 		}
-		if strings.HasPrefix(in, "<3>error") || strings.HasPrefix(in, "error") {
-			p.logger.Error(in)
-			return
-		}
-		if strings.HasPrefix(in, "<4>warn") || strings.HasPrefix(in, "warn") {
-			p.logger.Warn(in)
-			return
-		}
-		p.logger.Debug(in)
+
+		return
 	}
+
+	level := zap.DebugLevel
+	if strings.HasPrefix(in, "<6>info") || strings.HasPrefix(in, "info") {
+		level = zap.InfoLevel
+	} else if strings.HasPrefix(in, "<3>error") || strings.HasPrefix(in, "error") {
+		level = zap.ErrorLevel
+	} else if strings.HasPrefix(in, "<4>warn") || strings.HasPrefix(in, "warn") {
+		level = zap.WarnLevel
+	}
+
+	p.logger.Check(level, in).Write()
 }

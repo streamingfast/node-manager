@@ -21,6 +21,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/dfuse-io/bstream/blockstream"
+	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/node-manager/metrics"
@@ -29,15 +31,11 @@ import (
 	"github.com/dfuse-io/shutter"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 )
 
 type Config struct {
-	ManagerAPIAddress   string
-	NodeosAPIAddress    string
-	ConnectionWatchdog  bool
-	ReadinessMaxLatency time.Duration
-	NoBlocksLog         bool
+	ManagerAPIAddress  string
+	ConnectionWatchdog bool
 
 	// Backup Flags
 	AutoBackupModulo        int
@@ -47,11 +45,9 @@ type Config struct {
 	// Snapshot Flags
 	AutoSnapshotModulo        int
 	AutoSnapshotPeriod        time.Duration
-	NumberOfSnapshotsToKeep   int
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
 
-	GRPCAddr                string
-	StartFailureHandlerFunc func()
+	GRPCAddr string
 }
 
 type Modules struct {
@@ -59,7 +55,7 @@ type Modules struct {
 	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
 	MindreaderPlugin             *mindreader.MindReaderPlugin
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
-	GRPCServer                   *grpc.Server
+	StartFailureHandlerFunc      func()
 }
 
 type App struct {
@@ -88,15 +84,21 @@ func (a *App) Run() error {
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
-	if a.config.AutoBackupPeriod != 0 {
+	if a.config.AutoBackupPeriod != 0 || a.config.AutoBackupModulo != 0 {
 		a.modules.Operator.ConfigureAutoBackup(a.config.AutoBackupPeriod, a.config.AutoBackupModulo, a.config.AutoBackupHostnameMatch, hostname)
 	}
 
-	if a.config.AutoSnapshotPeriod != 0 {
+	if a.config.AutoSnapshotPeriod != 0 || a.config.AutoSnapshotModulo != 0 {
 		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
 	}
 
-	err := mindreader.RunGRPCServer(a.modules.GRPCServer, a.config.GRPCAddr, a.zlogger)
+	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
+
+	// It's important that this call goes prior running gRPC server since it's doing
+	// some service registration. If it's call later on, the overall application exits.
+	server := blockstream.NewServer(gs, blockstream.ServerOptionWithLogger(a.zlogger))
+
+	err := mindreader.RunGRPCServer(gs, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
 	}
@@ -114,9 +116,7 @@ func (a *App) Run() error {
 		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
-	startNodeosOnLaunch := true
 	var httpOptions []operator.HTTPOption
-
 	if a.modules.MindreaderPlugin.HasContinuityChecker() {
 		httpOptions = append(httpOptions, func(r *mux.Router) {
 			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
@@ -126,9 +126,12 @@ func (a *App) Run() error {
 		})
 	}
 
+	a.zlogger.Info("launching mindreader plugin")
+	a.modules.MindreaderPlugin.Run(server)
+
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
-	go a.modules.Operator.Launch(startNodeosOnLaunch, a.config.ManagerAPIAddress, httpOptions...)
+	go a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...)
 
 	return nil
 }

@@ -256,9 +256,8 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	for {
 		select {
 		case <-p.Terminating():
-			// We keep going if more blocks to process, so we never skip writing blocks
-			p.zlogger.Debug("received a terminating sig")
 			if len(blocks) == 0 {
+				p.zlogger.Debug("all blocks in channel were drained, exiting read flow")
 				return
 			}
 
