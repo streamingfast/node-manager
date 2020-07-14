@@ -20,15 +20,14 @@ import (
 	"time"
 
 	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/logging"
 	"go.uber.org/zap"
 )
 
 var testLogger = zap.NewNop()
 
 func init() {
-	if os.Getenv("DEBUG") != "" {
-		testLogger = logging.MustCreateLogger()
+	if os.Getenv("DEBUG") != "" || os.Getenv("TRACE") == "true" {
+		testLogger, _ = zap.NewDevelopment()
 	}
 }
 
@@ -44,11 +43,11 @@ func NewTestStore() *TestStore {
 	}
 }
 
-func (s *TestStore) init() error {
+func (s *TestStore) Init() error {
 	return nil
 }
 
-func (s *TestStore) cleanup() {
+func (s *TestStore) WaitForAllFilesToUpload() {
 }
 
 func (s *TestStore) storeBlock(block *bstream.Block) error {

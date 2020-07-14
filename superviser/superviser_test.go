@@ -36,7 +36,7 @@ var infiniteScript = `
 var zlog = zap.NewNop()
 
 func init() {
-	if os.Getenv("DEBUG") != "" {
+	if os.Getenv("DEBUG") != "" || os.Getenv("TRACE") == "true" {
 		zlog, _ := zap.NewDevelopment()
 		logging.Override(zlog)
 	}

@@ -106,7 +106,7 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	o.zlogger.Info("starting chain operator")
 	o.OnTerminating(func(_ error) {
 		o.zlogger.Info("chain operator terminating")
-		o.cleanUp()
+		o.waitForReadFlowToComplete()
 	})
 
 	o.zlogger.Info("launching operator HTTP server", zap.String("http_listen_addr", httpListenAddr))
@@ -187,7 +187,7 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	}
 }
 
-func (o *Operator) cleanUp() {
+func (o *Operator) waitForReadFlowToComplete() {
 	o.zlogger.Info("chain operator shutting down")
 
 	wg := &sync.WaitGroup{}

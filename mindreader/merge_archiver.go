@@ -68,9 +68,9 @@ func WithOverflowArchiver(archiver Archiver) MergeArchiverOption {
 	}
 }
 
-func (m *MergeArchiver) init() error {
+func (m *MergeArchiver) Init() error {
 	if m.overflowArchiver != nil {
-		return m.overflowArchiver.init()
+		return m.overflowArchiver.Init()
 	}
 	return nil
 }
@@ -85,11 +85,11 @@ func (m *MergeArchiver) newBuffer() error {
 	return nil
 }
 
-// cleanup assumes that no more 'storeBlock' command is coming
-func (m *MergeArchiver) cleanup() {
+// WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
+func (m *MergeArchiver) WaitForAllFilesToUpload() {
 	m.eg.Wait()
 	if m.overflowArchiver != nil {
-		m.overflowArchiver.cleanup()
+		m.overflowArchiver.WaitForAllFilesToUpload()
 	}
 }
 

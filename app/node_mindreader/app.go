@@ -23,7 +23,6 @@ import (
 
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
-	logplugin "github.com/dfuse-io/node-manager/log_plugin"
 	"github.com/dfuse-io/node-manager/metrics"
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/node-manager/operator"
@@ -58,8 +57,7 @@ type Config struct {
 type Modules struct {
 	Operator                     *operator.Operator
 	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
-	LogPlugin                    logplugin.LogPlugin
-	ContinuityChecker            mindreader.ContinuityChecker
+	MindreaderPlugin             *mindreader.MindReaderPlugin
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	GRPCServer                   *grpc.Server
 }
@@ -103,10 +101,8 @@ func (a *App) Run() error {
 		return err
 	}
 
-	if p, ok := a.modules.LogPlugin.(logplugin.Shutter); ok {
-		a.modules.Operator.OnTerminating(p.Shutdown)
-		p.OnTerminated(a.modules.Operator.Shutdown)
-	}
+	a.modules.Operator.OnTerminating(a.modules.MindreaderPlugin.Shutdown)
+	a.modules.MindreaderPlugin.OnTerminated(a.modules.Operator.Shutdown)
 
 	a.OnTerminating(a.modules.Operator.Shutdown)
 	a.modules.Operator.OnTerminated(func(err error) {
@@ -121,11 +117,10 @@ func (a *App) Run() error {
 	startNodeosOnLaunch := true
 	var httpOptions []operator.HTTPOption
 
-	if a.modules.ContinuityChecker != nil {
-
+	if a.modules.MindreaderPlugin.HasContinuityChecker() {
 		httpOptions = append(httpOptions, func(r *mux.Router) {
-			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, r *http.Request) {
-				a.modules.ContinuityChecker.Reset()
+			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
+				a.modules.MindreaderPlugin.ResetContinuityChecker()
 				w.Write([]byte("ok"))
 			})
 		})

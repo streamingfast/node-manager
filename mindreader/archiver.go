@@ -32,18 +32,16 @@ import (
 
 type BlockMarshaller func(block *bstream.Block) ([]byte, error)
 
-type BlockFileNamer func(block *bstream.Block) string
-
 type Archiver interface {
-	init() error
+	Init() error
+	WaitForAllFilesToUpload()
+
 	storeBlock(block *bstream.Block) error
 	uploadFiles() error
-	cleanup()
 }
 
 type OneblockArchiver struct {
 	store              dstore.Store
-	blockFileNamer     BlockFileNamer
 	blockWriterFactory bstream.BlockWriterFactory
 	workDir            string
 	uploadMutex        sync.Mutex
@@ -54,14 +52,12 @@ type OneblockArchiver struct {
 func NewOneblockArchiver(
 	workDir string,
 	store dstore.Store,
-	blockFileNamer BlockFileNamer,
 	blockWriterFactory bstream.BlockWriterFactory,
 	stopBlock uint64,
 	zlogger *zap.Logger,
 ) *OneblockArchiver {
 	return &OneblockArchiver{
 		store:              store,
-		blockFileNamer:     blockFileNamer,
 		blockWriterFactory: blockWriterFactory,
 		workDir:            workDir,
 		stopBlock:          stopBlock,
@@ -69,12 +65,12 @@ func NewOneblockArchiver(
 	}
 }
 
-// cleanup assumes that no more 'storeBlock' command is coming
-func (s *OneblockArchiver) cleanup() {
+// WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
+func (s *OneblockArchiver) WaitForAllFilesToUpload() {
 	s.uploadFiles()
 }
 
-func (s *OneblockArchiver) init() error {
+func (s *OneblockArchiver) Init() error {
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
 		return fmt.Errorf("mkdir work folder: %s", err)
 	}
@@ -83,7 +79,7 @@ func (s *OneblockArchiver) init() error {
 }
 
 func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
-	fileName := s.blockFileNamer(block)
+	fileName := blockFileName(block)
 
 	// Store the actual file using multiple folders instead of a single one.
 	// We assume 10 digits block number at start of file name. We take the first 7
@@ -133,7 +129,7 @@ func (s *OneblockArchiver) uploadFiles() error {
 	defer s.uploadMutex.Unlock()
 	filesToUpload, err := s.findFilesToUpload(s.workDir)
 	if err != nil {
-		return fmt.Errorf("unable to find files to upload: %s", err)
+		return fmt.Errorf("unable to find files to upload: %w", err)
 	}
 
 	if len(filesToUpload) == 0 {
@@ -153,8 +149,12 @@ func (s *OneblockArchiver) uploadFiles() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
 
+			if traceEnabled {
+				s.zlogger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
+			}
+
 			if err = s.store.PushLocalFile(ctx, file, toBaseName); err != nil {
-				return fmt.Errorf("moving file %q to storage: %s", file, err)
+				return fmt.Errorf("moving file %q to storage: %w", file, err)
 			}
 			return nil
 		})
@@ -166,7 +166,7 @@ func (s *OneblockArchiver) uploadFiles() error {
 func (s *OneblockArchiver) findFilesToUpload(workingDirectory string) (filesToUpload []string, err error) {
 	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
 		if os.IsNotExist(err) {
-			s.zlogger.Debug("filesToUpload skipping file that disappeared", zap.Error(err))
+			s.zlogger.Debug("skipping file that disappeared", zap.Error(err))
 			return nil
 		}
 		if err != nil {

@@ -28,15 +28,16 @@ import (
 )
 
 type Config struct {
+	GRPCAddr                   string
 	ArchiveStoreURL            string
-	DiscardAfterStopNum        bool
 	MergeArchiveStoreURL       string
 	MergeUploadDirectly        bool
 	MindReadBlocksChanCapacity int
-	GRPCAddr                   string
+	FailOnNonContinuousBlocks  bool
+	StartBlockNum              uint64
+	StopBlockNum               uint64
+	DiscardAfterStopBlock      bool
 	WorkingDir                 string
-	DisableProfiler            bool
-	BlockFileNamerFunc         mindreader.BlockFileNamer
 }
 
 type Modules struct {
@@ -69,17 +70,16 @@ func (a *App) Run() error {
 	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
 
 	a.zlogger.Info("launching mindreader plugin")
-	mindreaderLogPlugin, err := mindreader.RunMindReaderPlugin(
+	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
 		a.Config.MergeArchiveStoreURL,
 		a.Config.MergeUploadDirectly,
-		a.Config.DiscardAfterStopNum,
 		a.Config.WorkingDir,
-		a.Config.BlockFileNamerFunc,
 		a.modules.ConsoleReaderFactory,
 		a.modules.ConsoleReaderTransformer,
-		0,
-		0,
+		a.Config.StartBlockNum,
+		a.Config.StopBlockNum,
+		a.Config.DiscardAfterStopBlock,
 		a.Config.MindReadBlocksChanCapacity,
 		func(uint64, string, time.Time) {},
 		func() {},
@@ -91,6 +91,10 @@ func (a *App) Run() error {
 		return err
 	}
 
+	a.zlogger.Debug("configuring shutter")
+	mindreaderLogPlugin.OnTerminated(a.Shutdown)
+	a.OnTerminating(mindreaderLogPlugin.Shutdown)
+
 	// It's important that this call goes prior running gRPC server since it's doing
 	// some service registration. If it's call later on, the overall application exits.
 	blockServer := blockstream.NewServer(gs)
@@ -99,10 +103,6 @@ func (a *App) Run() error {
 	if err != nil {
 		return err
 	}
-
-	a.zlogger.Debug("configuring shutter")
-	mindreaderLogPlugin.OnTerminated(a.Shutdown)
-	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
 	a.zlogger.Debug("running mindreader log plugin")
 	go mindreaderLogPlugin.Run(blockServer)

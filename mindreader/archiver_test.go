@@ -124,7 +124,7 @@ func TestNewLocalStore(t *testing.T) {
 	localArchiveStore, err := dstore.NewDBinStore("/tmp/mr_dest")
 	require.NoError(t, err)
 	archiver := testNewArchiver("/tmp/mr_test", localArchiveStore)
-	err = archiver.init()
+	err = archiver.Init()
 	require.NoError(t, err)
 
 	mindReader, err := testNewMindReaderPlugin(archiver, NewBlockNumberGator(0), 0)
@@ -139,7 +139,7 @@ func TestNewLocalStore(t *testing.T) {
 
 	time.Sleep(1 * time.Second) //todo: this suck!
 
-	file, err := os.OpenFile(filepath.Join("/tmp/mr_dest/", "test-file.dbin.zst"), os.O_RDONLY, 0644)
+	file, err := os.OpenFile(filepath.Join("/tmp/mr_dest/", "0000000004-00010101T000000.0-0000004a-.dbin.zst"), os.O_RDONLY, 0644)
 	require.NoError(t, err)
 
 	gzw, err := zstd.NewReader(file)
@@ -158,7 +158,7 @@ func TestNewGSStore(t *testing.T) {
 
 	archiveStore, err := dstore.NewDBinStore(path)
 	archiver := testNewArchiver("/tmp/mr_test/", archiveStore)
-	err = archiver.init()
+	err = archiver.Init()
 	require.NoError(t, err)
 
 	mindReader, err := testNewMindReaderPlugin(archiver, NewBlockNumberGator(1), 0)
@@ -173,13 +173,13 @@ func TestNewGSStore(t *testing.T) {
 
 	time.Sleep(2 * time.Second) //todo: this suck!
 
-	exists, err := archiveStore.FileExists(context.Background(), "test-file")
+	exists, err := archiveStore.FileExists(context.Background(), "0000000004-00010101T000000.0-0000004a-")
 	require.NoError(t, err)
 	require.True(t, exists)
 }
 
 func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
-	return NewOneblockArchiver(path, store, testBlockFileNamer, testBlockWriteFactory, 0, testLogger)
+	return NewOneblockArchiver(path, store, testBlockWriteFactory, 0, testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint64) (*MindReaderPlugin, error) {
@@ -193,10 +193,6 @@ func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint6
 		nil,
 		testLogger,
 	)
-}
-
-func testBlockFileNamer(opaqueBlock *bstream.Block) string {
-	return "test-file"
 }
 
 var testBlockWriteFactory = bstream.BlockWriterFactoryFunc(newTestBlockWriter)
