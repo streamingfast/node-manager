@@ -255,7 +255,7 @@ func (p *Profiler) writeFileToGoogleStorage(localFile, remoteFile string) error 
 
 	f, err := os.Open(localFile)
 	if err != nil {
-		return fmt.Errorf("opening local file %q: %s", localFile, err)
+		return fmt.Errorf("opening local file %q: %w", localFile, err)
 	}
 	defer f.Close()
 
@@ -279,12 +279,12 @@ func (p *Profiler) writeFileToGoogleStorage(localFile, remoteFile string) error 
 
 	// flush the buffer to Google Storage
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("flushing/closing google storage writer: %s", err)
+		return fmt.Errorf("flushing/closing google storage writer: %w", err)
 	}
 
 	_ = f.Close() // before deleting it
 	if err = os.Remove(localFile); err != nil {
-		return fmt.Errorf("error removing local file %q: %s", localFile, err)
+		return fmt.Errorf("error removing local file %q: %w", localFile, err)
 	}
 	return nil
 }

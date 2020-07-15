@@ -75,12 +75,12 @@ func (cc *continuityChecker) load() error {
 		cc.locked = true
 	}
 
-	defer cc.zlogger.Info("loading continuityChecker info", zap.Bool("locked", cc.locked), zap.Uint64("highest_seen_block", cc.highestSeenBlock))
+	defer cc.zlogger.Info("loading continuity checker info", zap.Bool("locked", cc.locked), zap.Uint64("highest_seen_block", cc.highestSeenBlock))
 
 	b, err := ioutil.ReadFile(cc.filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("continuityChecker cannot read file: %s :%w", cc.filePath, err)
+			return fmt.Errorf("ontinuity checker cannot read file: %s :%w", cc.filePath, err)
 		}
 		return nil
 	}
@@ -107,18 +107,18 @@ func (cc *continuityChecker) setLock() {
 // is returned.
 func (cc *continuityChecker) Write(val uint64) error {
 	if cc.locked {
-		return fmt.Errorf("continuityChecker already locked")
+		return fmt.Errorf("ontinuity checker already locked")
 	}
 	if val <= cc.highestSeenBlock {
 		return nil
 	}
 	if cc.highestSeenBlock != 0 && val > cc.highestSeenBlock+1 {
 		cc.setLock()
-		return fmt.Errorf("continuityChecker failed: block %d would creates a hole after highest seen block: %d", val, cc.highestSeenBlock)
+		return fmt.Errorf("ontinuity checker failed: block %d would creates a hole after highest seen block: %d", val, cc.highestSeenBlock)
 	}
 	cc.highestSeenBlock = val
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(val))
-	cc.zlogger.Debug("writing through continuityChecker", zap.Uint64("highest_seen_block", cc.highestSeenBlock))
+	cc.zlogger.Debug("writing through ontinuity checker", zap.Uint64("highest_seen_block", cc.highestSeenBlock))
 	return renameio.WriteFile(cc.filePath, b, os.FileMode(0644))
 }

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -64,7 +66,7 @@ type Options struct {
 	RestoreBackupName       string
 	RestoreSnapshotName     string
 	Profiler                *profiler.Profiler
-	StartFailureHandlerFunc func()
+	StartFailureHandlerFunc CallbackFunc
 
 	EnableSupervisorMonitoring bool
 
@@ -80,7 +82,16 @@ type Command struct {
 	logger   *zap.Logger
 }
 
+type CallbackFunc func()
+
+// MarshalJSON our func type so that zap JSON reflection works correctly
+func (c CallbackFunc) MarshalJSON() ([]byte, error) {
+	return []byte(`"func()"`), nil
+}
+
 func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chainReadiness nodeManager.Readiness, options *Options) (*Operator, error) {
+	zlogger.Info("creating operator", zap.Reflect("options", options))
+
 	o := &Operator{
 		Shutter:        shutter.New(),
 		chainReadiness: chainReadiness,
@@ -95,7 +106,7 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		var err error
 		o.snapshotStore, err = dstore.NewSimpleStore(options.SnapshotStoreURL)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create snapshot store from url %q: %s", options.SnapshotStoreURL, err)
+			return nil, fmt.Errorf("unable to create snapshot store from url %q: %w", options.SnapshotStoreURL, err)
 		}
 	}
 
@@ -120,7 +131,7 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 
 	err := o.bootstrap()
 	if err != nil {
-		return fmt.Errorf("unable to bootstrap chain: %s", err)
+		return fmt.Errorf("unable to bootstrap chain: %w", err)
 	}
 
 	if startOnLaunch {
@@ -133,13 +144,14 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 		select {
 		case <-o.superviser.Stopped(): // stopped outside of a command that was expecting it
 			if o.attemptedAutoRestore || time.Since(o.lastStartCommand) > 10*time.Second {
-				o.Shutdown(fmt.Errorf("Instance `%s` stopped (exit code: %d). Shutting down.", o.superviser.GetName(), o.superviser.LastExitCode()))
+				o.Shutdown(fmt.Errorf("instance %q stopped (exit code: %d), shutting down", o.superviser.GetName(), o.superviser.LastExitCode()))
 				if o.options.StartFailureHandlerFunc != nil {
 					o.options.StartFailureHandlerFunc()
 				}
 				break
 			}
-			o.zlogger.Warn("instance stopped. Attempting restore from snapshot", zap.String("command", o.superviser.GetCommand()))
+
+			o.zlogger.Warn("instance stopped, attempting restore from source", zap.String("source", o.options.AutoRestoreSource), zap.String("command", o.superviser.GetCommand()))
 			o.attemptedAutoRestore = true
 			switch o.options.AutoRestoreSource {
 			case "backup":
@@ -349,7 +361,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 		}
 
 		if err := snapshotable.TakeSnapshot(o.getSnapshotStore(), o.options.NumberOfSnapshotsToKeep); err != nil {
-			cmd.Return(fmt.Errorf("unable to take snapshot: %s", err))
+			cmd.Return(fmt.Errorf("unable to take snapshot: %w", err))
 			return nil
 		}
 
@@ -399,7 +411,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 		isProducing, err := producer.IsProducing()
 		if err != nil {
-			cmd.Return(fmt.Errorf("unable to check if producing: %s", err))
+			cmd.Return(fmt.Errorf("unable to check if producing: %w", err))
 			return nil
 		}
 
@@ -407,7 +419,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 			o.zlogger.Info("resuming production of blocks")
 			err := producer.ResumeProduction()
 			if err != nil {
-				cmd.Return(fmt.Errorf("error resuming production of blocks: %s", err))
+				cmd.Return(fmt.Errorf("error resuming production of blocks: %w", err))
 				return nil
 			}
 
@@ -429,7 +441,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 		isProducing, err := producer.IsProducing()
 		if err != nil {
-			cmd.Return(fmt.Errorf("unable to check if producing: %s", err))
+			cmd.Return(fmt.Errorf("unable to check if producing: %w", err))
 			return nil
 		}
 
@@ -441,14 +453,14 @@ func (o *Operator) runCommand(cmd *Command) error {
 		o.zlogger.Info("waiting to pause the producer")
 		err = producer.WaitUntilEndOfNextProductionRound(3 * time.Minute)
 		if err != nil {
-			cmd.Return(fmt.Errorf("timeout waiting for production round: %s", err))
+			cmd.Return(fmt.Errorf("timeout waiting for production round: %w", err))
 			return nil
 		}
 
 		o.zlogger.Info("pausing block production")
 		err = producer.PauseProduction()
 		if err != nil {
-			cmd.Return(fmt.Errorf("unable to pause production correctly: %s", err))
+			cmd.Return(fmt.Errorf("unable to pause production correctly: %w", err))
 			return nil
 		}
 
@@ -461,7 +473,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 			o.zlogger.Info("waiting right after production round")
 			err := producer.WaitUntilEndOfNextProductionRound(3 * time.Minute)
 			if err != nil {
-				cmd.Return(fmt.Errorf("timeout waiting for production round: %s", err))
+				cmd.Return(fmt.Errorf("timeout waiting for production round: %w", err))
 				return nil
 			}
 		}
@@ -498,7 +510,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 		}
 
 		if err := o.superviser.Start(options...); err != nil {
-			return fmt.Errorf("error starting chain superviser: %s", err)
+			return fmt.Errorf("error starting chain superviser: %w", err)
 		}
 
 		o.zlogger.Info("successfully start service")
@@ -535,13 +547,13 @@ func (c *Command) Return(err error) {
 }
 
 func (o *Operator) bootstrap() error {
-	// forcing restore here
+	// Forcing restore here
 	if o.options.RestoreBackupName != "" {
-		o.zlogger.Info("performing Bootstrap from Backup")
+		o.zlogger.Info("performing bootstrap from backup")
 		return o.bootstrapFromBackup(o.options.RestoreBackupName)
 	}
 	if o.options.RestoreSnapshotName != "" {
-		o.zlogger.Info("performing Bootstrap from Snapshot")
+		o.zlogger.Info("performing bootstrap from snapshot")
 		return o.bootstrapFromSnapshot(o.options.RestoreSnapshotName)
 	}
 
@@ -550,7 +562,7 @@ func (o *Operator) bootstrap() error {
 	}
 
 	if o.options.BootstrapDataURL != "" {
-		o.zlogger.Info("chain has no prior data and bootstrapDataURL is set. Attempting bootstrap from URL")
+		o.zlogger.Info("chain has no prior data and bootstrap data url is set, attempting bootstrap from URL")
 		err := o.bootstrapFromDataURL(o.options.BootstrapDataURL)
 		if err != nil {
 			o.zlogger.Warn("could not bootstrap from URL", zap.Error(err))
@@ -559,21 +571,6 @@ func (o *Operator) bootstrap() error {
 			return nil
 		}
 	}
-
-	// TODO: use BootstrapDataURL here to support backup:///pitreos-backupname, snapshot:///snapshotname, ...
-	// using AutoRestore as a bootstrap source is confusing
-	//switch o.options.AutoRestoreSource {
-	//case "backup":
-	//	o.zlogger.Info("chain has no prior data and autoRestoreMethod is set to backup. Attempting restore from backup")
-	//	err := o.bootstrapFromBackup("latest")
-	//	o.zlogger.Warn("could not bootstrap from Backup", zap.Error(err))
-
-	//case "snapshot":
-	//	o.zlogger.Info("chain has no prior data and autoRestoreMethod is set to snapshot. Attempting restore from snapshot")
-	//	err := o.bootstrapFromSnapshot("latest")
-	//	o.zlogger.Info("could not bootstrap from snapshot", zap.Error(err))
-
-	//}
 
 	return nil
 }
@@ -587,18 +584,18 @@ func (o *Operator) bootstrapFromDataURL(dataURL string) error {
 
 	u, err := url.Parse(dataURL)
 	if err != nil {
-		return fmt.Errorf("unable to parse URL: %s", err)
+		return fmt.Errorf("unable to parse URL: %w", err)
 	}
 
 	storeURL := fmt.Sprintf("%s://%s", u.Scheme, u.Hostname())
 	dataStore, err := dstore.NewSimpleStore(storeURL)
 	if err != nil {
-		return fmt.Errorf("unable to create store: %s", err)
+		return fmt.Errorf("unable to create store: %w", err)
 	}
 
 	err = bootstrapable.Bootstrap(strings.TrimLeft(u.Path, "/"), dataStore)
 	if err != nil {
-		return fmt.Errorf("unable to bootstrap from data URL %q: %s", dataURL, err)
+		return fmt.Errorf("unable to bootstrap from data URL %q: %w", dataURL, err)
 	}
 
 	return nil
@@ -623,7 +620,7 @@ func (o *Operator) bootstrapFromBackup(backupName string) error {
 
 	err := backupable.RestoreBackup(backupName, o.options.BackupTag, o.options.BackupStoreURL)
 	if err != nil {
-		return fmt.Errorf("unable to restore backup %q: %s", backupName, err)
+		return fmt.Errorf("unable to restore backup %q: %w", backupName, err)
 	}
 
 	return nil
@@ -634,15 +631,47 @@ func (o *Operator) SetMaintenance() {
 }
 
 func (o *Operator) restoreSnapshot(snapshotable nodeManager.SnapshotableChainSuperviser, snapshotName string) error {
-	if o.snapshotStore == nil {
-		o.Shutdown(errors.New("trying to get snapshot store, but instance is nil, have you provided --snapshot-store-url flag?"))
+	store := o.getSnapshotStore()
+
+	o.zlogger.Debug("checking if snapshot exists, mayber performing local override if it doesn't", zap.String("snapshot_name", snapshotName))
+	if exists, err := store.FileExists(context.Background(), snapshotName); err == nil && !exists {
+		newName, newStore := o.maybeSnapshotFromLocalFile(snapshotName)
+		if newName != "" && newStore != nil {
+			o.zlogger.Info("snapshot name is local file, override snapshot store to point to local file")
+			store = newStore
+			snapshotName = newName
+		}
+	} else if err != nil {
+		o.zlogger.Debug("unable to check if name exists in snapshot store", zap.Error(err))
 	}
 
-	if err := snapshotable.RestoreSnapshot(snapshotName, o.snapshotStore); err != nil {
-		return fmt.Errorf("unable to restore snapshot %q: %s", snapshotName, err)
+	if err := snapshotable.RestoreSnapshot(snapshotName, store); err != nil {
+		return fmt.Errorf("unable to restore snapshot %q: %w", snapshotName, err)
 	}
 
 	return nil
+}
+
+func (o *Operator) maybeSnapshotFromLocalFile(snapshotName string) (newName string, newStore dstore.Store) {
+	o.zlogger.Debug("snapshot not found in store, checking if it's a local file")
+	localFile, err := filepath.Abs(filepath.Clean(snapshotName))
+	if err != nil {
+		o.zlogger.Debug("snapshot name does not appear to be a valid local file, continuing without local override")
+		return
+	}
+
+	if stat, err := os.Stat(localFile); err != nil || stat.IsDir() {
+		o.zlogger.Debug("local snapshot does not seems to be a local file (or lookup failed), continue without local override")
+		return
+	}
+
+	store, err := dstore.NewSimpleStore("file://" + filepath.Dir(localFile))
+	if err != nil {
+		o.zlogger.Debug("unable to create local snapshot store override, continue without local override")
+		return
+	}
+
+	return filepath.Base(localFile), store
 }
 
 func (o *Operator) getSnapshotStore() dstore.Store {
