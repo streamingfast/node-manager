@@ -79,7 +79,7 @@ func (m *MergeArchiver) newBuffer() error {
 	m.buffer = &bytes.Buffer{}
 	blockWriter, err := m.blockWriterFactory.New(m.buffer)
 	if err != nil {
-		return fmt.Errorf("blockWriteFactory: %s", err)
+		return fmt.Errorf("blockWriteFactory: %w", err)
 	}
 	m.blockWriter = blockWriter
 	return nil
@@ -132,7 +132,7 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 	m.expectBlock++
 
 	if err := m.blockWriter.Write(block); err != nil {
-		return fmt.Errorf("blockWriter.Write: %s", err)
+		return fmt.Errorf("blockWriter.Write: %w", err)
 	}
 
 	if block.Num()%100 == 99 {
@@ -154,7 +154,7 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 
 			err := m.store.WriteObject(ctx, baseName, bytes.NewReader(buffer.Bytes()))
 			if err != nil {
-				return fmt.Errorf("uploading merged file: %s", err)
+				return fmt.Errorf("uploading merged file: %w", err)
 			}
 			return nil
 		})

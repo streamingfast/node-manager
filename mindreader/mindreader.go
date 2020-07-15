@@ -79,6 +79,21 @@ func NewMindReaderPlugin(
 	failOnNonContinuousBlocks bool,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
+	zlogger.Info("creating mindreader plugin",
+		zap.String("archive_store_url", archiveStoreURL),
+		zap.String("merge_archive_store_url", mergeArchiveStoreURL),
+		zap.Bool("merge_upload_directly", mergeUploadDirectly),
+		zap.String("working_directory", workingDirectory),
+		zap.Uint64("start_block_num", startBlockNum),
+		zap.Uint64("stop_block_num", stopBlockNum),
+		zap.Bool("discard_after_stop_block", discardAfterStopBlock),
+		zap.Int("channel_capacity", channelCapacity),
+		zap.Bool("with_head_block_update_func", headBlockUpdateFunc != nil),
+		zap.Bool("with_set_maintenance_func", setMaintenanceFunc != nil),
+		zap.Bool("with_stop_block_reach_func", stopBlockReachFunc != nil),
+		zap.Bool("fail_on_non_continuous_blocks", failOnNonContinuousBlocks),
+	)
+
 	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
 	if err != nil {
 		return nil, fmt.Errorf("setting up archive store: %w", err)
@@ -96,7 +111,7 @@ func NewMindReaderPlugin(
 	var continuityChecker ContinuityChecker
 	cc, err := NewContinuityChecker(filepath.Join(workingDirectory, "continuity_check"), zlogger)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up continuity checker: %s", err)
+		return nil, fmt.Errorf("error setting up continuity checker: %w", err)
 	}
 
 	if failOnNonContinuousBlocks {
@@ -107,7 +122,7 @@ func NewMindReaderPlugin(
 
 	var archiver Archiver
 	if mergeUploadDirectly {
-		zlogger.Debug("using merge and upload directly mode")
+		zlogger.Info("configuring merge and upload directly mode")
 		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
 		if err != nil {
 			return nil, fmt.Errorf("setting up merge archive store: %w", err)

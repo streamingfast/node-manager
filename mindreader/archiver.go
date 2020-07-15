@@ -72,7 +72,7 @@ func (s *OneblockArchiver) WaitForAllFilesToUpload() {
 
 func (s *OneblockArchiver) Init() error {
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
-		return fmt.Errorf("mkdir work folder: %s", err)
+		return fmt.Errorf("mkdir work folder: %w", err)
 	}
 
 	return nil
@@ -90,7 +90,7 @@ func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 		err := os.MkdirAll(targetDir, 0755)
 		if err != nil {
-			return fmt.Errorf("mkdir all: %s", err)
+			return fmt.Errorf("mkdir all: %w", err)
 		}
 	}
 
@@ -99,26 +99,26 @@ func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
 
 	file, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("open file: %s", err)
+		return fmt.Errorf("open file: %w", err)
 	}
 
 	blockWriter, err := s.blockWriterFactory.New(file)
 	if err != nil {
 		file.Close()
-		return fmt.Errorf("blockWriteFactory: %s", err)
+		return fmt.Errorf("write block factory: %w", err)
 	}
 
 	if err := blockWriter.Write(block); err != nil {
 		file.Close()
-		return fmt.Errorf("blockWriter.Write: %s", err)
+		return fmt.Errorf("write block: %w", err)
 	}
 
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close file: %s", err)
+		return fmt.Errorf("close file: %w", err)
 	}
 
 	if err := os.Rename(tempFile, finalFile); err != nil {
-		return fmt.Errorf("rename %s to %s: %s", tempFile, finalFile, err)
+		return fmt.Errorf("rename %q to %q: %w", tempFile, finalFile, err)
 	}
 
 	return nil

@@ -269,7 +269,7 @@ func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) 
 	data := new(block)
 	err := json.Unmarshal([]byte(content), data)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling error on '%s': %s", content, err)
+		return nil, fmt.Errorf("marshalling error on '%s': %w", content, err)
 	}
 
 	return &bstream.Block{

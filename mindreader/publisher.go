@@ -27,7 +27,7 @@ func RunGRPCServer(s *grpc.Server, listenAddr string, zlogger *zap.Logger) error
 	zlogger.Info("starting grpc listener", zap.String("listen_addr", listenAddr))
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen: %s", err)
+		return fmt.Errorf("failed to listen: %w", err)
 	}
 
 	serverError := make(chan error, 1)
