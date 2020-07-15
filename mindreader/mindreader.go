@@ -249,7 +249,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 	defer func() {
 		p.archiver.WaitForAllFilesToUpload()
-		p.zlogger.Debug("archiver WaitForAllFilesToUpload done")
+		p.zlogger.Info("archiver WaitForAllFilesToUpload done")
 		close(p.consumeReadFlowDone)
 	}()
 
@@ -257,7 +257,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 		select {
 		case <-p.Terminating():
 			if len(blocks) == 0 {
-				p.zlogger.Debug("all blocks in channel were drained, exiting read flow")
+				p.zlogger.Info("all blocks in channel were drained, exiting read flow")
 				return
 			}
 
