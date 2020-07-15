@@ -15,10 +15,35 @@
 package logplugin
 
 import (
+	"regexp"
 	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
+
+var NoDisplay = zapcore.Level(zap.FatalLevel + 10)
+
+type ToZapLogPluginOption interface {
+	apply(p *ToZapLogPlugin)
+}
+
+type toZapLogPluginOptionFunc func(p *ToZapLogPlugin)
+
+func (s toZapLogPluginOptionFunc) apply(p *ToZapLogPlugin) {
+	s(p)
+}
+
+func ToZapLogPluginAdjustLevels(mappings map[string]zapcore.Level) ToZapLogPluginOption {
+	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
+		if len(mappings) > 0 {
+			p.levelAdjustements = make(map[*regexp.Regexp]zapcore.Level)
+			for regexString, adjustedLevel := range mappings {
+				p.levelAdjustements[regexp.MustCompile(regexString)] = adjustedLevel
+			}
+		}
+	})
+}
 
 // ToZapLogPlugin takes a line, and if it's not a DMLOG line or
 // if we are actively debugging deep mind, will print the line to received
@@ -26,13 +51,21 @@ import (
 type ToZapLogPlugin struct {
 	logger        *zap.Logger
 	debugDeepMind bool
+
+	levelAdjustements map[*regexp.Regexp]zapcore.Level
 }
 
-func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger) *ToZapLogPlugin {
-	return &ToZapLogPlugin{
+func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapLogPluginOption) *ToZapLogPlugin {
+	plugin := &ToZapLogPlugin{
 		debugDeepMind: debugDeepMind,
 		logger:        logger,
 	}
+
+	for _, opt := range options {
+		opt.apply(plugin)
+	}
+
+	return plugin
 }
 
 func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
@@ -58,6 +91,17 @@ func (p *ToZapLogPlugin) LogLine(in string) {
 		level = zap.ErrorLevel
 	} else if strings.HasPrefix(in, "<4>warn") || strings.HasPrefix(in, "warn") {
 		level = zap.WarnLevel
+	}
+
+	for lineRegex, adjustedLevel := range p.levelAdjustements {
+		if lineRegex.MatchString(in) {
+			if adjustedLevel == NoDisplay {
+				// This is know ignored
+				return
+			}
+
+			level = adjustedLevel
+		}
 	}
 
 	p.logger.Check(level, in).Write()
