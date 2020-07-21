@@ -15,12 +15,13 @@
 package superviser
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	pitreos "github.com/eoscanada/pitreos/lib"
+	"github.com/eoscanada/pitreos"
 	"go.uber.org/zap"
 )
 
@@ -49,7 +50,7 @@ func ListPitreosBackup(logger *zap.Logger, backupTag, backupStoreURL, prefix str
 }
 
 func GetPitreos(logger *zap.Logger, backupURL string, appendOnlyFiles ...string) (*pitreos.PITR, error) {
-	storage, err := pitreos.SetupStorage(backupURL)
+	storage, err := pitreos.NewDStoreStorage(context.Background(), backupURL)
 	if err != nil {
 		return nil, err
 	}
