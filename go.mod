@@ -15,9 +15,8 @@ require (
 	github.com/dfuse-io/shutter v1.4.1-0.20200319040708-c809eec458e6
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/eoscanada/eos-go v0.9.1-0.20200506160036-5e090ae689ef
-	github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2
+	github.com/eoscanada/pitreos v1.1.1-0.20200721154110-fb345999fa39
 	github.com/frostschutz/go-fibmap v0.0.0-20160825162329-b32c231bfe6a // indirect
-	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/google/renameio v0.1.0
 	github.com/gorilla/mux v1.7.0
 	github.com/klauspost/compress v1.10.2
