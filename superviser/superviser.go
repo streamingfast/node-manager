@@ -185,7 +185,7 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
 					return
 				}
-				s.Logger.Info("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
+				s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
 			}
 		case line := <-cmd.Stderr:
 			s.processLogLine(line)
@@ -193,7 +193,7 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
 					return
 				}
-				s.Logger.Info("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
+				s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
 			}
 		}
 	}
