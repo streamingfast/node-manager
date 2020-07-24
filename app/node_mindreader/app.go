@@ -103,7 +103,10 @@ func (a *App) Run() error {
 		return err
 	}
 
-	a.modules.Operator.OnTerminating(a.modules.MindreaderPlugin.Shutdown)
+	a.modules.Operator.OnTerminating(func(err error) {
+		a.modules.Operator.SetMaintenance() //blocking call
+		a.modules.MindreaderPlugin.Shutdown(err)
+	})
 	a.modules.MindreaderPlugin.OnTerminated(a.modules.Operator.Shutdown)
 
 	a.OnTerminating(a.modules.Operator.Shutdown)

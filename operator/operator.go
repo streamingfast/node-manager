@@ -628,6 +628,10 @@ func (o *Operator) bootstrapFromBackup(backupName string) error {
 func (o *Operator) SetMaintenance() {
 	o.zlogger.Info("setting maintenance mode")
 	o.commandChan <- &Command{cmd: "maintenance", logger: o.zlogger}
+
+	o.zlogger.Info("waiting for supervisor to stop")
+	<-o.superviser.Stopped()
+	o.zlogger.Info("supervisor stopped")
 }
 
 func (o *Operator) restoreSnapshot(snapshotable nodeManager.SnapshotableChainSuperviser, snapshotName string) error {

@@ -168,27 +168,33 @@ func (s *Superviser) isRunning() bool {
 func (s *Superviser) start(cmd *overseer.Cmd) {
 	statusChan := cmd.Start()
 
+	processTerminated := false
 	for {
 		select {
 		case status := <-statusChan:
-			select {
-			case line := <-cmd.Stdout:
-				s.processLogLine(line)
-			case line := <-cmd.Stderr:
-				s.processLogLine(line)
-			default:
-				s.endLogPlugins()
-			}
+			processTerminated = true
 			if status.Exit == 0 {
-				s.Logger.Info("command terminated with zero status")
+				s.Logger.Info("command terminated with zero status", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
 			} else {
 				s.Logger.Error("command terminated with non-zero status", zap.Any("status", status))
 			}
-			return
+			//return
 		case line := <-cmd.Stdout:
 			s.processLogLine(line)
+			if processTerminated {
+				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
+					return
+				}
+				s.Logger.Info("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
+			}
 		case line := <-cmd.Stderr:
 			s.processLogLine(line)
+			if processTerminated {
+				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
+					return
+				}
+				s.Logger.Info("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
+			}
 		}
 	}
 }
