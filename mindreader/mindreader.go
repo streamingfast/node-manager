@@ -262,13 +262,21 @@ func (p *MindReaderPlugin) ReadFlow() {
 
 func (p *MindReaderPlugin) alwaysUploadFiles() {
 	p.zlogger.Info("starting file upload")
+	lastUploadFailed := false
 	for {
 		if p.IsTerminating() { // the uploadFiles will be called again in 'WaitForAllFilesToUpload()', we can leave here early
 			return
 		}
 
-		if err := p.archiver.uploadFiles(); err != nil {
-			p.zlogger.Warn("failed to upload stale files", zap.Error(err))
+		err := p.archiver.uploadFiles()
+		if err != nil {
+			p.zlogger.Warn("temporary failure trying to upload mindreader block files, will retry", zap.Error(err))
+			lastUploadFailed = true
+		} else {
+			if lastUploadFailed {
+				p.zlogger.Warn("success uploading previously failed mindreader block files")
+				lastUploadFailed = false
+			}
 		}
 
 		select {
