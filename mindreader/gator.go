@@ -15,47 +15,21 @@
 package mindreader
 
 import (
-	"time"
-
 	"github.com/dfuse-io/bstream"
 )
 
-type Gator interface {
-	pass(block *bstream.Block) bool
-}
-
-type TimeThresholdGator struct {
-	passed    bool
-	threshold time.Duration
-}
-
-func NewTimeThresholdGatorr(threshold time.Duration) *TimeThresholdGator {
-	return &TimeThresholdGator{
-		threshold: threshold,
-	}
-}
-
-func (g *TimeThresholdGator) pass(block *bstream.Block) bool {
-	if g.passed {
-		return true
-	}
-
-	g.passed = time.Since(block.Time()) < g.threshold
-	return g.passed
-}
-
-type BlockNumberGator struct {
+type BlockNumberGate struct {
 	passed   bool
 	blockNum uint64
 }
 
-func NewBlockNumberGator(blockNum uint64) *BlockNumberGator {
-	return &BlockNumberGator{
+func NewBlockNumberGate(blockNum uint64) *BlockNumberGate {
+	return &BlockNumberGate{
 		blockNum: blockNum,
 	}
 }
 
-func (g *BlockNumberGator) pass(block *bstream.Block) bool {
+func (g *BlockNumberGate) pass(block *bstream.Block) bool {
 	if g.passed {
 		return true
 	}

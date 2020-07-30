@@ -47,7 +47,10 @@ func (s *TestStore) Init() error {
 	return nil
 }
 
-func (s *TestStore) WaitForAllFilesToUpload() {
+func (s *TestStore) WaitForAllFilesToUpload() <-chan interface{} {
+	ch := make(chan interface{})
+	close(ch)
+	return ch
 }
 
 func (s *TestStore) storeBlock(block *bstream.Block) error {

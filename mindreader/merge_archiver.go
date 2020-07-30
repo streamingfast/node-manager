@@ -86,11 +86,16 @@ func (m *MergeArchiver) newBuffer() error {
 }
 
 // WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
-func (m *MergeArchiver) WaitForAllFilesToUpload() {
-	m.eg.Wait()
-	if m.overflowArchiver != nil {
-		m.overflowArchiver.WaitForAllFilesToUpload()
-	}
+func (m *MergeArchiver) WaitForAllFilesToUpload() <-chan interface{} {
+	ch := make(chan interface{})
+	go func() {
+		m.eg.Wait()
+		if m.overflowArchiver != nil {
+			<-m.overflowArchiver.WaitForAllFilesToUpload()
+		}
+		close(ch)
+	}()
+	return ch
 }
 
 func (m *MergeArchiver) storeBlock(block *bstream.Block) error {

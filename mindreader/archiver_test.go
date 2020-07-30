@@ -51,7 +51,7 @@ func getTestMindReaderPluginCallbacks(t *testing.T) (onError func(error), onComp
 func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	s := NewTestStore()
 
-	mindReader, err := testNewMindReaderPlugin(s, NewBlockNumberGator(0), 0)
+	mindReader, err := testNewMindReaderPlugin(s, 0, 0)
 	mindReader.OnTerminating(func(_ error) {
 		t.Error("should not be called")
 	})
@@ -70,7 +70,7 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 func TestMindReaderPlugin_GatePassed(t *testing.T) {
 	s := NewTestStore()
 
-	mindReader, err := testNewMindReaderPlugin(s, NewBlockNumberGator(2), 0)
+	mindReader, err := testNewMindReaderPlugin(s, 2, 0)
 	mindReader.OnTerminating(func(_ error) {
 		t.Error("should not be called")
 	})
@@ -92,7 +92,7 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	s := NewTestStore()
 
 	done := make(chan interface{})
-	mindReader, err := testNewMindReaderPlugin(s, NewBlockNumberGator(0), 1)
+	mindReader, err := testNewMindReaderPlugin(s, 0, 1)
 	mindReader.OnTerminating(func(err error) {
 		if err == nil {
 			close(done)
@@ -127,7 +127,7 @@ func TestNewLocalStore(t *testing.T) {
 	err = archiver.Init()
 	require.NoError(t, err)
 
-	mindReader, err := testNewMindReaderPlugin(archiver, NewBlockNumberGator(0), 0)
+	mindReader, err := testNewMindReaderPlugin(archiver, 0, 0)
 	mindReader.OnTerminating(func(_ error) {
 		t.Error("should not be called")
 	})
@@ -161,7 +161,7 @@ func TestNewGSStore(t *testing.T) {
 	err = archiver.Init()
 	require.NoError(t, err)
 
-	mindReader, err := testNewMindReaderPlugin(archiver, NewBlockNumberGator(1), 0)
+	mindReader, err := testNewMindReaderPlugin(archiver, 1, 0)
 	mindReader.OnTerminating(func(_ error) {
 		t.Error("should not be called")
 	})
@@ -182,13 +182,13 @@ func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
 	return NewOneblockArchiver(path, store, testBlockWriteFactory, 0, testLogger)
 }
 
-func testNewMindReaderPlugin(archiver Archiver, gator Gator, startBlockNum uint64) (*MindReaderPlugin, error) {
+func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
 	return newMindReaderPlugin(archiver,
 		testConsoleReaderFactory,
 		testConsoleReaderBlockTransformer,
 		&testContinuityChecker{},
-		gator,
-		startBlockNum,
+		startBlock,
+		stopBlock,
 		10,
 		nil,
 		testLogger,

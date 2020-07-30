@@ -34,7 +34,7 @@ type BlockMarshaller func(block *bstream.Block) ([]byte, error)
 
 type Archiver interface {
 	Init() error
-	WaitForAllFilesToUpload()
+	WaitForAllFilesToUpload() <-chan interface{}
 
 	storeBlock(block *bstream.Block) error
 	uploadFiles() error
@@ -66,8 +66,13 @@ func NewOneblockArchiver(
 }
 
 // WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
-func (s *OneblockArchiver) WaitForAllFilesToUpload() {
-	s.uploadFiles()
+func (s *OneblockArchiver) WaitForAllFilesToUpload() <-chan interface{} {
+	ch := make(chan interface{})
+	go func() {
+		s.uploadFiles()
+		close(ch)
+	}()
+	return ch
 }
 
 func (s *OneblockArchiver) Init() error {
