@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"io"
 	"os"
+	"time"
 
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dgrpc"
@@ -28,16 +29,17 @@ import (
 )
 
 type Config struct {
-	GRPCAddr                   string
-	ArchiveStoreURL            string
-	MergeArchiveStoreURL       string
-	MergeUploadDirectly        bool
-	MindReadBlocksChanCapacity int
-	FailOnNonContinuousBlocks  bool
-	StartBlockNum              uint64
-	StopBlockNum               uint64
-	DiscardAfterStopBlock      bool
-	WorkingDir                 string
+	GRPCAddr                     string
+	ArchiveStoreURL              string
+	MergeArchiveStoreURL         string
+	MergeUploadDirectly          bool
+	MindReadBlocksChanCapacity   int
+	FailOnNonContinuousBlocks    bool
+	StartBlockNum                uint64
+	StopBlockNum                 uint64
+	DiscardAfterStopBlock        bool
+	WorkingDir                   string
+	WaitUploadCompleteOnShutdown time.Duration
 }
 
 type Modules struct {
@@ -86,6 +88,7 @@ func (a *App) Run() error {
 		func() {},
 		func() {},
 		a.Config.FailOnNonContinuousBlocks,
+		a.Config.WaitUploadCompleteOnShutdown,
 		a.zlogger,
 	)
 	if err != nil {

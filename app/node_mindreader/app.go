@@ -104,7 +104,7 @@ func (a *App) Run() error {
 	}
 
 	a.modules.Operator.OnTerminating(func(err error) {
-		a.modules.Operator.SetMaintenance() //blocking call
+		a.modules.Operator.SetMaintenance() //blocking call unless already in maintenance
 		a.modules.MindreaderPlugin.Shutdown(err)
 	})
 	a.modules.MindreaderPlugin.OnTerminated(a.modules.Operator.Shutdown)

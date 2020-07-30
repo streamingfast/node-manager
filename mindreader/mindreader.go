@@ -88,6 +88,7 @@ func NewMindReaderPlugin(
 	setMaintenanceFunc func(),
 	stopBlockReachFunc func(),
 	failOnNonContinuousBlocks bool,
+	waitUploadCompleteOnShutdown time.Duration,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	zlogger.Info("creating mindreader plugin",
@@ -103,6 +104,7 @@ func NewMindReaderPlugin(
 		zap.Bool("with_set_maintenance_func", setMaintenanceFunc != nil),
 		zap.Bool("with_stop_block_reach_func", stopBlockReachFunc != nil),
 		zap.Bool("fail_on_non_continuous_blocks", failOnNonContinuousBlocks),
+		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
 
 	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
@@ -163,10 +165,21 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("failed to init archiver: %w", err)
 	}
 
-	mindReaderPlugin, err := newMindReaderPlugin(archiver, consoleReaderFactory, consoleReaderTransformer, continuityChecker, startBlockNum, stopBlockNum, channelCapacity, headBlockUpdateFunc, zlogger)
+	mindReaderPlugin, err := newMindReaderPlugin(
+		archiver,
+		consoleReaderFactory,
+		consoleReaderTransformer,
+		continuityChecker,
+		startBlockNum,
+		stopBlockNum,
+		channelCapacity,
+		headBlockUpdateFunc,
+		zlogger,
+	)
 	if err != nil {
 		return nil, err
 	}
+	mindReaderPlugin.waitUploadCompleteOnShutdown = waitUploadCompleteOnShutdown
 	mindReaderPlugin.setMaintenanceFunc = setMaintenanceFunc
 	mindReaderPlugin.stopBlockReachFunc = stopBlockReachFunc
 

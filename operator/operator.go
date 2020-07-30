@@ -626,6 +626,10 @@ func (o *Operator) bootstrapFromBackup(backupName string) error {
 	return nil
 }
 func (o *Operator) SetMaintenance() {
+	if !o.superviser.IsRunning() {
+		o.zlogger.Info("cannot set maintenance mode, not running")
+		return
+	}
 	o.zlogger.Info("setting maintenance mode")
 	o.commandChan <- &Command{cmd: "maintenance", logger: o.zlogger}
 
