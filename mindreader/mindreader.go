@@ -327,7 +327,6 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 				p.setMaintenanceFunc()
 				continue
 			}
-		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
