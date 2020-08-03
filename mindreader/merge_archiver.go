@@ -90,22 +90,24 @@ func (m *MergeArchiver) hasPartialMergedUpTo(next uint64) bool {
 		saved := filepath.Base(match)
 		if len(saved) != 33 {
 			m.zlogger.Error("trying to restore partial merged but got invalid filename", zap.String("saved", saved), zap.Int("length", len(saved)))
-			return false
+			continue
 		}
 		savedNum, err := strconv.ParseUint(saved[15:25], 10, 64)
 		if err != nil {
 			m.zlogger.Error("trying to restore partial merged but got invalid number from filename", zap.String("saved", saved[15:25]), zap.Error(err))
-			return false
+			continue
 		}
 		if savedNum != next {
-			m.zlogger.Info("last partial block file does not saved, discarding file", zap.Uint64("next", next), zap.Uint64("saved_partial", savedNum))
-			return false
+			m.zlogger.Info("last partial block file does not match saved, deleting file", zap.Uint64("next", next), zap.Uint64("saved_partial", savedNum))
+			os.Remove(match)
+			continue
 		}
+
 		f, err := os.Open(match)
-		toDelete := match
 		if err != nil {
-			m.zlogger.Error("trying to restore partial merged but got cannot open file", zap.String("filename", match), zap.Error(err))
-			return false
+			m.zlogger.Error("trying to restore partial merged but got cannot open file. deleting it", zap.String("filename", match), zap.Error(err))
+			os.Remove(match)
+			continue
 		}
 
 		blockReader, err := m.blockReaderFactory.New(f)
@@ -137,7 +139,7 @@ func (m *MergeArchiver) hasPartialMergedUpTo(next uint64) bool {
 				break
 			}
 			if err != nil {
-				m.zlogger.Error("trying to read block on restore", zap.Error(err))
+				m.zlogger.Error("trying to read block on restore. deleting file", zap.Error(err))
 				m.buffer = nil
 				m.blockWriter = nil
 				f.Close()
@@ -146,7 +148,7 @@ func (m *MergeArchiver) hasPartialMergedUpTo(next uint64) bool {
 		}
 		m.expectBlock = next
 		f.Close()
-		os.Remove(toDelete)
+		os.Remove(match)
 		return true
 	}
 
