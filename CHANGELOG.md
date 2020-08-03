@@ -3,6 +3,19 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+* New Feature: `auto-merge` the mindreader will switch between producing merged-blocks and one-block files depending on the existence of merged files in destination store and on the age of the blocks. It will also never overwrite destination files (unless BatchMode is set)
+* New Feature: when producing merged files, a partial file will be produced on shutdown. If the next block to appear on next startup is the expected one, it will load the partial file to continue producing a merged-blocks file.
+* New option 'BatchMode' forces the mindreader to produce merged-blocks all the time (without checking block age or existence of merged files in block store) and to overwrite any existing merged-blocks files.
+* New option MergeThresholdBlockAge: defines the age at which a block is considered old enough to be included in a merged-block-file directly (without any risk of forking).
+
+### Removed
+* `discardAfterStopBlock`: this option did not give any value, especially now that the mindreader can switch between producing merged blocks and one-block files
+* `merge_upload_directly`: that feature is now automatically enabled (see new `auto-merge` feature), the `BatchMode` option can force that behavior now.
+
+
 ## [v0.0.1] - 2020-06-22
 
 ### Fixed:

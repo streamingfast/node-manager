@@ -32,7 +32,8 @@ type Config struct {
 	GRPCAddr                     string
 	ArchiveStoreURL              string
 	MergeArchiveStoreURL         string
-	MergeUploadDirectly          bool
+	BatchMode                    bool
+	MergeThresholdBlockAge       time.Duration
 	MindReadBlocksChanCapacity   int
 	FailOnNonContinuousBlocks    bool
 	StartBlockNum                uint64
@@ -76,7 +77,8 @@ func (a *App) Run() error {
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
 		a.Config.MergeArchiveStoreURL,
-		a.Config.MergeUploadDirectly,
+		a.Config.BatchMode,
+		a.Config.MergeThresholdBlockAge,
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
 		a.modules.ConsoleReaderTransformer,

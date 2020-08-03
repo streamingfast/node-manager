@@ -76,7 +76,8 @@ type MindReaderPlugin struct {
 func NewMindReaderPlugin(
 	archiveStoreURL string,
 	mergeArchiveStoreURL string,
-	mergeUploadDirectly bool,
+	batchMode bool,
+	mergeThresholdBlockAge time.Duration,
 	workingDirectory string,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
@@ -94,11 +95,11 @@ func NewMindReaderPlugin(
 	zlogger.Info("creating mindreader plugin",
 		zap.String("archive_store_url", archiveStoreURL),
 		zap.String("merge_archive_store_url", mergeArchiveStoreURL),
-		zap.Bool("merge_upload_directly", mergeUploadDirectly),
+		zap.Bool("batch_mode", batchMode),
+		zap.Duration("merge_threshold_age", mergeThresholdBlockAge),
 		zap.String("working_directory", workingDirectory),
 		zap.Uint64("start_block_num", startBlockNum),
 		zap.Uint64("stop_block_num", stopBlockNum),
-		zap.Bool("discard_after_stop_block", discardAfterStopBlock),
 		zap.Int("channel_capacity", channelCapacity),
 		zap.Bool("with_head_block_update_func", headBlockUpdateFunc != nil),
 		zap.Bool("with_set_maintenance_func", setMaintenanceFunc != nil),
@@ -107,14 +108,8 @@ func NewMindReaderPlugin(
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
 
-	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
-	if err != nil {
-		return nil, fmt.Errorf("setting up archive store: %w", err)
-	}
-	archiveStore.SetOverwrite(true)
-
 	// Create directory and its parent(s), it's a no-op if everything already exists
-	err = os.MkdirAll(workingDirectory, os.ModePerm)
+	err := os.MkdirAll(workingDirectory, os.ModePerm)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
@@ -131,34 +126,23 @@ func NewMindReaderPlugin(
 		cc.Reset()
 	}
 
-	var archiver Archiver
-	if mergeUploadDirectly {
-		zlogger.Info("configuring merge and upload directly mode")
-		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
-		if err != nil {
-			return nil, fmt.Errorf("setting up merge archive store: %w", err)
-		}
-		mergeArchiveStore.SetOverwrite(true)
+	oneblockArchiveStore, err := dstore.NewDBinStore(archiveStoreURL) // never overwrites
+	if err != nil {
+		return nil, fmt.Errorf("setting up archive store: %w", err)
+	}
 
-		var options []MergeArchiverOption
-		if stopBlockNum != 0 {
-			if discardAfterStopBlock {
-				zlogger.Info("archive store will discard any block after stop block, this will create a hole in block files after restart", zap.Uint64("stop_block_num", stopBlockNum))
-			} else {
-				zlogger.Info("blocks after stop-block-num will be saved to Oneblock files to be merged afterwards", zap.Uint64("stop_block_num", stopBlockNum))
-				oneblockArchiver := NewOneblockArchiver(workingDirectory, archiveStore, bstream.GetBlockWriterFactory, 0, zlogger)
-				options = append(options, WithOverflowArchiver(oneblockArchiver))
-			}
-		}
-		ra := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, stopBlockNum, zlogger, options...)
-		archiver = ra
+	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	if err != nil {
+		return nil, fmt.Errorf("setting up merge archive store: %w", err)
+	}
+
+	var archiver Archiver
+
+	if batchMode {
+		mergeArchiveStore.SetOverwrite(true)
+		archiver = NewMergeArchiver(mergeArchiveStore, workingDirectory, bstream.GetBlockWriterFactory, bstream.GetBlockReaderFactory, zlogger)
 	} else {
-		var archiverStopBlockNum uint64
-		if stopBlockNum != 0 && discardAfterStopBlock {
-			zlogger.Info("archive store will discard any block after stop block, this will create a hole in block files after restart", zap.Uint64("stop_block_num", stopBlockNum))
-			archiverStopBlockNum = stopBlockNum
-		}
-		archiver = NewOneblockArchiver(workingDirectory, archiveStore, bstream.GetBlockWriterFactory, archiverStopBlockNum, zlogger)
+		archiver = NewHybridArchiver(oneblockArchiveStore, mergeArchiveStore, bstream.GetBlockWriterFactory, bstream.GetBlockReaderFactory, mergeThresholdBlockAge, workingDirectory, zlogger)
 	}
 
 	if err := archiver.Init(); err != nil {

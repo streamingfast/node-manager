@@ -122,14 +122,15 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 
 func TestNewLocalStore(t *testing.T) {
 	localArchiveStore, err := dstore.NewDBinStore("/tmp/mr_dest")
+	localArchiveMergedStore, err := dstore.NewDBinStore("/tmp/mr_dest_merged")
 	require.NoError(t, err)
-	archiver := testNewArchiver("/tmp/mr_test", localArchiveStore)
+	archiver := testNewArchiver("/tmp/mr_test", localArchiveStore, localArchiveMergedStore)
 	err = archiver.Init()
 	require.NoError(t, err)
 
 	mindReader, err := testNewMindReaderPlugin(archiver, 0, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
+	mindReader.OnTerminating(func(e error) {
+		t.Errorf("should not be called: %w", e)
 	})
 	require.NoError(t, err)
 
@@ -154,10 +155,12 @@ func TestNewGSStore(t *testing.T) {
 	t.Skip()
 
 	path := "gs://example/dev"
+	mergedPath := fmt.Sprintf("%s-merged", path)
 	//path := "gs://charlestest1/dev"
 
 	archiveStore, err := dstore.NewDBinStore(path)
-	archiver := testNewArchiver("/tmp/mr_test/", archiveStore)
+	archiveMergedStore, err := dstore.NewDBinStore(mergedPath)
+	archiver := testNewArchiver("/tmp/mr_test/", archiveStore, archiveMergedStore)
 	err = archiver.Init()
 	require.NoError(t, err)
 
@@ -178,8 +181,8 @@ func TestNewGSStore(t *testing.T) {
 	require.True(t, exists)
 }
 
-func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
-	return NewOneblockArchiver(path, store, testBlockWriteFactory, 0, testLogger)
+func testNewArchiver(path string, store dstore.Store, mergedStore dstore.Store) *HybridArchiver {
+	return NewHybridArchiver(store, mergedStore, testBlockWriteFactory, nil, time.Hour*99999, path, testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
