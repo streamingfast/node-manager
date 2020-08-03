@@ -183,6 +183,7 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			s.processLogLine(line)
 			if processTerminated {
 				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
+					s.endLogPlugins()
 					return
 				}
 				s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
@@ -191,6 +192,7 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			s.processLogLine(line)
 			if processTerminated {
 				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
+					s.endLogPlugins()
 					return
 				}
 				s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))

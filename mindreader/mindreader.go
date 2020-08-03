@@ -251,6 +251,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 		if err != nil {
 			if err == io.EOF {
 				p.zlogger.Info("reached end of console reader stream, nothing more to do")
+				close(blocks)
 				return
 			}
 			p.zlogger.Error("reading from console logs", zap.Error(err))
@@ -293,45 +294,38 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	defer close(p.consumeReadFlowDone)
 
 	for {
-
-		if p.IsTerminating() {
-			if len(blocks) == 0 {
-				p.zlogger.Info("all blocks in channel were drained, exiting read flow")
-				select {
-				case <-time.After(p.waitUploadCompleteOnShutdown):
-					p.zlogger.Info("upload may not be complete: timeout waiting for UploadComplete on shutdown", zap.Duration("wait_upload_complete_on_shutdown", p.waitUploadCompleteOnShutdown))
-				case <-p.archiver.WaitForAllFilesToUpload():
-					p.zlogger.Info("archiver WaitForAllFilesToUpload done")
-				}
-				return
+		block, ok := <-blocks
+		if !ok {
+			p.zlogger.Info("all blocks in channel were drained, exiting read flow")
+			select {
+			case <-time.After(p.waitUploadCompleteOnShutdown):
+				p.zlogger.Info("upload may not be complete: timeout waiting for UploadComplete on shutdown", zap.Duration("wait_upload_complete_on_shutdown", p.waitUploadCompleteOnShutdown))
+			case <-p.archiver.WaitForAllFilesToUpload():
+				p.zlogger.Info("archiver WaitForAllFilesToUpload done")
 			}
-			p.zlogger.Info("waiting for blocks channel to drain, going to quit when no more blocks in channel", zap.Int("block_count", len(blocks)))
-
+			return
 		}
 
-		select {
-		case block := <-blocks:
-			err := p.archiver.storeBlock(block)
+		err := p.archiver.storeBlock(block)
+		if err != nil {
+			p.zlogger.Error("failed storing block in archiver, shutting down and losing blocks in transit...", zap.Error(err))
+			go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+			return
+		}
+		if p.blockServer != nil {
+			err = p.blockServer.PushBlock(block)
 			if err != nil {
-				p.zlogger.Error("failed storing block in archiver, shutting down and losing blocks in transit...", zap.Error(err))
-				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+				p.zlogger.Error("failed passing block to blockServer (this should not happen)", zap.Error(err))
 				return
 			}
-			if p.blockServer != nil {
-				err = p.blockServer.PushBlock(block)
-				if err != nil {
-					p.zlogger.Error("failed passing block to blockServer (this should not happen)", zap.Error(err))
-					return
-				}
-			}
+		}
 
-			if p.continuityChecker != nil {
-				err = p.continuityChecker.Write(block.Num())
-				if err != nil {
-					p.zlogger.Error("failed continuity check", zap.Error(err))
-					p.setMaintenanceFunc()
-					continue
-				}
+		if p.continuityChecker != nil {
+			err = p.continuityChecker.Write(block.Num())
+			if err != nil {
+				p.zlogger.Error("failed continuity check", zap.Error(err))
+				p.setMaintenanceFunc()
+				continue
 			}
 		case <-time.After(500 * time.Millisecond):
 		}
