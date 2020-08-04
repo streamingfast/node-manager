@@ -83,10 +83,11 @@ func (s *ArchiverSelector) updateLastSeenLIB() {
 }
 
 // shouldMerge completely manages 'currentlyMerging', 'firstBoundaryPassed' and 'firstBlockPassed'
-func (s *ArchiverSelector) shouldMerge(block *bstream.Block) (should bool, writeToBoth bool, previousBlocks []*bstream.Block) {
+func (s *ArchiverSelector) shouldMerge(block *bstream.Block) (should bool, alsoWriteOneBlock bool, previousBlocks []*bstream.Block) {
 	if s.firstBoundaryPassed && !s.currentlyMerging {
 		return false, false, nil // never go back to merging after passing a boundary
 	}
+	isFirstBlock := !s.firstBlockPassed
 
 	blockNum := block.Num()
 	isBoundaryBlock := (blockNum%100 == 0 || blockNum == bstream.GetProtocolFirstStreamableBlock)
@@ -105,6 +106,12 @@ func (s *ArchiverSelector) shouldMerge(block *bstream.Block) (should bool, write
 	}
 	s.firstBlockPassed = true
 
+	if s.batchMode {
+		alsoWriteOneBlock = s.currentlyMerging == false && !isFirstBlock
+		s.currentlyMerging = true
+		return true, alsoWriteOneBlock, previousBlocks
+	}
+
 	lastSeenLIB := s.lastSeenLIB.Load()
 	if blockNum+10000 >= lastSeenLIB { // optimization: skip doing this every time if blockNum is "not even close"
 		go s.updateLastSeenLIB() // for next time
@@ -113,16 +120,16 @@ func (s *ArchiverSelector) shouldMerge(block *bstream.Block) (should bool, write
 	blockAge := time.Since(block.Time())
 	if blockAge > s.mergeThresholdBlockAge {
 		s.logger.Info("merging next blocks directly because they are older than threshold", zap.Uint64("block_num", blockNum), zap.Duration("block_age", blockAge))
-		writeToBoth = s.currentlyMerging == false
+		alsoWriteOneBlock = s.currentlyMerging == false && !isFirstBlock
 		s.currentlyMerging = true
-		return true, writeToBoth, previousBlocks
+		return true, alsoWriteOneBlock, previousBlocks
 	}
 
 	if blockNum+100 <= lastSeenLIB {
 		s.logger.Info("merging next blocks directly because they are older than LIB", zap.Uint64("block_num", blockNum), zap.Uint64("lib", lastSeenLIB))
-		writeToBoth = s.currentlyMerging == false
+		alsoWriteOneBlock = s.currentlyMerging == false && !isFirstBlock
 		s.currentlyMerging = true
-		return true, writeToBoth, previousBlocks
+		return true, alsoWriteOneBlock, previousBlocks
 	}
 
 	s.logger.Info("producing one-block files...", zap.Uint64("block_num", blockNum))
@@ -193,7 +200,7 @@ func (s *ArchiverSelector) loadLastPartial(next uint64) []*bstream.Block {
 
 func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 
-	shouldMerge, writeToBoth, previousBlocks := s.shouldMerge(block)
+	shouldMerge, alsoWriteOneBlock, previousBlocks := s.shouldMerge(block)
 
 	arch := s.oneblockArchiver
 	if shouldMerge {
@@ -205,7 +212,11 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 			return err
 		}
 	}
-	if writeToBoth {
+	// when we are producing one-block files at startup, we may get to the first boundary and then decide to merge
+	//  ex:  blocks 195, 196, 197, 198, 199 [200 merge ...]
+	// the `merger` requires the upper bound block (200) to be able to merge
+	// to accomodate the behavior of the merger, we will send that block '200' to both archivers
+	if alsoWriteOneBlock {
 		if err := s.oneblockArchiver.StoreBlock(block); err != nil {
 			return err
 		}
