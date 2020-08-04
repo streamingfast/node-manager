@@ -32,6 +32,11 @@ func init() {
 			DBinWriter: dbin.NewWriter(writer),
 		}, nil
 	})
+	bstream.GetBlockReaderFactory = bstream.BlockReaderFactoryFunc(func(reader io.Reader) (bstream.BlockReader, error) {
+		return &bstream.TestBlockReaderBin{
+			DBinReader: dbin.NewReader(reader),
+		}, nil
+	})
 }
 func TestMergeArchiver(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)

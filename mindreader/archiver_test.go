@@ -277,3 +277,24 @@ func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) 
 		Number: uint64(eos.BlockNum(data.ID)),
 	}, nil
 }
+
+type testArchiver struct {
+	blocks []*bstream.Block
+}
+
+func (_ *testArchiver) Init() error {
+	return nil
+}
+func (_ *testArchiver) Terminate() <-chan interface{} {
+	out := make(chan interface{})
+	close(out)
+	return out
+}
+
+func (_ *testArchiver) Start() {
+}
+
+func (a *testArchiver) StoreBlock(block *bstream.Block) error {
+	a.blocks = append(a.blocks, block)
+	return nil
+}
