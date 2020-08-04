@@ -34,56 +34,38 @@ type BlockMarshaller func(block *bstream.Block) ([]byte, error)
 
 type Archiver interface {
 	Init() error
-	WaitForAllFilesToUpload() <-chan interface{}
+	Terminate() <-chan interface{}
 
-	storeBlock(block *bstream.Block) error
-	uploadFiles() error
+	StoreBlock(block *bstream.Block) error
+	Start()
 }
 
-type OneblockArchiver struct {
-	store              dstore.Store
+type OneBlockArchiver struct {
+	oneBlockStore      dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
-	workDir            string
-	uploadMutex        sync.Mutex
-	stopBlock          uint64
-	zlogger            *zap.Logger
+
+	uploadMutex sync.Mutex
+	workDir     string
+	logger      *zap.Logger
 }
 
-func NewOneblockArchiver(
-	workDir string,
-	store dstore.Store,
+func NewOneBlockArchiver(
+	oneBlockStore dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
-	stopBlock uint64,
-	zlogger *zap.Logger,
-) *OneblockArchiver {
-	return &OneblockArchiver{
-		store:              store,
+
+	workDir string,
+	logger *zap.Logger,
+) *OneBlockArchiver {
+	return &OneBlockArchiver{
+		oneBlockStore:      oneBlockStore,
 		blockWriterFactory: blockWriterFactory,
-		workDir:            workDir,
-		stopBlock:          stopBlock,
-		zlogger:            zlogger,
+
+		workDir: workDir,
+		logger:  logger,
 	}
 }
 
-// WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
-func (s *OneblockArchiver) WaitForAllFilesToUpload() <-chan interface{} {
-	ch := make(chan interface{})
-	go func() {
-		s.uploadFiles()
-		close(ch)
-	}()
-	return ch
-}
-
-func (s *OneblockArchiver) Init() error {
-	if err := os.MkdirAll(s.workDir, 0755); err != nil {
-		return fmt.Errorf("mkdir work folder: %w", err)
-	}
-
-	return nil
-}
-
-func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
+func (s *OneBlockArchiver) StoreBlock(block *bstream.Block) error {
 	fileName := blockFileName(block)
 
 	// Store the actual file using multiple folders instead of a single one.
@@ -129,10 +111,30 @@ func (s *OneblockArchiver) storeBlock(block *bstream.Block) error {
 	return nil
 }
 
-func (s *OneblockArchiver) uploadFiles() error {
+func (a *OneBlockArchiver) Start() {
+	lastUploadFailed := false
+	for {
+		err := a.uploadFiles()
+		if err != nil {
+			a.logger.Warn("temporary failure trying to upload mindreader block files, will retry", zap.Error(err))
+			lastUploadFailed = true
+		} else {
+			if lastUploadFailed {
+				a.logger.Warn("success uploading previously failed mindreader block files")
+				lastUploadFailed = false
+			}
+		}
+
+		select {
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+func (s *OneBlockArchiver) uploadFiles() error {
 	s.uploadMutex.Lock()
 	defer s.uploadMutex.Unlock()
-	filesToUpload, err := s.findFilesToUpload(s.workDir)
+	filesToUpload, err := findFilesToUpload(s.workDir, s.logger)
 	if err != nil {
 		return fmt.Errorf("unable to find files to upload: %w", err)
 	}
@@ -155,10 +157,10 @@ func (s *OneblockArchiver) uploadFiles() error {
 			defer cancel()
 
 			if traceEnabled {
-				s.zlogger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
+				s.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
 			}
 
-			if err = s.store.PushLocalFile(ctx, file, toBaseName); err != nil {
+			if err = s.oneBlockStore.PushLocalFile(ctx, file, toBaseName); err != nil {
 				return fmt.Errorf("moving file %q to storage: %w", file, err)
 			}
 			return nil
@@ -168,10 +170,28 @@ func (s *OneblockArchiver) uploadFiles() error {
 	return eg.Wait()
 }
 
-func (s *OneblockArchiver) findFilesToUpload(workingDirectory string) (filesToUpload []string, err error) {
+// Terminate assumes that no more 'StoreBlock' command is coming
+func (s *OneBlockArchiver) Terminate() <-chan interface{} {
+	ch := make(chan interface{})
+	go func() {
+		s.uploadFiles()
+		close(ch)
+	}()
+	return ch
+}
+
+func (s *OneBlockArchiver) Init() error {
+	if err := os.MkdirAll(s.workDir, 0755); err != nil {
+		return fmt.Errorf("mkdir work folder: %w", err)
+	}
+
+	return nil
+}
+
+func findFilesToUpload(workingDirectory string, logger *zap.Logger) (filesToUpload []string, err error) {
 	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
 		if os.IsNotExist(err) {
-			s.zlogger.Debug("skipping file that disappeared", zap.Error(err))
+			logger.Debug("skipping file that disappeared", zap.Error(err))
 			return nil
 		}
 		if err != nil {
@@ -187,7 +207,7 @@ func (s *OneblockArchiver) findFilesToUpload(workingDirectory string) (filesToUp
 			if isDirEmpty(path) && time.Since(info.ModTime()) > 60*time.Second {
 				err := os.Remove(path)
 				if err != nil {
-					s.zlogger.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
+					logger.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
 				}
 			}
 			return nil

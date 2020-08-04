@@ -128,8 +128,8 @@ func TestNewLocalStore(t *testing.T) {
 	require.NoError(t, err)
 
 	mindReader, err := testNewMindReaderPlugin(archiver, 0, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
+	mindReader.OnTerminating(func(e error) {
+		t.Errorf("should not be called: %w", e)
 	})
 	require.NoError(t, err)
 
@@ -178,8 +178,8 @@ func TestNewGSStore(t *testing.T) {
 	require.True(t, exists)
 }
 
-func testNewArchiver(path string, store dstore.Store) *OneblockArchiver {
-	return NewOneblockArchiver(path, store, testBlockWriteFactory, 0, testLogger)
+func testNewArchiver(path string, store dstore.Store) *OneBlockArchiver {
+	return NewOneBlockArchiver(store, testBlockWriteFactory, path, testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
@@ -276,4 +276,25 @@ func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) 
 		Id:     data.ID,
 		Number: uint64(eos.BlockNum(data.ID)),
 	}, nil
+}
+
+type testArchiver struct {
+	blocks []*bstream.Block
+}
+
+func (_ *testArchiver) Init() error {
+	return nil
+}
+func (_ *testArchiver) Terminate() <-chan interface{} {
+	out := make(chan interface{})
+	close(out)
+	return out
+}
+
+func (_ *testArchiver) Start() {
+}
+
+func (a *testArchiver) StoreBlock(block *bstream.Block) error {
+	a.blocks = append(a.blocks, block)
+	return nil
 }

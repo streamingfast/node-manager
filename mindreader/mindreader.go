@@ -56,7 +56,8 @@ type MindReaderPlugin struct {
 
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
 	channelCapacity int                           // transformed blocks are buffered in a channel
-	archiver        Archiver                      // transformed blocks are sent to Archiver
+
+	archiver Archiver // transformed blocks are sent to Archiver
 
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
@@ -76,13 +77,15 @@ type MindReaderPlugin struct {
 func NewMindReaderPlugin(
 	archiveStoreURL string,
 	mergeArchiveStoreURL string,
-	mergeUploadDirectly bool,
+	batchMode bool,
+	mergeThresholdBlockAge time.Duration,
 	workingDirectory string,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
+	tracker *bstream.Tracker,
+
 	startBlockNum uint64,
 	stopBlockNum uint64,
-	discardAfterStopBlock bool,
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
 	setMaintenanceFunc func(),
@@ -94,11 +97,11 @@ func NewMindReaderPlugin(
 	zlogger.Info("creating mindreader plugin",
 		zap.String("archive_store_url", archiveStoreURL),
 		zap.String("merge_archive_store_url", mergeArchiveStoreURL),
-		zap.Bool("merge_upload_directly", mergeUploadDirectly),
+		zap.Bool("batch_mode", batchMode),
+		zap.Duration("merge_threshold_age", mergeThresholdBlockAge),
 		zap.String("working_directory", workingDirectory),
 		zap.Uint64("start_block_num", startBlockNum),
 		zap.Uint64("stop_block_num", stopBlockNum),
-		zap.Bool("discard_after_stop_block", discardAfterStopBlock),
 		zap.Int("channel_capacity", channelCapacity),
 		zap.Bool("with_head_block_update_func", headBlockUpdateFunc != nil),
 		zap.Bool("with_set_maintenance_func", setMaintenanceFunc != nil),
@@ -107,14 +110,8 @@ func NewMindReaderPlugin(
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
 
-	archiveStore, err := dstore.NewDBinStore(archiveStoreURL)
-	if err != nil {
-		return nil, fmt.Errorf("setting up archive store: %w", err)
-	}
-	archiveStore.SetOverwrite(true)
-
 	// Create directory and its parent(s), it's a no-op if everything already exists
-	err = os.MkdirAll(workingDirectory, os.ModePerm)
+	err := os.MkdirAll(workingDirectory, os.ModePerm)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
@@ -131,42 +128,31 @@ func NewMindReaderPlugin(
 		cc.Reset()
 	}
 
-	var archiver Archiver
-	if mergeUploadDirectly {
-		zlogger.Info("configuring merge and upload directly mode")
-		mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
-		if err != nil {
-			return nil, fmt.Errorf("setting up merge archive store: %w", err)
-		}
-		mergeArchiveStore.SetOverwrite(true)
-
-		var options []MergeArchiverOption
-		if stopBlockNum != 0 {
-			if discardAfterStopBlock {
-				zlogger.Info("archive store will discard any block after stop block, this will create a hole in block files after restart", zap.Uint64("stop_block_num", stopBlockNum))
-			} else {
-				zlogger.Info("blocks after stop-block-num will be saved to Oneblock files to be merged afterwards", zap.Uint64("stop_block_num", stopBlockNum))
-				oneblockArchiver := NewOneblockArchiver(workingDirectory, archiveStore, bstream.GetBlockWriterFactory, 0, zlogger)
-				options = append(options, WithOverflowArchiver(oneblockArchiver))
-			}
-		}
-		ra := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, stopBlockNum, zlogger, options...)
-		archiver = ra
-	} else {
-		var archiverStopBlockNum uint64
-		if stopBlockNum != 0 && discardAfterStopBlock {
-			zlogger.Info("archive store will discard any block after stop block, this will create a hole in block files after restart", zap.Uint64("stop_block_num", stopBlockNum))
-			archiverStopBlockNum = stopBlockNum
-		}
-		archiver = NewOneblockArchiver(workingDirectory, archiveStore, bstream.GetBlockWriterFactory, archiverStopBlockNum, zlogger)
+	oneblockArchiveStore, err := dstore.NewDBinStore(archiveStoreURL) // never overwrites
+	if err != nil {
+		return nil, fmt.Errorf("setting up archive store: %w", err)
 	}
+	var oneBlockArchiver Archiver
+	oneBlockArchiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
-	if err := archiver.Init(); err != nil {
+	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	if err != nil {
+		return nil, fmt.Errorf("setting up merge archive store: %w", err)
+	}
+	if batchMode {
+		mergeArchiveStore.SetOverwrite(true)
+	}
+	var mergeArchiver Archiver
+	mergeArchiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
+
+	archiverSelector := NewArchiverSelector(oneBlockArchiver, mergeArchiver, bstream.GetBlockReaderFactory, batchMode, tracker, mergeThresholdBlockAge, workingDirectory, zlogger)
+
+	if err := archiverSelector.Init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %w", err)
 	}
 
 	mindReaderPlugin, err := newMindReaderPlugin(
-		archiver,
+		archiverSelector,
 		consoleReaderFactory,
 		consoleReaderTransformer,
 		continuityChecker,
@@ -243,7 +229,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	go p.consumeReadFlow(blocks)
-	go p.alwaysUploadFiles()
+	go p.archiver.Start()
 
 	for {
 		// ALWAYS READ (otherwise you'll stall `nodeos`' shutdown process, want a dirty flag?)
@@ -261,33 +247,6 @@ func (p *MindReaderPlugin) ReadFlow() {
 	}
 }
 
-func (p *MindReaderPlugin) alwaysUploadFiles() {
-	p.zlogger.Info("starting file upload")
-	lastUploadFailed := false
-	for {
-		if p.IsTerminating() { // the uploadFiles will be called again in 'WaitForAllFilesToUpload()', we can leave here early
-			return
-		}
-
-		err := p.archiver.uploadFiles()
-		if err != nil {
-			p.zlogger.Warn("temporary failure trying to upload mindreader block files, will retry", zap.Error(err))
-			lastUploadFailed = true
-		} else {
-			if lastUploadFailed {
-				p.zlogger.Warn("success uploading previously failed mindreader block files")
-				lastUploadFailed = false
-			}
-		}
-
-		select {
-		case <-p.Terminating():
-			return
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-}
-
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	p.zlogger.Info("starting consume flow")
@@ -300,13 +259,13 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			select {
 			case <-time.After(p.waitUploadCompleteOnShutdown):
 				p.zlogger.Info("upload may not be complete: timeout waiting for UploadComplete on shutdown", zap.Duration("wait_upload_complete_on_shutdown", p.waitUploadCompleteOnShutdown))
-			case <-p.archiver.WaitForAllFilesToUpload():
-				p.zlogger.Info("archiver WaitForAllFilesToUpload done")
+			case <-p.archiver.Terminate():
+				p.zlogger.Info("archiver Terminate done")
 			}
 			return
 		}
 
-		err := p.archiver.storeBlock(block)
+		err := p.archiver.StoreBlock(block)
 		if err != nil {
 			p.zlogger.Error("failed storing block in archiver, shutting down and losing blocks in transit...", zap.Error(err))
 			go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))

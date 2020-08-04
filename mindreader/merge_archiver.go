@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/abourget/llerrgroup"
@@ -30,9 +32,8 @@ import (
 type MergeArchiver struct {
 	store              dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
-	stopBlock          uint64
-	overflowArchiver   Archiver
 
+	workDir     string
 	eg          *llerrgroup.Group
 	expectBlock uint64
 	buffer      *bytes.Buffer
@@ -43,36 +44,25 @@ type MergeArchiver struct {
 func NewMergeArchiver(
 	store dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
-	stopBlock uint64,
+	workDir string,
 	zlogger *zap.Logger,
-	options ...MergeArchiverOption,
 ) *MergeArchiver {
 	ra := &MergeArchiver{
 		eg:                 llerrgroup.New(2),
 		store:              store,
-		stopBlock:          stopBlock,
+		workDir:            workDir,
 		blockWriterFactory: blockWriterFactory,
 		zlogger:            zlogger,
-	}
-	for _, opt := range options {
-		opt(ra)
 	}
 	return ra
 }
 
-type MergeArchiverOption func(*MergeArchiver)
-
-func WithOverflowArchiver(archiver Archiver) MergeArchiverOption {
-	return func(r *MergeArchiver) {
-		r.overflowArchiver = archiver
-	}
+func (m *MergeArchiver) Init() error {
+	return nil
 }
 
-func (m *MergeArchiver) Init() error {
-	if m.overflowArchiver != nil {
-		return m.overflowArchiver.Init()
-	}
-	return nil
+func (m *MergeArchiver) Start() {
+	return
 }
 
 func (m *MergeArchiver) newBuffer() error {
@@ -85,20 +75,36 @@ func (m *MergeArchiver) newBuffer() error {
 	return nil
 }
 
-// WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
-func (m *MergeArchiver) WaitForAllFilesToUpload() <-chan interface{} {
+// Terminate assumes that no more 'StoreBlock' command is coming
+func (m *MergeArchiver) Terminate() <-chan interface{} {
 	ch := make(chan interface{})
 	go func() {
 		m.eg.Wait()
-		if m.overflowArchiver != nil {
-			<-m.overflowArchiver.WaitForAllFilesToUpload()
+		if m.buffer != nil {
+			err := m.writePartialFile()
+			if err != nil {
+				m.zlogger.Error("writing partial file", zap.Error(err))
+			}
 		}
 		close(ch)
 	}()
 	return ch
 }
 
-func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
+func (m *MergeArchiver) writePartialFile() error {
+	filename := filepath.Join(m.workDir, fmt.Sprintf("archiver_%010d.partial", m.expectBlock))
+
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = m.buffer.WriteTo(f)
+	return err
+}
+
+func (m *MergeArchiver) StoreBlock(block *bstream.Block) error {
 	if m.buffer == nil && block.Num() < 3 {
 		// Special case the beginning of the EOS chain
 
@@ -113,21 +119,13 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 			return err
 		}
 
-		if m.expectBlock == 0 {
+		if m.expectBlock%100 == 0 { // relaxing enforcement here, 299 could be followed by 400 if the blocks 300->399 were sent to another archiver
 			m.expectBlock = block.Num()
 		}
 	}
 
 	if m.buffer == nil {
 		m.zlogger.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
-		return nil
-	}
-
-	if m.stopBlock != 0 && block.Num() >= m.stopBlock {
-		if m.overflowArchiver != nil {
-			return m.overflowArchiver.storeBlock(block)
-		}
-		m.zlogger.Debug("ignoring block after stop_block because no passthrough is set", zap.Uint64("block_num", block.Num()))
 		return nil
 	}
 
@@ -165,10 +163,5 @@ func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
 		})
 	}
 
-	return nil
-}
-
-// uploadFiles does nothing here, it's managed by `storeBlock` when needed
-func (m *MergeArchiver) uploadFiles() error {
 	return nil
 }
