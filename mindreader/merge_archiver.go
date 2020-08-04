@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/abourget/llerrgroup"
@@ -34,7 +32,6 @@ import (
 type MergeArchiver struct {
 	store              dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
-	blockReaderFactory bstream.BlockReaderFactory
 
 	workDir     string
 	eg          *llerrgroup.Group
@@ -46,9 +43,8 @@ type MergeArchiver struct {
 
 func NewMergeArchiver(
 	store dstore.Store,
-	workDir string,
 	blockWriterFactory bstream.BlockWriterFactory,
-	blockReaderFactory bstream.BlockReaderFactory,
+	workDir string,
 	zlogger *zap.Logger,
 ) *MergeArchiver {
 	ra := &MergeArchiver{
@@ -56,7 +52,6 @@ func NewMergeArchiver(
 		store:              store,
 		workDir:            workDir,
 		blockWriterFactory: blockWriterFactory,
-		blockReaderFactory: blockReaderFactory,
 		zlogger:            zlogger,
 	}
 	return ra
@@ -64,6 +59,10 @@ func NewMergeArchiver(
 
 func (m *MergeArchiver) Init() error {
 	return nil
+}
+
+func (m *MergeArchiver) Start() {
+	return
 }
 
 func (m *MergeArchiver) newBuffer() error {
@@ -76,104 +75,24 @@ func (m *MergeArchiver) newBuffer() error {
 	return nil
 }
 
-func (m *MergeArchiver) hasPartialMergedUpTo(next uint64) bool {
-	if next%100 == 0 || next == bstream.GetProtocolFirstStreamableBlock {
-		return false
-	}
-
-	matches, err := filepath.Glob(filepath.Join(m.workDir, "merge_archiver_*.partial"))
-	if err != nil {
-		m.zlogger.Error("trying to find glob for partial merged", zap.Error(err))
-		return false
-	}
-	for _, match := range matches {
-		saved := filepath.Base(match)
-		if len(saved) != 33 {
-			m.zlogger.Error("trying to restore partial merged but got invalid filename", zap.String("saved", saved), zap.Int("length", len(saved)))
-			continue
-		}
-		savedNum, err := strconv.ParseUint(saved[15:25], 10, 64)
-		if err != nil {
-			m.zlogger.Error("trying to restore partial merged but got invalid number from filename", zap.String("saved", saved[15:25]), zap.Error(err))
-			continue
-		}
-		if savedNum != next {
-			m.zlogger.Info("last partial block file does not match saved, deleting file", zap.Uint64("next", next), zap.Uint64("saved_partial", savedNum))
-			os.Remove(match)
-			continue
-		}
-
-		f, err := os.Open(match)
-		if err != nil {
-			m.zlogger.Error("trying to restore partial merged but got cannot open file. deleting it", zap.String("filename", match), zap.Error(err))
-			os.Remove(match)
-			continue
-		}
-
-		blockReader, err := m.blockReaderFactory.New(f)
-		if err != nil {
-			m.zlogger.Error("trying to generate blockreader with file on restore", zap.Error(err))
-			f.Close()
-			return false
-		}
-
-		err = m.newBuffer()
-		if err != nil {
-			m.zlogger.Error("trying to set new buffer on restore", zap.Error(err))
-			f.Close()
-			return false
-		}
-
-		for {
-			blk, err := blockReader.Read()
-			if blk != nil {
-				if err := m.blockWriter.Write(blk); err != nil {
-					m.zlogger.Error("trying to write block on restore", zap.Error(err))
-					m.buffer = nil
-					m.blockWriter = nil
-					f.Close()
-					return false
-				}
-			}
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				m.zlogger.Error("trying to read block on restore. deleting file", zap.Error(err))
-				m.buffer = nil
-				m.blockWriter = nil
-				f.Close()
-				return false
-			}
-		}
-		m.expectBlock = next
-		f.Close()
-		os.Remove(match)
-		return true
-	}
-
-	return false
-}
-
-// WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
-func (m *MergeArchiver) WaitForAllFilesToUpload() <-chan interface{} {
+// Terminate assumes that no more 'StoreBlock' command is coming
+func (m *MergeArchiver) Terminate() <-chan interface{} {
 	ch := make(chan interface{})
 	go func() {
 		m.eg.Wait()
-		err := m.writePartialFile()
-		if err != nil {
-			m.zlogger.Error("writing partial file", zap.Error(err))
+		if m.buffer != nil {
+			err := m.writePartialFile()
+			if err != nil {
+				m.zlogger.Error("writing partial file", zap.Error(err))
+			}
 		}
 		close(ch)
 	}()
 	return ch
 }
 
-func (m *MergeArchiver) uploadFiles() error {
-	return nil
-}
 func (m *MergeArchiver) writePartialFile() error {
-	filename := filepath.Join(m.workDir, fmt.Sprintf("merge_archiver_%010d.partial", m.expectBlock))
+	filename := filepath.Join(m.workDir, fmt.Sprintf("archiver_%010d.partial", m.expectBlock))
 
 	f, err := os.Create(filename)
 	if err != nil {
@@ -185,7 +104,7 @@ func (m *MergeArchiver) writePartialFile() error {
 	return err
 }
 
-func (m *MergeArchiver) storeBlock(block *bstream.Block) error {
+func (m *MergeArchiver) StoreBlock(block *bstream.Block) error {
 	if m.buffer == nil && block.Num() < 3 {
 		// Special case the beginning of the EOS chain
 

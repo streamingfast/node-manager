@@ -53,7 +53,7 @@ func (s *TestStore) WaitForAllFilesToUpload() <-chan interface{} {
 	return ch
 }
 
-func (s *TestStore) storeBlock(block *bstream.Block) error {
+func (s *TestStore) StoreBlock(block *bstream.Block) error {
 	s.blocks = append(s.blocks, block)
 	s.receivedBlock <- block
 	return nil

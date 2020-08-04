@@ -56,7 +56,8 @@ type MindReaderPlugin struct {
 
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
 	channelCapacity int                           // transformed blocks are buffered in a channel
-	archiver        Archiver                      // transformed blocks are sent to Archiver
+
+	archiver Archiver // transformed blocks are sent to Archiver
 
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
@@ -81,9 +82,10 @@ func NewMindReaderPlugin(
 	workingDirectory string,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
+	tracker *bstream.Tracker,
+
 	startBlockNum uint64,
 	stopBlockNum uint64,
-	discardAfterStopBlock bool,
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
 	setMaintenanceFunc func(),
@@ -130,27 +132,27 @@ func NewMindReaderPlugin(
 	if err != nil {
 		return nil, fmt.Errorf("setting up archive store: %w", err)
 	}
+	var oneBlockArchiver Archiver
+	oneBlockArchiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
 	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
 	if err != nil {
 		return nil, fmt.Errorf("setting up merge archive store: %w", err)
 	}
-
-	var archiver Archiver
-
 	if batchMode {
 		mergeArchiveStore.SetOverwrite(true)
-		archiver = NewMergeArchiver(mergeArchiveStore, workingDirectory, bstream.GetBlockWriterFactory, bstream.GetBlockReaderFactory, zlogger)
-	} else {
-		archiver = NewHybridArchiver(oneblockArchiveStore, mergeArchiveStore, bstream.GetBlockWriterFactory, bstream.GetBlockReaderFactory, mergeThresholdBlockAge, workingDirectory, zlogger)
 	}
+	var mergeArchiver Archiver
+	mergeArchiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
-	if err := archiver.Init(); err != nil {
+	archiverSelector := NewArchiverSelector(oneBlockArchiver, mergeArchiver, bstream.GetBlockReaderFactory, batchMode, tracker, mergeThresholdBlockAge, workingDirectory, zlogger)
+
+	if err := archiverSelector.Init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %w", err)
 	}
 
 	mindReaderPlugin, err := newMindReaderPlugin(
-		archiver,
+		archiverSelector,
 		consoleReaderFactory,
 		consoleReaderTransformer,
 		continuityChecker,
@@ -227,7 +229,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	go p.consumeReadFlow(blocks)
-	go p.alwaysUploadFiles()
+	go p.archiver.Start()
 
 	for {
 		// ALWAYS READ (otherwise you'll stall `nodeos`' shutdown process, want a dirty flag?)
@@ -245,33 +247,6 @@ func (p *MindReaderPlugin) ReadFlow() {
 	}
 }
 
-func (p *MindReaderPlugin) alwaysUploadFiles() {
-	p.zlogger.Info("starting file upload")
-	lastUploadFailed := false
-	for {
-		if p.IsTerminating() { // the uploadFiles will be called again in 'WaitForAllFilesToUpload()', we can leave here early
-			return
-		}
-
-		err := p.archiver.uploadFiles()
-		if err != nil {
-			p.zlogger.Warn("temporary failure trying to upload mindreader block files, will retry", zap.Error(err))
-			lastUploadFailed = true
-		} else {
-			if lastUploadFailed {
-				p.zlogger.Warn("success uploading previously failed mindreader block files")
-				lastUploadFailed = false
-			}
-		}
-
-		select {
-		case <-p.Terminating():
-			return
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-}
-
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	p.zlogger.Info("starting consume flow")
@@ -284,13 +259,13 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			select {
 			case <-time.After(p.waitUploadCompleteOnShutdown):
 				p.zlogger.Info("upload may not be complete: timeout waiting for UploadComplete on shutdown", zap.Duration("wait_upload_complete_on_shutdown", p.waitUploadCompleteOnShutdown))
-			case <-p.archiver.WaitForAllFilesToUpload():
-				p.zlogger.Info("archiver WaitForAllFilesToUpload done")
+			case <-p.archiver.Terminate():
+				p.zlogger.Info("archiver Terminate done")
 			}
 			return
 		}
 
-		err := p.archiver.storeBlock(block)
+		err := p.archiver.StoreBlock(block)
 		if err != nil {
 			p.zlogger.Error("failed storing block in archiver, shutting down and losing blocks in transit...", zap.Error(err))
 			go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))

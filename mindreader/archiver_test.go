@@ -182,7 +182,7 @@ func TestNewGSStore(t *testing.T) {
 }
 
 func testNewArchiver(path string, store dstore.Store, mergedStore dstore.Store) *HybridArchiver {
-	return NewHybridArchiver(store, mergedStore, testBlockWriteFactory, nil, time.Hour*99999, path, testLogger)
+	return NewHybridArchiver(store, mergedStore, testBlockWriteFactory, nil, bstream.NewTracker(200), time.Hour*99999, path, testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {

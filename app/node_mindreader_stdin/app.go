@@ -20,6 +20,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dgrpc"
 	nodeManager "github.com/dfuse-io/node-manager"
@@ -47,6 +48,7 @@ type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
 	ConsoleReaderTransformer   mindreader.ConsoleReaderBlockTransformer
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
+	Tracker                    *bstream.Tracker
 }
 
 type App struct {
@@ -82,9 +84,9 @@ func (a *App) Run() error {
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
 		a.modules.ConsoleReaderTransformer,
+		a.modules.Tracker,
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,
-		a.Config.DiscardAfterStopBlock,
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func() {},

@@ -27,7 +27,6 @@ import (
 	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
@@ -35,85 +34,38 @@ type BlockMarshaller func(block *bstream.Block) ([]byte, error)
 
 type Archiver interface {
 	Init() error
-	WaitForAllFilesToUpload() <-chan interface{}
+	Terminate() <-chan interface{}
 
-	storeBlock(block *bstream.Block) error
-	uploadFiles() error
+	StoreBlock(block *bstream.Block) error
+	Start()
 }
 
-type HybridArchiver struct {
+type OneBlockArchiver struct {
 	oneBlockStore      dstore.Store
-	mergedBlockStore   dstore.Store
-	mergeArchiver      *MergeArchiver
 	blockWriterFactory bstream.BlockWriterFactory
-	storeBlockCalled   bool
-
-	mergeThresholdBlockAge       time.Duration
-	lastSeenExistingMergedBlocks *atomic.Uint64
-	currentlyMerging             bool
 
 	uploadMutex sync.Mutex
 	workDir     string
-	zlogger     *zap.Logger
+	logger      *zap.Logger
 }
 
-func NewHybridArchiver(
+func NewOneBlockArchiver(
 	oneBlockStore dstore.Store,
-	mergedBlockStore dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
-	blockReaderFactory bstream.BlockReaderFactory,
-	mergeThresholdBlockAge time.Duration,
 
 	workDir string,
-	zlogger *zap.Logger,
-) *HybridArchiver {
-	return &HybridArchiver{
-		oneBlockStore:                oneBlockStore,
-		mergedBlockStore:             mergedBlockStore,
-		mergeArchiver:                NewMergeArchiver(mergedBlockStore, workDir, blockWriterFactory, blockReaderFactory, zlogger),
-		blockWriterFactory:           blockWriterFactory,
-		mergeThresholdBlockAge:       mergeThresholdBlockAge,
-		lastSeenExistingMergedBlocks: atomic.NewUint64(0),
+	logger *zap.Logger,
+) *OneBlockArchiver {
+	return &OneBlockArchiver{
+		oneBlockStore:      oneBlockStore,
+		blockWriterFactory: blockWriterFactory,
 
 		workDir: workDir,
-		zlogger: zlogger,
+		logger:  logger,
 	}
 }
 
-func (s *HybridArchiver) storeBlock(block *bstream.Block) error {
-	blockNum := block.Num()
-	if !s.storeBlockCalled {
-		baseBlockNum := blockNum / 100 * 100
-		s.checkNextUploadedMergedBlock(baseBlockNum)
-		s.checkNextUploadedMergedBlock(baseBlockNum + 100)
-
-		if s.mergeArchiver.hasPartialMergedUpTo(blockNum) {
-			s.zlogger.Info("continuing partially merged file from", zap.Uint64("block_num", blockNum))
-			s.currentlyMerging = true
-		}
-		s.storeBlockCalled = true
-	}
-
-	if blockNum%100 == 0 || blockNum == bstream.GetProtocolFirstStreamableBlock {
-		switch {
-		case blockNum <= s.lastSeenExistingMergedBlocks.Load():
-			s.zlogger.Info("merging next blocks directly because merged file exists in store", zap.Uint64("block_num", blockNum)) // todo add optimization to completely skip them based on overwrite param
-			s.currentlyMerging = true
-			go s.checkNextUploadedMergedBlock(blockNum/100*100 + 100)
-		case time.Since(block.Time()) > s.mergeThresholdBlockAge:
-			s.zlogger.Info("merging next blocks directly because they are older than threshold", zap.Uint64("block_num", blockNum), zap.Duration("block_age", time.Since(block.Time())))
-			s.currentlyMerging = true
-			go s.checkNextUploadedMergedBlock(blockNum/100*100 + 100)
-		default:
-			s.zlogger.Info("producing one-block files...", zap.Uint64("block_num", blockNum))
-			s.currentlyMerging = false
-		}
-	}
-
-	if s.currentlyMerging {
-		return s.mergeArchiver.storeBlock(block)
-	}
-
+func (s *OneBlockArchiver) StoreBlock(block *bstream.Block) error {
 	fileName := blockFileName(block)
 
 	// Store the actual file using multiple folders instead of a single one.
@@ -159,27 +111,30 @@ func (s *HybridArchiver) storeBlock(block *bstream.Block) error {
 	return nil
 }
 
-func (s *HybridArchiver) checkNextUploadedMergedBlock(nextBaseNum uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	nextBaseName := fmt.Sprintf("%010d", nextBaseNum)
-	exists, err := s.mergedBlockStore.FileExists(ctx, nextBaseName)
-	if err != nil {
-		s.zlogger.Warn("cannot check merged block existence in store, will retry...", zap.Error(err), zap.String("next_base_name", nextBaseName))
-	}
-	if exists {
-		if nextBaseNum == 0 {
-			s.lastSeenExistingMergedBlocks.Store(bstream.GetProtocolFirstStreamableBlock)
-			return
+func (a *OneBlockArchiver) Start() {
+	lastUploadFailed := false
+	for {
+		err := a.uploadFiles()
+		if err != nil {
+			a.logger.Warn("temporary failure trying to upload mindreader block files, will retry", zap.Error(err))
+			lastUploadFailed = true
+		} else {
+			if lastUploadFailed {
+				a.logger.Warn("success uploading previously failed mindreader block files")
+				lastUploadFailed = false
+			}
 		}
-		s.lastSeenExistingMergedBlocks.Store(nextBaseNum)
+
+		select {
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 }
 
-func (s *HybridArchiver) uploadFiles() error {
+func (s *OneBlockArchiver) uploadFiles() error {
 	s.uploadMutex.Lock()
 	defer s.uploadMutex.Unlock()
-	filesToUpload, err := findFilesToUpload(s.workDir, s.zlogger)
+	filesToUpload, err := findFilesToUpload(s.workDir, s.logger)
 	if err != nil {
 		return fmt.Errorf("unable to find files to upload: %w", err)
 	}
@@ -202,7 +157,7 @@ func (s *HybridArchiver) uploadFiles() error {
 			defer cancel()
 
 			if traceEnabled {
-				s.zlogger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
+				s.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
 			}
 
 			if err = s.oneBlockStore.PushLocalFile(ctx, file, toBaseName); err != nil {
@@ -215,18 +170,17 @@ func (s *HybridArchiver) uploadFiles() error {
 	return eg.Wait()
 }
 
-// WaitForAllFilesToUpload assumes that no more 'storeBlock' command is coming
-func (s *HybridArchiver) WaitForAllFilesToUpload() <-chan interface{} {
+// Terminate assumes that no more 'StoreBlock' command is coming
+func (s *OneBlockArchiver) Terminate() <-chan interface{} {
 	ch := make(chan interface{})
 	go func() {
 		s.uploadFiles()
-		<-s.mergeArchiver.WaitForAllFilesToUpload()
 		close(ch)
 	}()
 	return ch
 }
 
-func (s *HybridArchiver) Init() error {
+func (s *OneBlockArchiver) Init() error {
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
 		return fmt.Errorf("mkdir work folder: %w", err)
 	}
@@ -234,10 +188,10 @@ func (s *HybridArchiver) Init() error {
 	return nil
 }
 
-func findFilesToUpload(workingDirectory string, zlogger *zap.Logger) (filesToUpload []string, err error) {
+func findFilesToUpload(workingDirectory string, logger *zap.Logger) (filesToUpload []string, err error) {
 	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
 		if os.IsNotExist(err) {
-			zlogger.Debug("skipping file that disappeared", zap.Error(err))
+			logger.Debug("skipping file that disappeared", zap.Error(err))
 			return nil
 		}
 		if err != nil {
@@ -253,7 +207,7 @@ func findFilesToUpload(workingDirectory string, zlogger *zap.Logger) (filesToUpl
 			if isDirEmpty(path) && time.Since(info.ModTime()) > 60*time.Second {
 				err := os.Remove(path)
 				if err != nil {
-					zlogger.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
+					logger.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
 				}
 			}
 			return nil
