@@ -178,7 +178,11 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			} else {
 				s.Logger.Error("command terminated with non-zero status", zap.Any("status", status))
 			}
-			//return
+			if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
+				s.endLogPlugins()
+				return
+			}
+
 		case line := <-cmd.Stdout:
 			s.processLogLine(line)
 			if processTerminated {
