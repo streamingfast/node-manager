@@ -134,7 +134,7 @@ func (a *App) Run() error {
 
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
-	go a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...)
+	go a.Shutdown(a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...))
 
 	return nil
 }
