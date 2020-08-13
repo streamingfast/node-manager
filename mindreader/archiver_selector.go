@@ -67,19 +67,66 @@ func NewArchiverSelector(
 		workDir:                workDir,
 		logger:                 logger,
 	}
-	s.updateLastSeenLIB()
+	if !batchMode {
+		s.launchLastLIBUpdater()
+	}
 	return s
 }
 
-func (s *ArchiverSelector) updateLastSeenLIB() {
+func (s *ArchiverSelector) updateLastLIB() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	ref, err := s.tracker.Get(ctx, bstream.NetworkLIBTarget)
 	if err != nil {
-		s.logger.Warn("cannot get lib from tracker", zap.Error(err))
-		return
+		return err
 	}
 	s.lastSeenLIB.Store(ref.Num())
+	return nil
+}
+
+func (s *ArchiverSelector) launchLastLIBUpdater() {
+	var fetchedOnce bool
+	var warned bool
+	var err error
+	sleepTime := 200 * time.Millisecond
+
+	err = s.updateLastLIB()
+	if err == nil { // don't warn on first error, maybe blockmeta is booting with us
+		fetchedOnce = true
+		sleepTime = 30 * time.Second
+	}
+
+	go func() {
+		for {
+			time.Sleep(sleepTime)
+
+			if s.firstBoundaryPassed {
+				if !s.currentlyMerging { // we will never 'go back' to merging
+					if !fetchedOnce {
+						s.logger.Warn("could not get LIB from blockmeta after a few attempts. Not merging blocks", zap.Error(err))
+					}
+					return
+				}
+				sleepTime = 30 * time.Second
+
+				if !fetchedOnce && !warned {
+					s.logger.Warn("cannot get LIB from blockmeta, merging blocks based on their blocktime only (will retry)", zap.Duration("merge_threshold_block_age", s.mergeThresholdBlockAge))
+					warned = true
+				}
+			}
+
+			err = s.updateLastLIB()
+			if err == nil {
+				if !fetchedOnce {
+					fetchedOnce = true
+					sleepTime = 30 * time.Second
+					if warned {
+						s.logger.Warn("success connecting to blockmeta after previous failures")
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (s *ArchiverSelector) shouldSendToMergeArchiver(block *bstream.Block) bool {
@@ -90,9 +137,6 @@ func (s *ArchiverSelector) shouldSendToMergeArchiver(block *bstream.Block) bool 
 
 	blockNum := block.Num()
 	lastSeenLIB := s.lastSeenLIB.Load()
-	if blockNum+10000 >= lastSeenLIB { // optimization: skip doing this every time if blockNum is "not even close"
-		go s.updateLastSeenLIB() // for next time
-	}
 
 	blockAge := time.Since(block.Time())
 	if blockAge > s.mergeThresholdBlockAge {

@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
-	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
 	"go.uber.org/zap"
@@ -33,26 +34,25 @@ type MergeArchiver struct {
 	store              dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
 
+	uploadMutex sync.Mutex
 	workDir     string
-	eg          *llerrgroup.Group
 	expectBlock uint64
 	buffer      *bytes.Buffer
 	blockWriter bstream.BlockWriter
-	zlogger     *zap.Logger
+	logger      *zap.Logger
 }
 
 func NewMergeArchiver(
 	store dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
 	workDir string,
-	zlogger *zap.Logger,
+	logger *zap.Logger,
 ) *MergeArchiver {
 	ra := &MergeArchiver{
-		eg:                 llerrgroup.New(2),
 		store:              store,
 		workDir:            workDir,
 		blockWriterFactory: blockWriterFactory,
-		zlogger:            zlogger,
+		logger:             logger,
 	}
 	return ra
 }
@@ -62,7 +62,54 @@ func (m *MergeArchiver) Init() error {
 }
 
 func (m *MergeArchiver) Start() {
-	return
+	lastUploadFailed := false
+	for {
+		err := m.uploadFiles()
+		if err != nil {
+			m.logger.Warn("temporary failure trying to upload mindreader merged block files, will retry", zap.Error(err))
+			lastUploadFailed = true
+		} else {
+			if lastUploadFailed {
+				m.logger.Warn("success uploading previously failed mindreader merged block files")
+				lastUploadFailed = false
+			}
+		}
+
+		select {
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+func (m *MergeArchiver) uploadFiles() error {
+	m.uploadMutex.Lock()
+	defer m.uploadMutex.Unlock()
+	filesToUpload, err := findFilesToUpload(m.workDir, m.logger, ".merged")
+	if err != nil {
+		return fmt.Errorf("unable to find files to upload: %w", err)
+	}
+
+	if len(filesToUpload) == 0 {
+		return nil
+	}
+
+	for _, file := range filesToUpload {
+
+		file := file
+		toBaseName := strings.TrimSuffix(filepath.Base(file), ".merged")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+
+		if traceEnabled {
+			m.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
+		}
+
+		if err = m.store.PushLocalFile(ctx, file, toBaseName); err != nil {
+			return fmt.Errorf("moving file %q to storage: %w", file, err)
+		}
+	}
+	return nil
 }
 
 func (m *MergeArchiver) newBuffer() error {
@@ -78,13 +125,16 @@ func (m *MergeArchiver) newBuffer() error {
 // Terminate assumes that no more 'StoreBlock' command is coming
 func (m *MergeArchiver) Terminate() <-chan interface{} {
 	ch := make(chan interface{})
+	if m.buffer != nil {
+		err := m.writePartialFile()
+		if err != nil {
+			m.logger.Error("writing partial file", zap.Error(err))
+		}
+	}
 	go func() {
-		m.eg.Wait()
-		if m.buffer != nil {
-			err := m.writePartialFile()
-			if err != nil {
-				m.zlogger.Error("writing partial file", zap.Error(err))
-			}
+		err := m.uploadFiles()
+		if err != nil {
+			m.logger.Error("uploading remaining files", zap.Error(err))
 		}
 		close(ch)
 	}()
@@ -125,7 +175,7 @@ func (m *MergeArchiver) StoreBlock(block *bstream.Block) error {
 	}
 
 	if m.buffer == nil {
-		m.zlogger.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
+		m.logger.Info("ignore blocks before beginning of 100-blocks boundary", zap.Uint64("block_num", block.Num()))
 		return nil
 	}
 
@@ -139,28 +189,25 @@ func (m *MergeArchiver) StoreBlock(block *bstream.Block) error {
 	}
 
 	if block.Num()%100 == 99 {
-
-		if m.eg.Stop() {
-			return nil // already errored
-		}
-
 		baseNum := block.Num() - 99
 		baseName := fmt.Sprintf("%010d", baseNum)
-		buffer := m.buffer
-		m.eg.Go(func() error {
-			if baseNum%1000 == 0 {
-				m.zlogger.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
-			}
+		if baseNum%1000 == 0 {
+			m.logger.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
+		}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
+		tempFile := filepath.Join(m.workDir, baseName+".merged.temp")
+		finalFile := filepath.Join(m.workDir, baseName+".merged")
 
-			err := m.store.WriteObject(ctx, baseName, bytes.NewReader(buffer.Bytes()))
-			if err != nil {
-				return fmt.Errorf("uploading merged file: %w", err)
-			}
-			return nil
-		})
+		file, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("open file: %w", err)
+		}
+
+		m.buffer.WriteTo(file)
+		if err := os.Rename(tempFile, finalFile); err != nil {
+			return fmt.Errorf("rename %q to %q: %w", tempFile, finalFile, err)
+		}
+
 	}
 
 	return nil

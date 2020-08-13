@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -134,7 +135,7 @@ func (a *OneBlockArchiver) Start() {
 func (s *OneBlockArchiver) uploadFiles() error {
 	s.uploadMutex.Lock()
 	defer s.uploadMutex.Unlock()
-	filesToUpload, err := findFilesToUpload(s.workDir, s.logger)
+	filesToUpload, err := findFilesToUpload(s.workDir, s.logger, ".dat")
 	if err != nil {
 		return fmt.Errorf("unable to find files to upload: %w", err)
 	}
@@ -188,7 +189,7 @@ func (s *OneBlockArchiver) Init() error {
 	return nil
 }
 
-func findFilesToUpload(workingDirectory string, logger *zap.Logger) (filesToUpload []string, err error) {
+func findFilesToUpload(workingDirectory string, logger *zap.Logger, suffix string) (filesToUpload []string, err error) {
 	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
 		if os.IsNotExist(err) {
 			logger.Debug("skipping file that disappeared", zap.Error(err))
@@ -213,8 +214,7 @@ func findFilesToUpload(workingDirectory string, logger *zap.Logger) (filesToUplo
 			return nil
 		}
 
-		// process .dat files
-		if !strings.HasSuffix(path, ".dat") {
+		if !strings.HasSuffix(path, suffix) {
 			return nil
 		}
 		filesToUpload = append(filesToUpload, path)
@@ -222,6 +222,7 @@ func findFilesToUpload(workingDirectory string, logger *zap.Logger) (filesToUplo
 		return nil
 	})
 
+	sort.Slice(filesToUpload, func(i, j int) bool { return filesToUpload[i] < filesToUpload[j] })
 	return
 }
 

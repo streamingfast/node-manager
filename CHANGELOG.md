@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * New option 'BatchMode' forces the mindreader to produce merged-blocks all the time (without checking block age or existence of merged files in block store) and to overwrite any existing merged-blocks files.
 * New option MergeThresholdBlockAge: defines the age at which a block is considered old enough to be included in a merged-block-file directly (without any risk of forking).
 
+### Fixed
+* auto-merged block files are now written locally first, then sent asynchronously to the destination storage. They are sent in order (no threads). This makes it more resilient.
+
 ### Removed
 * `discardAfterStopBlock`: this option did not give any value, especially now that the mindreader can switch between producing merged blocks and one-block files
 * `merge_upload_directly`: that feature is now automatically enabled (see new `auto-merge` feature), the `BatchMode` option can force that behavior now.

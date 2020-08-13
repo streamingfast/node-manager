@@ -41,7 +41,7 @@ func init() {
 func TestMergeArchiver(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
 	a := &MergeArchiver{
-		zlogger:            zap.NewNop(),
+		logger:             zap.NewNop(),
 		store:              mStore,
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 		eg:                 llerrgroup.New(2),
@@ -65,7 +65,7 @@ func TestMergeArchiver(t *testing.T) {
 	}
 
 	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 199, PayloadBuffer: []byte{0x01}}))
-	assert.True(t, a.buffer.Len() > prevSize)
+	assert.True(t, a.buffer.Len() == 0)
 
 	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 300, PayloadBuffer: []byte{0x01}}), "should accept any block ...00 after block ...99")
 	assert.True(t, a.buffer.Len() < prevSize)
