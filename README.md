@@ -9,7 +9,7 @@ This service is a wrapping process that operates blockchain nodes as part of **[
 Build and run from here:
 
 * [**dfuse for EOSIO**](https://github.com/dfuse-io/dfuse-eosio)
-* [**dfuse for Etherieum**](https://github.com/dfuse-io/dfuse-ethereum)
+* [**dfuse for Ethereum**](https://github.com/dfuse-io/dfuse-ethereum)
 
 ## Overview
 
