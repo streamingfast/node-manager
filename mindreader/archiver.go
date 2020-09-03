@@ -61,6 +61,7 @@ func NewOneBlockArchiver(
 	return &OneBlockArchiver{
 		oneBlockStore:      oneBlockStore,
 		blockWriterFactory: blockWriterFactory,
+		suffix:             suffix,
 
 		workDir: workDir,
 		logger:  logger,
