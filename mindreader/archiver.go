@@ -44,6 +44,7 @@ type Archiver interface {
 type OneBlockArchiver struct {
 	oneBlockStore      dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
+	suffix             string
 
 	uploadMutex sync.Mutex
 	workDir     string
@@ -53,8 +54,8 @@ type OneBlockArchiver struct {
 func NewOneBlockArchiver(
 	oneBlockStore dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
-
 	workDir string,
+	suffix string,
 	logger *zap.Logger,
 ) *OneBlockArchiver {
 	return &OneBlockArchiver{
@@ -67,7 +68,7 @@ func NewOneBlockArchiver(
 }
 
 func (s *OneBlockArchiver) StoreBlock(block *bstream.Block) error {
-	fileName := blockFileName(block)
+	fileName := blockFileName(block, s.suffix)
 
 	// Store the actual file using multiple folders instead of a single one.
 	// We assume 10 digits block number at start of file name. We take the first 7

@@ -179,7 +179,7 @@ func TestNewGSStore(t *testing.T) {
 }
 
 func testNewArchiver(path string, store dstore.Store) *OneBlockArchiver {
-	return NewOneBlockArchiver(store, testBlockWriteFactory, path, testLogger)
+	return NewOneBlockArchiver(store, testBlockWriteFactory, path, "", testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {

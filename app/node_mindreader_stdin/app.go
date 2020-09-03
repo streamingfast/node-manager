@@ -33,6 +33,7 @@ type Config struct {
 	GRPCAddr                     string
 	ArchiveStoreURL              string
 	MergeArchiveStoreURL         string
+	OneblockSuffix               string
 	BatchMode                    bool
 	MergeThresholdBlockAge       time.Duration
 	MindReadBlocksChanCapacity   int
@@ -93,6 +94,7 @@ func (a *App) Run() error {
 		func() {},
 		a.Config.FailOnNonContinuousBlocks,
 		a.Config.WaitUploadCompleteOnShutdown,
+		a.Config.OneblockSuffix,
 		a.zlogger,
 	)
 	if err != nil {

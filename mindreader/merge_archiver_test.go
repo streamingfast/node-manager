@@ -18,7 +18,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dbin"
 	"github.com/dfuse-io/dstore"
@@ -44,7 +43,6 @@ func TestMergeArchiver(t *testing.T) {
 		logger:             zap.NewNop(),
 		store:              mStore,
 		blockWriterFactory: bstream.GetBlockWriterFactory,
-		eg:                 llerrgroup.New(2),
 	}
 
 	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))

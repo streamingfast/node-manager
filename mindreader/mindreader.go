@@ -92,11 +92,13 @@ func NewMindReaderPlugin(
 	stopBlockReachFunc func(),
 	failOnNonContinuousBlocks bool,
 	waitUploadCompleteOnShutdown time.Duration,
+	oneblockSuffix string,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	zlogger.Info("creating mindreader plugin",
 		zap.String("archive_store_url", archiveStoreURL),
 		zap.String("merge_archive_store_url", mergeArchiveStoreURL),
+		zap.String("oneblock_suffix", oneblockSuffix),
 		zap.Bool("batch_mode", batchMode),
 		zap.Duration("merge_threshold_age", mergeThresholdBlockAge),
 		zap.String("working_directory", workingDirectory),
@@ -133,7 +135,7 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("setting up archive store: %w", err)
 	}
 	var oneBlockArchiver Archiver
-	oneBlockArchiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
+	oneBlockArchiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
 
 	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
 	if err != nil {
