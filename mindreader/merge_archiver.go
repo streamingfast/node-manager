@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
 	"go.uber.org/zap"
@@ -93,23 +94,31 @@ func (m *MergeArchiver) uploadFiles() error {
 		return nil
 	}
 
+	eg := llerrgroup.New(5)
 	for _, file := range filesToUpload {
+		if eg.Stop() {
+			break
+		}
 
 		file := file
 		toBaseName := strings.TrimSuffix(filepath.Base(file), ".merged")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
+		eg.Go(func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
 
-		if traceEnabled {
-			m.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
-		}
+			if traceEnabled {
+				m.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
+			}
 
-		if err = m.store.PushLocalFile(ctx, file, toBaseName); err != nil {
-			return fmt.Errorf("moving file %q to storage: %w", file, err)
-		}
+			if err = m.store.PushLocalFile(ctx, file, toBaseName); err != nil {
+				return fmt.Errorf("moving file %q to storage: %w", file, err)
+			}
+			return nil
+		})
 	}
-	return nil
+
+	return eg.Wait()
 }
 
 func (m *MergeArchiver) newBuffer() error {

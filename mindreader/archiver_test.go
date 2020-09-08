@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -296,5 +297,33 @@ func (_ *testArchiver) Start() {
 
 func (a *testArchiver) StoreBlock(block *bstream.Block) error {
 	a.blocks = append(a.blocks, block)
+	return nil
+}
+
+func TestFindFilesToUpload(t *testing.T) {
+	tmp, err := ioutil.TempDir(os.TempDir(), "archivertest")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmp)
+	for _, f := range []string{"alpha", "charlie", "bravo", "foxtrot", "echo"} {
+		require.NoError(t, createEmptyFile(path.Join(tmp, fmt.Sprintf("%s.merged", f))))
+	}
+	files, err := findFilesToUpload(tmp, nil, "merged")
+	require.NoError(t, err)
+
+	expectedShort := []string{"alpha", "bravo", "charlie", "echo", "foxtrot"}
+	var expectedLong []string
+	for _, s := range expectedShort {
+		expectedLong = append(expectedLong, tmp+"/"+s+".merged")
+	}
+	assert.Equal(t, files, expectedLong)
+
+}
+
+func createEmptyFile(filename string) error {
+	emptyFile, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	emptyFile.Close()
 	return nil
 }
