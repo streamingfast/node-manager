@@ -173,6 +173,7 @@ func NewMindReaderPlugin(
 
 	mindReaderPlugin.OnTerminating(func(_ error) {
 		zlogger.Info("mindreader plugin OnTerminating called")
+		mindReaderPlugin.setMaintenanceFunc()
 		mindReaderPlugin.waitForReadFlowToComplete()
 		if stopBlockNum != 0 {
 			mindReaderPlugin.stopBlockReachFunc()
