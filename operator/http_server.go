@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dfuse-io/derr"
 	"github.com/dfuse-io/node-manager/superviser"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -120,7 +121,7 @@ func (o *Operator) healthzHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	if o.aboutToStop.Load() {
+	if o.aboutToStop.Load() || derr.IsShuttingDown() {
 		http.Error(w, "not ready: chain about to stop", http.StatusServiceUnavailable)
 		return
 	}
