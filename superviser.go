@@ -45,7 +45,10 @@ type ChainSuperviser interface {
 }
 
 type BootstrapableChainSuperviser interface {
-	Bootstrap(dataName string, dataStore dstore.Store) error
+	// Bootstrap receives a single data url format and uses this single data source to bootstrap the chain.
+	// One can use `dstore.OpenObject(ctx, bootstrapDataURL)` to easily open the object in one shot to
+	// avoid having to split, extract the path, create a store and then open the object.
+	Bootstrap(bootstrapDataURL string) error
 }
 
 type MonitorableChainSuperviser interface {

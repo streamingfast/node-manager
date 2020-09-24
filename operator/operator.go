@@ -19,11 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -575,27 +573,16 @@ func (o *Operator) bootstrap() error {
 	return nil
 }
 
-func (o *Operator) bootstrapFromDataURL(dataURL string) error {
+func (o *Operator) bootstrapFromDataURL(bootstrapDataURL string) error {
 	o.zlogger.Debug("bootstraping from pre-existing data prior starting process")
 	bootstrapable, ok := o.superviser.(nodeManager.BootstrapableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support bootstrap")
 	}
 
-	u, err := url.Parse(dataURL)
+	err := bootstrapable.Bootstrap(bootstrapDataURL)
 	if err != nil {
-		return fmt.Errorf("unable to parse URL: %w", err)
-	}
-
-	storeURL := fmt.Sprintf("%s://%s", u.Scheme, u.Hostname())
-	dataStore, err := dstore.NewSimpleStore(storeURL)
-	if err != nil {
-		return fmt.Errorf("unable to create store: %w", err)
-	}
-
-	err = bootstrapable.Bootstrap(strings.TrimLeft(u.Path, "/"), dataStore)
-	if err != nil {
-		return fmt.Errorf("unable to bootstrap from data URL %q: %w", dataURL, err)
+		return fmt.Errorf("unable to bootstrap from data URL %q: %w", bootstrapDataURL, err)
 	}
 
 	return nil
