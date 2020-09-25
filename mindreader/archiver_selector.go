@@ -278,9 +278,9 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 }
 
 func (s *ArchiverSelector) Start() {
-	s.logger.Info("Starting OneBlock uploads")
+	s.logger.Info("starting one block(s) uploads")
 	go s.oneblockArchiver.Start()
-	s.logger.Info("Starting MergedBlocks uploads")
+	s.logger.Info("starting merged blocks(s) uploads")
 	go s.mergeArchiver.Start()
 }
 
