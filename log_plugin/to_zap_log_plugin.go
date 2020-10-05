@@ -15,7 +15,6 @@
 package logplugin
 
 import (
-	"regexp"
 	"strings"
 
 	"go.uber.org/zap"
@@ -34,17 +33,33 @@ func (s toZapLogPluginOptionFunc) apply(p *ToZapLogPlugin) {
 	s(p)
 }
 
-func ToZapLogPluginAdjustLevels(mappings map[string]zapcore.Level) ToZapLogPluginOption {
+// ToZapLogPluginLogLevel is the option that defines which function to use to extract the log level
+// from the line.
+//
+// The received function will be invoked with the actual line to log. The function should then return
+// the log level value to use for this line. If the return value is the special value `NoDisplay` constant
+// (which corresponds to log level `15` which does not exist within zap), the line is actually discarded
+// completely and not logged to the logger.
+func ToZapLogPluginLogLevel(extractLevel func(in string) zapcore.Level) ToZapLogPluginOption {
 	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
-		if len(mappings) > 0 {
-			p.levelAdjustements = make(map[*regexp.Regexp]zapcore.Level)
-			for regexString, adjustedLevel := range mappings {
-				p.levelAdjustements[regexp.MustCompile(regexString)] = adjustedLevel
-			}
-		}
+		p.levelExtractor = extractLevel
 	})
 }
 
+// ToZapLogPluginTransformer is the option that defines which function to use to transform the line before
+// being logged to the logger.
+//
+// The received function will be invoked with the actual line to log **after** the level have been determined.
+// The function should then return the transformed line. If the return line is the empty string, it is discarded
+// completely.
+func ToZapLogPluginTransformer(transformer func(in string) string) ToZapLogPluginOption {
+	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
+		p.lineTransformer = transformer
+	})
+}
+
+// ToZapLogPluginKeepLastNLine defines how many of the last line(s) to keep when doing the logging.
+// This option is useful to retrieve a small amount of line seen by the process when an error happens.
 func ToZapLogPluginKeepLastNLine(count int) ToZapLogPluginOption {
 	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
 		p.lastLines.maxCount = count
@@ -58,8 +73,9 @@ type ToZapLogPlugin struct {
 	logger        *zap.Logger
 	debugDeepMind bool
 
-	lastLines         *lineRingBuffer
-	levelAdjustements map[*regexp.Regexp]zapcore.Level
+	lastLines       *lineRingBuffer
+	levelExtractor  func(in string) zapcore.Level
+	lineTransformer func(in string) string
 }
 
 func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapLogPluginOption) *ToZapLogPlugin {
@@ -96,26 +112,23 @@ func (p *ToZapLogPlugin) LogLine(in string) {
 		return
 	}
 
-	level := zap.DebugLevel
-	if strings.HasPrefix(in, "<6>info") || strings.HasPrefix(in, "info") {
-		level = zap.InfoLevel
-	} else if strings.HasPrefix(in, "<3>error") || strings.HasPrefix(in, "error") {
-		level = zap.ErrorLevel
-	} else if strings.HasPrefix(in, "<4>warn") || strings.HasPrefix(in, "warn") {
-		level = zap.WarnLevel
-	}
-
 	// TODO: Should we **not** record the line when the level adjustement skips it?
 	p.lastLines.append(in)
 
-	for lineRegex, adjustedLevel := range p.levelAdjustements {
-		if lineRegex.MatchString(in) {
-			if adjustedLevel == NoDisplay {
-				// This is know ignored
-				return
-			}
+	level := zap.DebugLevel
+	if p.levelExtractor != nil {
+		level = p.levelExtractor(in)
+		if level == NoDisplay {
+			// This is ignored, nothing else to do here ...
+			return
+		}
+	}
 
-			level = adjustedLevel
+	if p.lineTransformer != nil {
+		in = p.lineTransformer(in)
+		if in == "" {
+			// This is ignored, nothing else to do here ...
+			return
 		}
 	}
 

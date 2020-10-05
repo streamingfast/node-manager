@@ -12,7 +12,7 @@ require (
 	github.com/dfuse-io/dgrpc v0.0.0-20200406214416-6271093e544c
 	github.com/dfuse-io/dmetrics v0.0.0-20200508152325-93e7e9d576bb
 	github.com/dfuse-io/dstore v0.1.0
-	github.com/dfuse-io/logging v0.0.0-20200407175011-14021b7a79af
+	github.com/dfuse-io/logging v0.0.0-20201005173513-5e47a07b5a56
 	github.com/dfuse-io/shutter v1.4.1-0.20200319040708-c809eec458e6
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/eoscanada/eos-go v0.9.1-0.20200506160036-5e090ae689ef

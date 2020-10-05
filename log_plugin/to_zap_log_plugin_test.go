@@ -15,15 +15,15 @@
 package logplugin
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/dfuse-io/logging"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-// Some of our currently supported binaries log formats
-// - `nodeos` - `info  2020-10-05T13:53:11.749 thread-0  http_plugin.cpp:895           add_handler          ] add api url: /v1/db_size/get (log_plugin/to_zap_log_plugin.go:107)`
-// - `geth` -   `INFO [10-05|09:54:00.585] IPC endpoint closed                      url=/app/dfuse-data/miner/data/geth.ipc (log_plugin/to_zap_log_plugin.go:107)`
 func TestToZapLogPlugin_KeepLastNLine(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -49,6 +49,122 @@ func TestToZapLogPlugin_KeepLastNLine(t *testing.T) {
 			}
 
 			assert.Equal(t, test.out, plugin.LastLines())
+		})
+	}
+}
+
+func TestToZapLogPlugin(t *testing.T) {
+	simpleExtractor := func(in string) zapcore.Level {
+		if strings.HasPrefix(in, "error") {
+			return zap.ErrorLevel
+		}
+
+		if strings.HasPrefix(in, "discard") {
+			return NoDisplay
+		}
+
+		return zap.InfoLevel
+	}
+
+	simpleTransformer := func(in string) string {
+		if in == "message" {
+			return in
+		}
+
+		if in == "discard" {
+			return ""
+		}
+
+		return strings.ToUpper(in)
+	}
+
+	toUnderscoreTransformer := func(in string) string {
+		return "_"
+	}
+
+	options := func(opts ...ToZapLogPluginOption) []ToZapLogPluginOption {
+		return opts
+	}
+
+	tests := []struct {
+		name    string
+		in      []string
+		options []ToZapLogPluginOption
+		out     []string
+	}{
+		// Plain
+		{
+			"plain, always debug untransformed",
+			[]string{"error message"},
+			nil,
+			[]string{`{"level":"debug","msg":"error message"}`},
+		},
+
+		// Log Level
+		{
+			"with log leve, match element",
+			[]string{"error message"},
+			options(ToZapLogPluginLogLevel(simpleExtractor)),
+			[]string{`{"level":"error","msg":"error message"}`},
+		},
+		{
+			"with log leve, no match element",
+			[]string{"warn message"},
+			options(ToZapLogPluginLogLevel(simpleExtractor)),
+			[]string{`{"level":"info","msg":"warn message"}`},
+		},
+		{
+			"with log leve, no display element",
+			[]string{"discard message"},
+			options(ToZapLogPluginLogLevel(simpleExtractor)),
+			[]string(nil),
+		},
+
+		// Transformer
+		{
+			"with transformer, same",
+			[]string{"message"},
+			options(ToZapLogPluginTransformer(simpleTransformer)),
+			[]string{`{"level":"debug","msg":"message"}`},
+		},
+		{
+			"with transformer, to upper",
+			[]string{"any"},
+			options(ToZapLogPluginTransformer(simpleTransformer)),
+			[]string{`{"level":"debug","msg":"ANY"}`},
+		},
+		{
+			"with transformer, discard",
+			[]string{"discard"},
+			options(ToZapLogPluginTransformer(simpleTransformer)),
+			[]string(nil),
+		},
+
+		// Log Level & Transformer
+		{
+			"with transformer & log leve, transform don't affect log level",
+			[]string{"error message"},
+			options(ToZapLogPluginTransformer(toUnderscoreTransformer), ToZapLogPluginLogLevel(simpleExtractor)),
+			[]string{`{"level":"error","msg":"_"}`},
+		},
+		{
+			"with transformer & log leve, transform don't affect log level, any option order",
+			[]string{"error message"},
+			options(ToZapLogPluginLogLevel(simpleExtractor), ToZapLogPluginTransformer(toUnderscoreTransformer)),
+			[]string{`{"level":"error","msg":"_"}`},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			testLogger := logging.NewTestLogger(t)
+
+			plugin := NewToZapLogPlugin(false, testLogger.Instance(), test.options...)
+			for _, in := range test.in {
+				plugin.LogLine(in)
+			}
+
+			assert.Equal(t, test.out, testLogger.RecordedLines(t))
 		})
 	}
 }
