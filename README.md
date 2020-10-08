@@ -32,6 +32,26 @@ if you wish to contribute to this code base.
 This codebase uses unit tests extensively, please write and run tests.
 
 
+## Shutdown pattern:
+
+App creates:
+  * Superviser
+  * Operator (+superviser)
+  * mindreaderPlugin (has call back to set maintenance on operator and stopBlockReached)
+
+App sets:
+  * superviser.RegisterLogPlugin(mindreaderPlugin)
+
+So, the ownership is `app -> operator -> superviser -> mindreader`
+  * app.OnTerminating(operator.Shutdown())
+  * operator.OnTerminating(sendCmd:"maintenance", superviser.Shutdown())
+  * superviser.OnTerminating(mindreader.Shutdown(), then endLogPlugins)
+  * superviser.OnTerminated(endLogPlugins)
+  * mindreader.OnTerminating(async operator.Shutdown(), wait consumeFlowDone)
+    * mindreader::archiver closes consumeFlowDone when superviser.endLogPlugins(+upload completed)
+    * mindreader shuts itself down when stopBlockNum reached
+  * mindreader.OnTerminated -> app.Shutdown()
+
 ## License
 
 [Apache 2.0](LICENSE)

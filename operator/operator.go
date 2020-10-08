@@ -41,7 +41,7 @@ type Operator struct {
 
 	commandChan    chan *Command
 	httpServer     *http.Server
-	superviser     nodeManager.ChainSuperviser
+	Superviser     nodeManager.ChainSuperviser
 	chainReadiness nodeManager.Readiness
 	aboutToStop    *atomic.Bool
 	snapshotStore  dstore.Store
@@ -95,7 +95,7 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		chainReadiness: chainReadiness,
 		commandChan:    make(chan *Command, 10),
 		options:        options,
-		superviser:     chainSuperviser,
+		Superviser:     chainSuperviser,
 		aboutToStop:    atomic.NewBool(false),
 		zlogger:        zlogger,
 	}
@@ -112,17 +112,11 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 }
 
 func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...HTTPOption) error {
-	o.zlogger.Info("starting chain operator")
-	o.OnTerminating(func(_ error) {
-		o.zlogger.Info("chain operator terminating")
-		o.waitForReadFlowToComplete()
-	})
-
 	o.zlogger.Info("launching operator HTTP server", zap.String("http_listen_addr", httpListenAddr))
 	o.httpServer = o.RunHTTPServer(httpListenAddr, options...)
 
 	if o.options.EnableSupervisorMonitoring {
-		if monitorable, ok := o.superviser.(nodeManager.MonitorableChainSuperviser); ok {
+		if monitorable, ok := o.Superviser.(nodeManager.MonitorableChainSuperviser); ok {
 			go monitorable.Monitor()
 		}
 	}
@@ -140,16 +134,16 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	for {
 		o.zlogger.Info("operator ready to receive commands")
 		select {
-		case <-o.superviser.Stopped(): // stopped outside of a command that was expecting it
+		case <-o.Superviser.Stopped(): // stopped outside of a command that was expecting it
 			if o.attemptedAutoRestore || time.Since(o.lastStartCommand) > 10*time.Second {
-				o.Shutdown(fmt.Errorf("instance %q stopped (exit code: %d), shutting down", o.superviser.GetName(), o.superviser.LastExitCode()))
+				o.Shutdown(fmt.Errorf("instance %q stopped (exit code: %d), shutting down", o.Superviser.GetName(), o.Superviser.LastExitCode()))
 				if o.options.StartFailureHandlerFunc != nil {
 					o.options.StartFailureHandlerFunc()
 				}
 				break
 			}
 
-			o.zlogger.Warn("instance stopped, attempting restore from source", zap.String("source", o.options.AutoRestoreSource), zap.String("command", o.superviser.GetCommand()))
+			o.zlogger.Warn("instance stopped, attempting restore from source", zap.String("source", o.options.AutoRestoreSource), zap.String("command", o.Superviser.GetCommand()))
 			o.attemptedAutoRestore = true
 			switch o.options.AutoRestoreSource {
 			case "backup":
@@ -218,9 +212,9 @@ func (o *Operator) waitForReadFlowToComplete() {
 	}()
 
 	go func() {
-		err := o.superviser.Stop()
+		err := o.Superviser.Stop()
 		if err != nil {
-			o.zlogger.Error("unable to close superviser gracefully", zap.Error(err))
+			o.zlogger.Error("unable to close Superviser gracefully", zap.Error(err))
 		}
 
 		wg.Done()
@@ -250,7 +244,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 			time.Sleep(o.options.ShutdownDelay)
 		}
 
-		if err := o.superviser.Stop(); err != nil {
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
@@ -259,18 +253,18 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "restore":
 		o.zlogger.Info("preparing for restore")
-		backupable, ok := o.superviser.(nodeManager.BackupableChainSuperviser)
+		backupable, ok := o.Superviser.(nodeManager.BackupableChainSuperviser)
 		if !ok {
-			cmd.Return(errors.New("the chain superviser does not support backups"))
+			cmd.Return(errors.New("the chain Superviser does not support backups"))
 			return nil
 		}
 
-		if err := o.superviser.Stop(); err != nil {
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
-		o.zlogger.Info("asking chain superviser to restore a backup")
-		if err := o.superviser.Stop(); err != nil {
+		o.zlogger.Info("asking chain Superviser to restore a backup")
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
@@ -287,9 +281,9 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "volumesnapshot":
 		o.zlogger.Info("preparing for volumesnapshot")
-		volumesnapshotable, ok := o.superviser.(nodeManager.VolumeSnapshotableChainSuperviser)
+		volumesnapshotable, ok := o.Superviser.(nodeManager.VolumeSnapshotableChainSuperviser)
 		if !ok {
-			cmd.Return(errors.New("the chain superviser does not support volume snapshot"))
+			cmd.Return(errors.New("the chain Superviser does not support volume snapshot"))
 			return nil
 		}
 		o.aboutToStop.Store(true)
@@ -299,14 +293,14 @@ func (o *Operator) runCommand(cmd *Command) error {
 			time.Sleep(o.options.ShutdownDelay)
 		}
 
-		lastBlockSeen := o.superviser.LastSeenBlockNum()
+		lastBlockSeen := o.Superviser.LastSeenBlockNum()
 		if lastBlockSeen == 0 {
 			cmd.Return(errors.New("volumesnapshot: invalid lastBlockSeen 0. Cowardly refusing to take a snapshot."))
 			return nil
 		}
 
 		o.zlogger.Info("asking chain superviser to take a volume snapshot")
-		if err := o.superviser.Stop(); err != nil {
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
@@ -319,7 +313,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "backup":
 		o.zlogger.Info("preparing for backup")
-		backupable, ok := o.superviser.(nodeManager.BackupableChainSuperviser)
+		backupable, ok := o.Superviser.(nodeManager.BackupableChainSuperviser)
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support backups"))
 			return nil
@@ -333,7 +327,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 		}
 
 		o.zlogger.Info("asking chain superviser to take a backup")
-		if err := o.superviser.Stop(); err != nil {
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
@@ -345,7 +339,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "snapshot":
 		o.zlogger.Info("preparing for snapshot")
-		snapshotable, ok := o.superviser.(nodeManager.SnapshotableChainSuperviser)
+		snapshotable, ok := o.Superviser.(nodeManager.SnapshotableChainSuperviser)
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support snapshots"))
 			return nil
@@ -367,14 +361,14 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "snapshot_restore":
 		o.zlogger.Info("preparing for performing a snapshot restore")
-		snapshotable, ok := o.superviser.(nodeManager.SnapshotableChainSuperviser)
+		snapshotable, ok := o.Superviser.(nodeManager.SnapshotableChainSuperviser)
 		if !ok {
 			cmd.Return(errors.New("the chain superviser does not support snapshots"))
 			return nil
 		}
 
 		o.zlogger.Info("asking chain superviser to stop due to snapshot restore command")
-		if err := o.superviser.Stop(); err != nil {
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
@@ -393,7 +387,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "reload":
 		o.zlogger.Info("preparing for reload")
-		if err := o.superviser.Stop(); err != nil {
+		if err := o.Superviser.Stop(); err != nil {
 			return err
 		}
 
@@ -401,7 +395,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "safely_resume_production":
 		o.zlogger.Info("preparing for safely resume production")
-		producer, ok := o.superviser.(nodeManager.ProducerChainSuperviser)
+		producer, ok := o.Superviser.(nodeManager.ProducerChainSuperviser)
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support producing blocks"))
 			return nil
@@ -431,7 +425,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "safely_pause_production":
 		o.zlogger.Info("preparing for safely pause production")
-		producer, ok := o.superviser.(nodeManager.ProducerChainSuperviser)
+		producer, ok := o.Superviser.(nodeManager.ProducerChainSuperviser)
 		if !ok {
 			cmd.Return(fmt.Errorf("the chain superviser does not support producing blocks"))
 			return nil
@@ -466,7 +460,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "safely_reload":
 		o.zlogger.Info("preparing for safely reload")
-		producer, ok := o.superviser.(nodeManager.ProducerChainSuperviser)
+		producer, ok := o.Superviser.(nodeManager.ProducerChainSuperviser)
 		if ok && producer.IsActiveProducer() {
 			o.zlogger.Info("waiting right after production round")
 			err := producer.WaitUntilEndOfNextProductionRound(3 * time.Minute)
@@ -491,7 +485,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 
 	case "start", "resume":
 		o.zlogger.Info("preparing for start")
-		if o.superviser.IsRunning() {
+		if o.Superviser.IsRunning() {
 			o.zlogger.Info("chain is already running")
 			return nil
 		}
@@ -507,26 +501,12 @@ func (o *Operator) runCommand(cmd *Command) error {
 			}
 		}
 
-		if err := o.superviser.Start(options...); err != nil {
+		if err := o.Superviser.Start(options...); err != nil {
 			return fmt.Errorf("error starting chain superviser: %w", err)
 		}
 
 		o.zlogger.Info("successfully start service")
 
-	case "shutdown":
-		o.zlogger.Info("preparing for shutdown")
-		o.aboutToStop.Store(true)
-		defer o.aboutToStop.Store(false)
-		if o.options.ShutdownDelay != 0 {
-			o.zlogger.Info("marked as not_ready, waiting delay before actually stopping for shutdown", zap.Duration("delay", o.options.ShutdownDelay))
-			time.Sleep(o.options.ShutdownDelay)
-		}
-
-		if err := o.superviser.Stop(); err != nil {
-			o.zlogger.Error("stopping nodeos failed, continuing shutdown anyway", zap.Error(err))
-		}
-
-		return ErrCleanExit
 	}
 
 	return nil
@@ -555,7 +535,7 @@ func (o *Operator) bootstrap() error {
 		return o.bootstrapFromSnapshot(o.options.RestoreSnapshotName)
 	}
 
-	if o.superviser.HasData() {
+	if o.Superviser.HasData() {
 		return nil
 	}
 
@@ -575,7 +555,7 @@ func (o *Operator) bootstrap() error {
 
 func (o *Operator) bootstrapFromDataURL(bootstrapDataURL string) error {
 	o.zlogger.Debug("bootstraping from pre-existing data prior starting process")
-	bootstrapable, ok := o.superviser.(nodeManager.BootstrapableChainSuperviser)
+	bootstrapable, ok := o.Superviser.(nodeManager.BootstrapableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support bootstrap")
 	}
@@ -590,7 +570,7 @@ func (o *Operator) bootstrapFromDataURL(bootstrapDataURL string) error {
 
 func (o *Operator) bootstrapFromSnapshot(snapshotName string) error {
 	o.zlogger.Debug("restoring snapshot prior starting process")
-	snapshotable, ok := o.superviser.(nodeManager.SnapshotableChainSuperviser)
+	snapshotable, ok := o.Superviser.(nodeManager.SnapshotableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support snapshots")
 	}
@@ -600,7 +580,7 @@ func (o *Operator) bootstrapFromSnapshot(snapshotName string) error {
 
 func (o *Operator) bootstrapFromBackup(backupName string) error {
 	o.zlogger.Debug("restoring backup prior starting process")
-	backupable, ok := o.superviser.(nodeManager.BackupableChainSuperviser)
+	backupable, ok := o.Superviser.(nodeManager.BackupableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support backups")
 	}
@@ -611,18 +591,6 @@ func (o *Operator) bootstrapFromBackup(backupName string) error {
 	}
 
 	return nil
-}
-func (o *Operator) SetMaintenance() {
-	if !o.superviser.IsRunning() {
-		o.zlogger.Info("cannot set maintenance mode, not running")
-		return
-	}
-	o.zlogger.Info("setting maintenance mode")
-	o.commandChan <- &Command{cmd: "maintenance", logger: o.zlogger}
-
-	o.zlogger.Info("waiting for supervisor to stop")
-	<-o.superviser.Stopped()
-	o.zlogger.Info("supervisor stopped")
 }
 
 func (o *Operator) restoreSnapshot(snapshotable nodeManager.SnapshotableChainSuperviser, snapshotName string) error {
@@ -725,7 +693,7 @@ func (o *Operator) ConfigureAutoVolumeSnapshot(autoVolumeSnapshotInterval time.D
 func (o *Operator) RunEveryPeriod(period time.Duration, commandName string) {
 	for {
 		time.Sleep(1)
-		if o.superviser.IsRunning() {
+		if o.Superviser.IsRunning() {
 			break
 		}
 	}
@@ -734,7 +702,7 @@ func (o *Operator) RunEveryPeriod(period time.Duration, commandName string) {
 	for {
 		select {
 		case <-ticker.C:
-			if o.superviser.IsRunning() {
+			if o.Superviser.IsRunning() {
 				o.commandChan <- &Command{cmd: commandName, logger: o.zlogger}
 			}
 		}
@@ -747,7 +715,7 @@ func (o *Operator) RunAtSpecificBlocks(specificBlocks []uint64, commandName stri
 	nextIndex := 0
 	for {
 		time.Sleep(1 * time.Second)
-		head := o.superviser.LastSeenBlockNum()
+		head := o.Superviser.LastSeenBlockNum()
 		if head == 0 {
 			continue
 		}
@@ -771,7 +739,7 @@ func (o *Operator) RunEveryXBlock(freq uint32, commandName string) {
 	var lastHeadReference uint64
 	for {
 		time.Sleep(1 * time.Second)
-		lastSeenBlockNum := o.superviser.LastSeenBlockNum()
+		lastSeenBlockNum := o.Superviser.LastSeenBlockNum()
 		if lastSeenBlockNum == 0 {
 			continue
 		}

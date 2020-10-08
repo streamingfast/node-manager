@@ -92,16 +92,16 @@ func (o *Operator) pingHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (o *Operator) startcommandHandler(w http.ResponseWriter, _ *http.Request) {
-	command := "Command:\n" + o.superviser.GetCommand() + "\n"
+	command := "Command:\n" + o.Superviser.GetCommand() + "\n"
 	_, _ = w.Write([]byte(command))
 }
 
 func (o *Operator) isRunningHandler(w http.ResponseWriter, _ *http.Request) {
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"is_running":%t}`, o.superviser.IsRunning())))
+	_, _ = w.Write([]byte(fmt.Sprintf(`{"is_running":%t}`, o.Superviser.IsRunning())))
 }
 
 func (o *Operator) serverIDHandler(w http.ResponseWriter, _ *http.Request) {
-	id, err := o.superviser.ServerID()
+	id, err := o.Superviser.ServerID()
 	if err != nil {
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
 		return
@@ -111,7 +111,7 @@ func (o *Operator) serverIDHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (o *Operator) healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	if !o.superviser.IsRunning() {
+	if !o.Superviser.IsRunning() {
 		http.Error(w, "not ready: chain is not running", http.StatusServiceUnavailable)
 		return
 	}

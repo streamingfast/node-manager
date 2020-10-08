@@ -35,6 +35,8 @@ type ChainSuperviser interface {
 	RegisterLogPlugin(plugin logplugin.LogPlugin)
 	Start(options ...StartOption) error
 	Stop() error
+	Shutdown(error)
+	OnTerminating(func(error))
 
 	HasData() bool
 	IsRunning() bool

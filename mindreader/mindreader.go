@@ -45,9 +45,9 @@ type MindReaderPlugin struct {
 	*shutter.Shutter
 	zlogger *zap.Logger
 
-	startGate          *BlockNumberGate // if set, discard blocks before this
-	stopBlock          uint64           // if set, call stopBlockReachFunc() when we hit this number
-	stopBlockReachFunc func()
+	startGate    *BlockNumberGate // if set, discard blocks before this
+	stopBlock    uint64           // if set, call shutdownFunc(nil) when we hit this number
+	shutdownFunc func(error)      //
 
 	waitUploadCompleteOnShutdown time.Duration // if non-zero, will try to upload files for this amount of time. Failed uploads will stay in workingDir
 
@@ -64,8 +64,6 @@ type MindReaderPlugin struct {
 
 	blockServer         *blockstream.Server
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater
-
-	setMaintenanceFunc func()
 }
 
 // NewMindReaderPlugin initiates its own:
@@ -88,8 +86,7 @@ func NewMindReaderPlugin(
 	stopBlockNum uint64,
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
-	setMaintenanceFunc func(),
-	stopBlockReachFunc func(),
+	shutdownFunc func(error),
 	failOnNonContinuousBlocks bool,
 	waitUploadCompleteOnShutdown time.Duration,
 	oneblockSuffix string,
@@ -106,8 +103,7 @@ func NewMindReaderPlugin(
 		zap.Uint64("stop_block_num", stopBlockNum),
 		zap.Int("channel_capacity", channelCapacity),
 		zap.Bool("with_head_block_update_func", headBlockUpdateFunc != nil),
-		zap.Bool("with_set_maintenance_func", setMaintenanceFunc != nil),
-		zap.Bool("with_stop_block_reach_func", stopBlockReachFunc != nil),
+		zap.Bool("with_shutdown_func", shutdownFunc != nil),
 		zap.Bool("fail_on_non_continuous_blocks", failOnNonContinuousBlocks),
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
@@ -168,16 +164,11 @@ func NewMindReaderPlugin(
 		return nil, err
 	}
 	mindReaderPlugin.waitUploadCompleteOnShutdown = waitUploadCompleteOnShutdown
-	mindReaderPlugin.setMaintenanceFunc = setMaintenanceFunc
-	mindReaderPlugin.stopBlockReachFunc = stopBlockReachFunc
+	mindReaderPlugin.shutdownFunc = shutdownFunc
 
-	mindReaderPlugin.OnTerminating(func(_ error) {
-		zlogger.Info("mindreader plugin OnTerminating called")
-		mindReaderPlugin.setMaintenanceFunc()
+	mindReaderPlugin.OnTerminating(func(err error) {
+		go mindReaderPlugin.shutdownFunc(err) // this will call operator shutdown or similar
 		mindReaderPlugin.waitForReadFlowToComplete()
-		if stopBlockNum != 0 {
-			mindReaderPlugin.stopBlockReachFunc()
-		}
 	})
 
 	return mindReaderPlugin, nil
@@ -234,6 +225,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 	go p.consumeReadFlow(blocks)
 	go p.archiver.Start()
 
+	shutdownCalled := false
 	for {
 		// ALWAYS READ (otherwise you'll stall `nodeos`' shutdown process, want a dirty flag?)
 		err := p.readOneMessage(blocks)
@@ -244,7 +236,10 @@ func (p *MindReaderPlugin) ReadFlow() {
 				return
 			}
 			p.zlogger.Error("reading from console logs", zap.Error(err))
-			p.setMaintenanceFunc()
+			if !shutdownCalled {
+				p.shutdownFunc(err)
+				shutdownCalled = true
+			}
 			continue
 		}
 	}
@@ -286,7 +281,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			err = p.continuityChecker.Write(block.Num())
 			if err != nil {
 				p.zlogger.Error("failed continuity check", zap.Error(err))
-				p.setMaintenanceFunc()
+				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
 				continue
 			}
 		}

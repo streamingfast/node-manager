@@ -16,22 +16,44 @@ package superviser
 
 import (
 	"sync"
+	"time"
 
 	"github.com/ShinyTrinkets/overseer"
 	nodeManager "github.com/dfuse-io/node-manager"
 	logplugin "github.com/dfuse-io/node-manager/log_plugin"
+	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )
 
 func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
-	return &Superviser{
+	s := &Superviser{
+		Shutter:   shutter.New(),
 		Binary:    binary,
 		Arguments: arguments,
 		Logger:    logger,
 	}
+	s.Shutter.OnTerminating(func(err error) {
+		sleepTime := time.Duration(0)
+		for {
+			time.Sleep(sleepTime)
+			sleepTime = 500 * time.Millisecond
+			if s.isRunning() {
+				s.Logger.Debug("waiting for supervised process to stop")
+				continue
+			}
+			if s.isBufferEmpty() {
+				break
+			}
+			s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
+		}
+		s.Logger.Info("supervised process stopped", zap.Int("last_exit_code", s.LastExitCode()))
+		s.endLogPlugins()
+	})
+	return s
 }
 
 type Superviser struct {
+	*shutter.Shutter
 	Binary    string
 	Arguments []string
 	Logger    *zap.Logger
@@ -165,6 +187,13 @@ func (s *Superviser) isRunning() bool {
 	return s.cmd.State == overseer.STARTING || s.cmd.State == overseer.RUNNING || s.cmd.State == overseer.STOPPING
 }
 
+func (s *Superviser) isBufferEmpty() bool {
+	if s.cmd == nil {
+		return true
+	}
+	return len(s.cmd.Stdout) == 0 && len(s.cmd.Stderr) == 0
+}
+
 func (s *Superviser) start(cmd *overseer.Cmd) {
 	statusChan := cmd.Start()
 
@@ -178,29 +207,14 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			} else {
 				s.Logger.Error("command terminated with non-zero status", zap.Any("status", status))
 			}
-			if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
-				s.endLogPlugins()
-				return
-			}
 
 		case line := <-cmd.Stdout:
 			s.processLogLine(line)
-			if processTerminated {
-				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
-					s.endLogPlugins()
-					return
-				}
-				s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
-			}
 		case line := <-cmd.Stderr:
 			s.processLogLine(line)
-			if processTerminated {
-				if len(cmd.Stdout) == 0 && len(cmd.Stderr) == 0 {
-					s.endLogPlugins()
-					return
-				}
-				s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
-			}
+		}
+		if processTerminated && s.isBufferEmpty() {
+			return
 		}
 	}
 }

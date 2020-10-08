@@ -103,13 +103,19 @@ func (a *App) Run() error {
 		return err
 	}
 
+	a.OnTerminating(func(err error) {
+		a.modules.Operator.Shutdown(err)
+		<-a.modules.MindreaderPlugin.Terminated()
+	})
 	a.modules.Operator.OnTerminating(func(err error) {
-		a.modules.Operator.SetMaintenance() //blocking call unless already in maintenance
+		// maintenance is set from operator cmd control flow
+		a.modules.Operator.Superviser.Shutdown(err)
+	})
+	a.modules.Operator.Superviser.OnTerminating(func(err error) {
 		a.modules.MindreaderPlugin.Shutdown(err)
 	})
-	a.modules.MindreaderPlugin.OnTerminated(a.modules.Operator.Shutdown)
+	a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
 
-	a.OnTerminating(a.modules.Operator.Shutdown)
 	a.modules.Operator.OnTerminated(func(err error) {
 		a.zlogger.Info("chain operator terminated shutting down mindreader app")
 		a.Shutdown(err)
