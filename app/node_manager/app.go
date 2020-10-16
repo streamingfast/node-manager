@@ -84,7 +84,14 @@ func (a *App) Run() error {
 	}
 
 	a.OnTerminating(a.modules.Operator.Shutdown)
-	a.modules.Operator.OnTerminating(a.Shutdown)
+	a.modules.Operator.OnTerminating(func(err error) {
+		// maintenance is set from operator cmd control flow
+		a.modules.Operator.Superviser.Shutdown(err)
+	})
+	a.modules.Operator.Superviser.OnTerminating(func(err error) {
+		a.modules.Operator.Superviser.Stop()
+		a.Shutdown(err)
+	})
 
 	if a.config.ConnectionWatchdog {
 		go a.modules.LaunchConnectionWatchdogFunc(a.Terminating())

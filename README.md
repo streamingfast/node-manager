@@ -32,7 +32,17 @@ if you wish to contribute to this code base.
 This codebase uses unit tests extensively, please write and run tests.
 
 
-## Shutdown pattern:
+## Shutdown pattern for Node-Manager only:
+App creates:
+  * Superviser
+  * Operator (+superviser)
+
+So, the ownership is `app -> operator -> superviser`
+  * app.OnTerminating(operator.Shutdown())
+  * operator.OnTerminating(sendCmd:"maintenance", superviser.Shutdown())
+  * superviser.OnTerminating(superviser.Stop() (blocking))
+
+## Shutdown pattern for Mindreader:
 
 App creates:
   * Superviser
