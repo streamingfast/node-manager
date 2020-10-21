@@ -16,6 +16,7 @@ package node_mindreader_stdin
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
@@ -49,6 +51,7 @@ type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
 	ConsoleReaderTransformer   mindreader.ConsoleReaderBlockTransformer
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
+	RegisterGRPCService        func(server *grpc.Server) error
 	Tracker                    *bstream.Tracker
 }
 
@@ -107,6 +110,13 @@ func (a *App) Run() error {
 	// It's important that this call goes prior running gRPC server since it's doing
 	// some service registration. If it's call later on, the overall application exits.
 	blockServer := blockstream.NewServer(gs)
+
+	if a.modules.RegisterGRPCService != nil {
+		err := a.modules.RegisterGRPCService(gs)
+		if err != nil {
+			return fmt.Errorf("register extra grpc service: %w", err)
+		}
+	}
 
 	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlogger)
 	if err != nil {

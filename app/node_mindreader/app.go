@@ -31,6 +31,7 @@ import (
 	"github.com/dfuse-io/shutter"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
@@ -56,6 +57,7 @@ type Modules struct {
 	MindreaderPlugin             *mindreader.MindReaderPlugin
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	StartFailureHandlerFunc      func()
+	RegisterGRPCService          func(server *grpc.Server) error
 }
 
 type App struct {
@@ -97,6 +99,13 @@ func (a *App) Run() error {
 	// It's important that this call goes prior running gRPC server since it's doing
 	// some service registration. If it's call later on, the overall application exits.
 	server := blockstream.NewServer(gs, blockstream.ServerOptionWithLogger(a.zlogger))
+
+	if a.modules.RegisterGRPCService != nil {
+		err := a.modules.RegisterGRPCService(gs)
+		if err != nil {
+			return fmt.Errorf("register extra grpc service: %w", err)
+		}
+	}
 
 	err := mindreader.RunGRPCServer(gs, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
