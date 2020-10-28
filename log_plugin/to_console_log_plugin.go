@@ -19,8 +19,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"go.uber.org/zap"
 )
 
 var DebugLineLength = int64(1000)
@@ -36,13 +34,11 @@ func init() {
 // standard output
 type ToConsoleLogPlugin struct {
 	debugDeepMind bool
-	zlogger       *zap.Logger
 }
 
-func NewToConsoleLogPlugin(debugDeepMind bool, zlogger *zap.Logger) *ToConsoleLogPlugin {
+func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
 	return &ToConsoleLogPlugin{
 		debugDeepMind: debugDeepMind,
-		zlogger:       zlogger,
 	}
 }
 
@@ -57,10 +53,11 @@ func (p *ToConsoleLogPlugin) LogLine(in string) {
 	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
 		logLineLength := int64(len(in))
 
+		// We really want to write lines to stdout and not through our logger, it's the purpose of our plugin!
 		if logLineLength > DebugLineLength {
 			fmt.Printf("%s ... bytes: %d\n", in[:DebugLineLength], (logLineLength - DebugLineLength))
 		} else {
-			p.zlogger.Debug(in)
+			fmt.Println(in)
 		}
 	}
 }
