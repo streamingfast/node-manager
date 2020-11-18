@@ -106,7 +106,8 @@ func (p *ToZapLogPlugin) Close(_ error) {
 func (p *ToZapLogPlugin) LogLine(in string) {
 	if strings.HasPrefix(in, "DMLOG ") {
 		if p.debugDeepMind {
-			p.logger.Debug(in)
+			// Needs to be an info since often used in production where debug level is not enabled by default
+			p.logger.Info(in)
 		}
 
 		return

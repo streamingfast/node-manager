@@ -254,12 +254,14 @@ func (o *Operator) triggerWebCommand(cmdName string, params map[string]string, w
 }
 
 func (o *Operator) sendCommandAsync(c *Command, w http.ResponseWriter) {
+	o.zlogger.Info("sending async command to operator through channel", zap.Object("command", c))
 	o.commandChan <- c
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(fmt.Sprintf("%s command submitted\n", c.cmd)))
 }
 
 func (o *Operator) sendCommandSync(c *Command, w http.ResponseWriter) {
+	o.zlogger.Info("sending sync command to operator through channel", zap.Object("command", c))
 	c.returnch = make(chan error)
 	o.commandChan <- c
 	err := <-c.returnch

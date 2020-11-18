@@ -31,6 +31,7 @@ import (
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Operator struct {
@@ -78,6 +79,12 @@ type Command struct {
 	returnch chan error
 	closer   sync.Once
 	logger   *zap.Logger
+}
+
+func (c *Command) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
+	encoder.AddString("name", c.cmd)
+	encoder.AddReflected("params", c.params)
+	return nil
 }
 
 type CallbackFunc func()

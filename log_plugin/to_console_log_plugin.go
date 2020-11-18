@@ -21,11 +21,14 @@ import (
 	"strings"
 )
 
-var DebugLineLength = int64(1000)
+var DebugLineLength = int64(4096)
 
 func init() {
 	if os.Getenv("DEBUG_LINE_LENGTH") != "" {
-		DebugLineLength, _ = strconv.ParseInt(os.Getenv("DEBUG_LINE_LENGTH"), 10, 64)
+		value, err := strconv.ParseInt(os.Getenv("DEBUG_LINE_LENGTH"), 10, 64)
+		if err == nil {
+			DebugLineLength = value
+		}
 	}
 }
 
