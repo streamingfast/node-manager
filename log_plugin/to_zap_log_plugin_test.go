@@ -24,35 +24,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func TestToZapLogPlugin_KeepLastNLine(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      []string
-		maxLine int
-		out     []string
-	}{
-		{"empty", []string{}, 3, nil},
-		{"single, not reached", []string{"a"}, 3, []string{"a"}},
-		{"flush, not reached", []string{"a", "b", "c"}, 3, []string{"a", "b", "c"}},
-		{"over, count", []string{"a", "b", "c", "d"}, 3, []string{"b", "c", "d"}},
-		{"multiple over count", []string{"a", "b", "c", "d", "e", "f", "g"}, 3, []string{"e", "f", "g"}},
-
-		{"max count 0 keeps nothing", []string{"a", "b", "c", "d", "e", "f", "g"}, 0, nil},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			plugin := NewToZapLogPlugin(false, zap.NewNop(), ToZapLogPluginKeepLastNLine(test.maxLine))
-
-			for _, line := range test.in {
-				plugin.LogLine(line)
-			}
-
-			assert.Equal(t, test.out, plugin.LastLines())
-		})
-	}
-}
-
 func TestToZapLogPlugin(t *testing.T) {
 	simpleExtractor := func(in string) zapcore.Level {
 		if strings.HasPrefix(in, "error") {

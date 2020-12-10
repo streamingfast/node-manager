@@ -111,6 +111,21 @@ func (s *Superviser) LastExitCode() int {
 	return 0
 }
 
+func (s *Superviser) LastLogLines() []string {
+	if s.hasToConsolePlugin() {
+		// There is no point in showing the last log lines when the user already saw it through the to console log plugin
+		return nil
+	}
+
+	for _, plugin := range s.logPlugins {
+		if v, ok := plugin.(*logplugin.KeepLastLinesLogPlugin); ok {
+			return v.LastLines()
+		}
+	}
+
+	return nil
+}
+
 func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	for _, opt := range options {
 		if opt == nodeManager.EnableDebugDeepmindOption {
@@ -234,4 +249,14 @@ func (s *Superviser) processLogLine(line string) {
 	for _, plugin := range s.logPlugins {
 		plugin.LogLine(line)
 	}
+}
+
+func (s *Superviser) hasToConsolePlugin() bool {
+	for _, plugin := range s.logPlugins {
+		if _, ok := plugin.(*logplugin.ToConsoleLogPlugin); ok {
+			return true
+		}
+	}
+
+	return false
 }

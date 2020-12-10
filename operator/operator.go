@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -143,10 +144,19 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 		select {
 		case <-o.Superviser.Stopped(): // stopped outside of a command that was expecting it
 			if o.attemptedAutoRestore || time.Since(o.lastStartCommand) > 10*time.Second {
-				o.Shutdown(fmt.Errorf("instance %q stopped (exit code: %d), shutting down", o.Superviser.GetName(), o.Superviser.LastExitCode()))
-				if o.options.StartFailureHandlerFunc != nil {
-					o.options.StartFailureHandlerFunc()
+				lastLogLines := o.Superviser.LastLogLines()
+
+				// FIXME: Actually, we should create a custom error type that contains the required data, the catching
+				//        code can thus perform the required formatting!
+				baseFormat := "instance %q stopped (exit code: %d), shutting down"
+				var shutdownErr error
+				if len(lastLogLines) > 0 {
+					shutdownErr = fmt.Errorf(baseFormat+": last log lines:\n%s", o.Superviser.GetName(), o.Superviser.LastExitCode(), formatLogLines(lastLogLines))
+				} else {
+					shutdownErr = fmt.Errorf(baseFormat, o.Superviser.GetName(), o.Superviser.LastExitCode())
 				}
+
+				o.Shutdown(shutdownErr)
 				break
 			}
 
@@ -196,6 +206,15 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			}
 		}
 	}
+}
+
+func formatLogLines(lines []string) string {
+	formattedLines := make([]string, len(lines))
+	for i, line := range lines {
+		formattedLines[i] = "  " + line
+	}
+
+	return strings.Join(formattedLines, "\n")
 }
 
 func (o *Operator) waitForReadFlowToComplete() {
@@ -543,6 +562,7 @@ func (o *Operator) bootstrap() error {
 	}
 
 	if o.Superviser.HasData() {
+		o.zlogger.Debug("chain has prior data, skipping bootstrap from data")
 		return nil
 	}
 

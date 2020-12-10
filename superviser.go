@@ -29,7 +29,6 @@ var DisableDebugDeepmindOption = StartOption("disable-debug-deep-mind")
 type ChainSuperviser interface {
 	GetCommand() string
 	GetName() string
-	LastExitCode() int
 
 	RegisterPostRestoreHandler(func())
 	RegisterLogPlugin(plugin logplugin.LogPlugin)
@@ -43,6 +42,8 @@ type ChainSuperviser interface {
 	Stopped() <-chan struct{}
 	ServerID() (string, error)
 
+	LastExitCode() int
+	LastLogLines() []string
 	LastSeenBlockNum() uint64
 }
 

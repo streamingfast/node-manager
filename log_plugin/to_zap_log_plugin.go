@@ -58,14 +58,6 @@ func ToZapLogPluginTransformer(transformer func(in string) string) ToZapLogPlugi
 	})
 }
 
-// ToZapLogPluginKeepLastNLine defines how many of the last line(s) to keep when doing the logging.
-// This option is useful to retrieve a small amount of line seen by the process when an error happens.
-func ToZapLogPluginKeepLastNLine(count int) ToZapLogPluginOption {
-	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
-		p.lastLines.maxCount = count
-	})
-}
-
 // ToZapLogPlugin takes a line, and if it's not a DMLOG line or
 // if we are actively debugging deep mind, will print the line to received
 // logger instance.
@@ -73,7 +65,6 @@ type ToZapLogPlugin struct {
 	logger        *zap.Logger
 	debugDeepMind bool
 
-	lastLines       *lineRingBuffer
 	levelExtractor  func(in string) zapcore.Level
 	lineTransformer func(in string) string
 }
@@ -82,7 +73,6 @@ func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapL
 	plugin := &ToZapLogPlugin{
 		debugDeepMind: debugDeepMind,
 		logger:        logger,
-		lastLines:     &lineRingBuffer{},
 	}
 
 	for _, opt := range options {
@@ -90,10 +80,6 @@ func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapL
 	}
 
 	return plugin
-}
-
-func (p *ToZapLogPlugin) LastLines() []string {
-	return p.lastLines.lines()
 }
 
 func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
@@ -113,9 +99,6 @@ func (p *ToZapLogPlugin) LogLine(in string) {
 		return
 	}
 
-	// TODO: Should we **not** record the line when the level adjustement skips it?
-	p.lastLines.append(in)
-
 	level := zap.DebugLevel
 	if p.levelExtractor != nil {
 		level = p.levelExtractor(in)
@@ -134,63 +117,4 @@ func (p *ToZapLogPlugin) LogLine(in string) {
 	}
 
 	p.logger.Check(level, in).Write()
-}
-
-type bufferElement struct {
-	previous *bufferElement
-	next     *bufferElement
-	line     string
-}
-
-type lineRingBuffer struct {
-	maxCount int
-
-	count int
-	tail  *bufferElement
-	head  *bufferElement
-}
-
-func (b *lineRingBuffer) lines() (out []string) {
-	if b.count == 0 {
-		return nil
-	}
-
-	if b.count == 1 {
-		return []string{b.head.line}
-	}
-
-	i := 0
-	out = make([]string, b.count)
-	for current := b.tail; current != nil; current = current.next {
-		out[i] = current.line
-		i++
-	}
-
-	return
-}
-
-func (b *lineRingBuffer) append(line string) {
-	// If we keep nothing, there is nothing to do here
-	if b.maxCount == 0 {
-		return
-	}
-
-	oldHead := b.head
-	b.head = &bufferElement{line: line, previous: oldHead}
-
-	if oldHead != nil {
-		oldHead.next = b.head
-	}
-
-	if b.tail == nil {
-		b.tail = b.head
-	}
-
-	if b.count == b.maxCount {
-		// We are full, we need to rotate stuff a bit
-		b.tail = b.tail.next
-	} else {
-		// We are not full, let's just append a new line (so only update count)
-		b.count++
-	}
 }
