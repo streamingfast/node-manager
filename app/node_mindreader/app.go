@@ -145,7 +145,7 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Info("launching mindreader plugin")
-	a.modules.MindreaderPlugin.Run(server)
+	go a.modules.MindreaderPlugin.Launch(server)
 
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()

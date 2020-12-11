@@ -174,12 +174,6 @@ func NewMindReaderPlugin(
 	return mindReaderPlugin, nil
 }
 
-func (p *MindReaderPlugin) Run(server *blockstream.Server) {
-	p.zlogger.Info("running")
-	p.blockServer = server
-	go p.ReadFlow()
-}
-
 func newMindReaderPlugin(
 	archiver Archiver,
 	consoleReaderFactory ConsolerReaderFactory,
@@ -213,13 +207,10 @@ func newMindReaderPlugin(
 	}, nil
 }
 
-func (p *MindReaderPlugin) waitForReadFlowToComplete() {
-	p.zlogger.Info("waiting until consume read flow (i.e. blocks) is actually done processing blocks...")
-	<-p.consumeReadFlowDone
-}
+func (p *MindReaderPlugin) Launch(server *blockstream.Server) {
+	p.zlogger.Info("starting mindreader")
+	p.blockServer = server
 
-func (p *MindReaderPlugin) ReadFlow() {
-	p.zlogger.Info("starting read flow")
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	go p.consumeReadFlow(blocks)
@@ -227,7 +218,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 
 	shutdownCalled := false
 	for {
-		// ALWAYS READ (otherwise you'll stall `nodeos`' shutdown process, want a dirty flag?)
+		// Always read messages otherwise you'll stall the shutdown lifecycle of the managed process, leading to corrupted database if exit uncleanly afterward
 		err := p.readOneMessage(blocks)
 		if err != nil {
 			if err == io.EOF {
@@ -235,6 +226,7 @@ func (p *MindReaderPlugin) ReadFlow() {
 				close(blocks)
 				return
 			}
+
 			p.zlogger.Error("reading from console logs", zap.Error(err))
 			if !shutdownCalled {
 				p.shutdownFunc(err)
@@ -243,6 +235,11 @@ func (p *MindReaderPlugin) ReadFlow() {
 			continue
 		}
 	}
+}
+
+func (p *MindReaderPlugin) waitForReadFlowToComplete() {
+	p.zlogger.Info("waiting until consume read flow (i.e. blocks) is actually done processing blocks...")
+	<-p.consumeReadFlowDone
 }
 
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done

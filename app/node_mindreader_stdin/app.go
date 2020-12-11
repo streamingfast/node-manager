@@ -124,7 +124,7 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Debug("running mindreader log plugin")
-	go mindreaderLogPlugin.Run(blockServer)
+	go mindreaderLogPlugin.Launch(blockServer)
 
 	go a.modules.MetricsAndReadinessManager.Launch()
 
