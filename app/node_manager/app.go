@@ -42,6 +42,8 @@ type Config struct {
 	AutoSnapshotModulo        int
 	AutoSnapshotPeriod        time.Duration
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
+
+	StartupDelay time.Duration
 }
 
 type Modules struct {
@@ -95,6 +97,10 @@ func (a *App) Run() error {
 
 	if a.config.ConnectionWatchdog {
 		go a.modules.LaunchConnectionWatchdogFunc(a.Terminating())
+	}
+
+	if a.config.StartupDelay != 0 {
+		time.Sleep(a.config.StartupDelay)
 	}
 
 	a.zlogger.Info("launching operator")
