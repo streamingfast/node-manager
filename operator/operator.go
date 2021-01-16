@@ -60,6 +60,7 @@ type Options struct {
 	PVCPrefix            string
 	Project              string //gcp project
 
+	BootstrapSnapshotName   string
 	BootstrapDataURL        string
 	AutoRestoreSource       string
 	NumberOfSnapshotsToKeep int
@@ -562,8 +563,14 @@ func (o *Operator) bootstrap() error {
 	}
 
 	if o.Superviser.HasData() {
-		o.zlogger.Debug("chain has prior data, skipping bootstrap from data")
+		o.zlogger.Debug("chain has prior data, skipping bootstrap from snapshot or data")
 		return nil
+	}
+
+	// Must comes before `o.options.BootstrapDataURL` check has it has precedence over it
+	if o.options.BootstrapSnapshotName != "" {
+		o.zlogger.Info("chain has no prior data and bootstrap snapshot name is set, attempting bootstrap from snapshot")
+		return o.bootstrapFromSnapshot(o.options.BootstrapSnapshotName)
 	}
 
 	if o.options.BootstrapDataURL != "" {
@@ -581,7 +588,7 @@ func (o *Operator) bootstrap() error {
 }
 
 func (o *Operator) bootstrapFromDataURL(bootstrapDataURL string) error {
-	o.zlogger.Debug("bootstraping from pre-existing data prior starting process")
+	o.zlogger.Info("bootstraping from pre-existing data prior starting process")
 	bootstrapable, ok := o.Superviser.(nodeManager.BootstrapableChainSuperviser)
 	if !ok {
 		return errors.New("the chain superviser does not support bootstrap")
