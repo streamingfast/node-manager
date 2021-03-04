@@ -48,6 +48,11 @@ type Config struct {
 	AutoSnapshotPeriod        time.Duration
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
 
+	// Volume Snapshot Flags
+	AutoVolumeSnapshotModulo        int
+	AutoVolumeSnapshotPeriod        time.Duration
+	AutoVolumeSnapshotSpecificBlocks []uint64
+
 	StartupDelay       time.Duration
 	ConnectionWatchdog bool
 }
@@ -93,6 +98,10 @@ func (a *App) Run() error {
 
 	if a.config.AutoSnapshotPeriod != 0 || a.config.AutoSnapshotModulo != 0 {
 		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
+	}
+
+	if a.config.AutoVolumeSnapshotPeriod != 0 || a.config.AutoVolumeSnapshotModulo != 0 || len(a.config.AutoVolumeSnapshotSpecificBlocks) > 0 {
+		a.modules.Operator.ConfigureAutoVolumeSnapshot(a.config.AutoVolumeSnapshotPeriod, a.config.AutoVolumeSnapshotModulo, a.config.AutoVolumeSnapshotSpecificBlocks)
 	}
 
 	// FIXME: The ownership relationship of how stuff should close in node-manager is really badly
