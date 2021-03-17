@@ -25,6 +25,22 @@ import (
 	"go.uber.org/zap"
 )
 
+type Superviser struct {
+	*shutter.Shutter
+	Binary    string
+	Arguments []string
+	Logger    *zap.Logger
+
+	cmd     *overseer.Cmd
+	cmdLock sync.Mutex
+
+	logPlugins        []logplugin.LogPlugin
+	logPluginsLock    sync.RWMutex
+	HandlePostRestore func()
+
+	enableDeepMind bool
+}
+
 func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 	s := &Superviser{
 		Shutter:   shutter.New(),
@@ -48,24 +64,15 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 		}
 		s.Logger.Info("supervised process stopped", zap.Int("last_exit_code", s.LastExitCode()))
 		s.endLogPlugins()
+
+		//wait for plugins to terminated
+		for _, plugin := range s.logPlugins {
+			if s, ok := plugin.(logplugin.Shutter); ok {
+				<-s.Terminated()
+			}
+		}
 	})
 	return s
-}
-
-type Superviser struct {
-	*shutter.Shutter
-	Binary    string
-	Arguments []string
-	Logger    *zap.Logger
-
-	cmd     *overseer.Cmd
-	cmdLock sync.Mutex
-
-	logPlugins        []logplugin.LogPlugin
-	logPluginsLock    sync.RWMutex
-	HandlePostRestore func()
-
-	enableDeepMind bool
 }
 
 // RegisterPostRestoreHandler adds a function called after a restore from backup or from snapshot
@@ -78,6 +85,10 @@ func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
 	defer s.logPluginsLock.Unlock()
 
 	s.logPlugins = append(s.logPlugins, plugin)
+	if s, ok := plugin.(logplugin.Shutter); ok {
+		s.OnTerminating(s.Shutdown)
+	}
+
 	s.Logger.Info("registered log plugin", zap.Int("plugin count", len(s.logPlugins)))
 }
 
@@ -134,6 +145,10 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 		if opt == nodeManager.DisableDebugDeepmindOption {
 			s.setDeepMindDebug(false)
 		}
+	}
+
+	for _, plugin := range s.logPlugins {
+		go plugin.Launch()
 	}
 
 	s.cmdLock.Lock()

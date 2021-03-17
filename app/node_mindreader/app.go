@@ -22,16 +22,16 @@ import (
 	"time"
 
 	"github.com/dfuse-io/bstream/blockstream"
-	"github.com/dfuse-io/dgrpc"
+
+	"google.golang.org/grpc"
+
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/node-manager/metrics"
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 )
 
 type Config struct {
@@ -57,7 +57,9 @@ type Modules struct {
 	MindreaderPlugin             *mindreader.MindReaderPlugin
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	StartFailureHandlerFunc      func()
-	RegisterGRPCService          func(server *grpc.Server) error
+	//Done: move to dfuse
+	//RegisterGRPCService          func(server *grpc.Server) error
+	GrpcServer *grpc.Server
 }
 
 type App struct {
@@ -94,20 +96,14 @@ func (a *App) Run() error {
 		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
 	}
 
-	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
+	//Done: move to dfuse
+	//gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
 
 	// It's important that this call goes prior running gRPC server since it's doing
 	// some service registration. If it's call later on, the overall application exits.
-	server := blockstream.NewServer(gs, blockstream.ServerOptionWithLogger(a.zlogger))
+	blockstream.NewServer(a.modules.GrpcServer, blockstream.ServerOptionWithLogger(a.zlogger))
 
-	if a.modules.RegisterGRPCService != nil {
-		err := a.modules.RegisterGRPCService(gs)
-		if err != nil {
-			return fmt.Errorf("register extra grpc service: %w", err)
-		}
-	}
-
-	err := mindreader.RunGRPCServer(gs, a.config.GRPCAddr, a.zlogger)
+	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
 	}
@@ -115,28 +111,31 @@ func (a *App) Run() error {
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
 
-		//todo: wait for the operator to terminate
-		//todo: operator should wait for the supervisor to terminate
-		//todo: supervisor should wait for the plugins to terminate
-		<-a.modules.MindreaderPlugin.Terminated()
+		//done: wait for the operator to terminate
+		//done: operator should wait for the supervisor to terminate
+		//Done: supervisor should wait for the plugins to terminate
+
+		//wait for Operator to terminate, Operator will wait for supervisor, supervisor will wait for plugins to terminate
+		<-a.modules.Operator.Terminated()
 	})
 
-	a.modules.Operator.OnTerminating(func(err error) {
-		// maintenance is set from operator cmd control flow
-		//todo: let's move this code to operator
-		a.modules.Operator.Superviser.Shutdown(err)
-	})
+	//Done: let's move this code to operator
+	//a.modules.Operator.OnTerminating(func(err error) {
+	//	// maintenance is set from operator cmd control flow
+	//	a.modules.Operator.Superviser.Shutdown(err)
+	//})
 
-	a.modules.Operator.Superviser.OnTerminating(func(err error) {
-		//todo: move to superviser
-		a.modules.MindreaderPlugin.Shutdown(err)
-	})
+	//Done: move to superviser
+	//a.modules.Operator.Superviser.OnTerminating(func(err error) {
+	//
+	//	a.modules.MindreaderPlugin.Shutdown(err)
+	//})
 
-	//todo: plugins should shutdown supervisor
-	//todo: supervisor should shutdown operator
-	//todo: operator should shutdown app
-	//todo: remove next line
-	a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
+	//Done: plugins should shutdown supervisor
+	//Done: supervisor should shutdown operator
+	//Done: operator should shutdown app
+	//Done: remove next line
+	//a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
 
 	a.modules.Operator.OnTerminated(func(err error) {
 		a.zlogger.Info("chain operator terminated shutting down mindreader app")
@@ -147,31 +146,9 @@ func (a *App) Run() error {
 		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
-	//todo: Extract ContinuityChecker functionality from MindreaderPlugin and create a interface
-	//todo: pass the ContinuityChecker to the plugins as a dep injection
-	//todo: pass the ContinuityChecker to the app as a dep injection
-	var httpOptions []operator.HTTPOption
-	if a.modules.ContinuityChecker != nil {
-		httpOptions = append(httpOptions, func(r *mux.Router) {
-			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-				a.modules.ContinuityChecker.ResetContinuityChecker()
-				w.Write([]byte("ok"))
-			})
-		})
-	}
-
-	//if a.modules.MindreaderPlugin.HasContinuityChecker() {
-	//	httpOptions = append(httpOptions, func(r *mux.Router) {
-	//		r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-	//			a.modules.MindreaderPlugin.ResetContinuityChecker()
-	//			w.Write([]byte("ok"))
-	//		})
-	//	})
-	//}
-
 	a.zlogger.Info("launching mindreader plugin")
-	//todo: move to dfuse
-	go a.modules.MindreaderPlugin.Launch(server)
+	//Done: move to dfuse
+	//go a.modules.MindreaderPlugin.Launch()
 
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()

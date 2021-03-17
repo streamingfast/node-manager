@@ -17,11 +17,14 @@ package logplugin
 import "github.com/dfuse-io/bstream/blockstream"
 
 type LogPlugin interface {
+	Launch()
 	LogLine(in string)
 	Close(err error)
 }
 
 type Shutter interface {
+	Terminated() <-chan struct{}
+	OnTerminating(f func(error))
 	OnTerminated(f func(error))
 	Shutdown(err error)
 }

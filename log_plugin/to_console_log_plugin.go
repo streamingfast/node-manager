@@ -45,6 +45,8 @@ func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
 	}
 }
 
+func (p *ToConsoleLogPlugin) Launch() {}
+
 func (p *ToConsoleLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
 }

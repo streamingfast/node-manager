@@ -33,6 +33,8 @@ func NewKeepLastLinesLogPlugin(lineCount int, includeDeepMindLines bool) *KeepLa
 	return plugin
 }
 
+func (p *KeepLastLinesLogPlugin) Launch() {}
+
 func (p *KeepLastLinesLogPlugin) DebugDeepMind(enabled bool) {
 	p.includeDeepMindLines = enabled
 }

@@ -62,7 +62,7 @@ type MindReaderPlugin struct {
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
 
-	blockServer         *blockstream.Server
+	blockStreamServer   *blockstream.Server
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater
 }
 
@@ -90,6 +90,7 @@ func NewMindReaderPlugin(
 	failOnNonContinuousBlocks bool,
 	waitUploadCompleteOnShutdown time.Duration,
 	oneblockSuffix string,
+	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	zlogger.Info("creating mindreader plugin",
@@ -158,6 +159,7 @@ func NewMindReaderPlugin(
 		stopBlockNum,
 		channelCapacity,
 		headBlockUpdateFunc,
+		blockStreamServer,
 		zlogger,
 	)
 	if err != nil {
@@ -167,7 +169,9 @@ func NewMindReaderPlugin(
 	mindReaderPlugin.shutdownFunc = shutdownFunc
 
 	mindReaderPlugin.OnTerminating(func(err error) {
-		go mindReaderPlugin.shutdownFunc(err) // this will call operator shutdown or similar
+		//Done: this is no more needed after current refactoring
+		//go mindReaderPlugin.shutdownFunc(err) // this will call operator shutdown or similar
+
 		mindReaderPlugin.waitForReadFlowToComplete()
 	})
 
@@ -183,6 +187,7 @@ func newMindReaderPlugin(
 	stopBlock uint64,
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
+	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	pipeReader, pipeWriter := io.Pipe()
@@ -204,12 +209,12 @@ func newMindReaderPlugin(
 		channelCapacity:     channelCapacity,
 		headBlockUpdateFunc: headBlockUpdateFunc,
 		zlogger:             zlogger,
+		blockStreamServer:   blockStreamServer,
 	}, nil
 }
 
-func (p *MindReaderPlugin) Launch(server *blockstream.Server) {
+func (p *MindReaderPlugin) Launch() {
 	p.zlogger.Info("starting mindreader")
-	p.blockServer = server
 
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
@@ -266,10 +271,10 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
 			return
 		}
-		if p.blockServer != nil {
-			err = p.blockServer.PushBlock(block)
+		if p.blockStreamServer != nil {
+			err = p.blockStreamServer.PushBlock(block)
 			if err != nil {
-				p.zlogger.Error("failed passing block to blockServer (this should not happen)", zap.Error(err))
+				p.zlogger.Error("failed passing block to blockStreamServer (this should not happen)", zap.Error(err))
 				return
 			}
 		}
