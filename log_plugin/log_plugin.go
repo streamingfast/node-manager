@@ -35,6 +35,7 @@ type BlockStreamer interface {
 
 type LogPluginFunc func(line string)
 
+func (f LogPluginFunc) Launch()             {}
 func (f LogPluginFunc) LogLine(line string) { f(line) }
 
 func (f LogPluginFunc) Close(_ error) {}

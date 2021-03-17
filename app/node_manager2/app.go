@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
@@ -49,8 +48,8 @@ type Config struct {
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
 
 	// Volume Snapshot Flags
-	AutoVolumeSnapshotModulo        int
-	AutoVolumeSnapshotPeriod        time.Duration
+	AutoVolumeSnapshotModulo         int
+	AutoVolumeSnapshotPeriod         time.Duration
 	AutoVolumeSnapshotSpecificBlocks []uint64
 
 	StartupDelay       time.Duration
@@ -216,10 +215,6 @@ func (a *App) startMindreader() error {
 	a.zlogger.Info("starting mindreader gRPC server")
 	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
 
-	// It's important that this call goes prior running gRPC server since it's doing
-	// some service registration. If it's call later on, the overall application exits.
-	server := blockstream.NewServer(gs, blockstream.ServerOptionWithLogger(a.zlogger))
-
 	if a.modules.RegisterGRPCService != nil {
 		err := a.modules.RegisterGRPCService(gs)
 		if err != nil {
@@ -233,6 +228,6 @@ func (a *App) startMindreader() error {
 	}
 
 	a.zlogger.Info("launching mindreader plugin")
-	go a.modules.MindreaderPlugin.Launch(server)
+	go a.modules.MindreaderPlugin.Launch()
 	return nil
 }

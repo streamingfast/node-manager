@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dgrpc"
 	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/node-manager/mindreader"
@@ -97,6 +96,7 @@ func (a *App) Run() error {
 		a.Config.FailOnNonContinuousBlocks,
 		a.Config.WaitUploadCompleteOnShutdown,
 		a.Config.OneblockSuffix,
+		nil,
 		a.zlogger,
 	)
 	if err != nil {
@@ -106,10 +106,6 @@ func (a *App) Run() error {
 	a.zlogger.Debug("configuring shutter")
 	mindreaderLogPlugin.OnTerminated(a.Shutdown)
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
-
-	// It's important that this call goes prior running gRPC server since it's doing
-	// some service registration. If it's call later on, the overall application exits.
-	blockServer := blockstream.NewServer(gs)
 
 	if a.modules.RegisterGRPCService != nil {
 		err := a.modules.RegisterGRPCService(gs)
@@ -124,7 +120,7 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Debug("running mindreader log plugin")
-	go mindreaderLogPlugin.Launch(blockServer)
+	go mindreaderLogPlugin.Launch()
 
 	go a.modules.MetricsAndReadinessManager.Launch()
 

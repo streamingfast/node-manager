@@ -21,8 +21,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream/blockstream"
-
 	"google.golang.org/grpc"
 
 	"github.com/dfuse-io/dmetrics"
@@ -52,9 +50,11 @@ type Config struct {
 }
 
 type Modules struct {
-	Operator                     *operator.Operator
-	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
-	MindreaderPlugin             *mindreader.MindReaderPlugin
+	Operator                   *operator.Operator
+	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
+
+	//Done: remove MindreaderPlugin reference
+	//MindreaderPlugin             *mindreader.MindReaderPlugin
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	StartFailureHandlerFunc      func()
 	//Done: move to dfuse
@@ -98,10 +98,6 @@ func (a *App) Run() error {
 
 	//Done: move to dfuse
 	//gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
-
-	// It's important that this call goes prior running gRPC server since it's doing
-	// some service registration. If it's call later on, the overall application exits.
-	blockstream.NewServer(a.modules.GrpcServer, blockstream.ServerOptionWithLogger(a.zlogger))
 
 	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
