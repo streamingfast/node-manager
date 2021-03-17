@@ -335,15 +335,15 @@ func (o *Operator) runCommand(cmd *Command) error {
 			time.Sleep(o.options.ShutdownDelay)
 		}
 
-		lastBlockSeen := o.Superviser.LastSeenBlockNum()
-		if lastBlockSeen == 0 {
-			cmd.Return(errors.New("volumesnapshot: invalid lastBlockSeen 0. Cowardly refusing to take a snapshot."))
-			return nil
-		}
-
 		o.zlogger.Info("asking chain superviser to take a volume snapshot")
 		if err := o.Superviser.Stop(); err != nil {
 			return err
+		}
+
+		lastBlockSeen := o.Superviser.LastSeenBlockNum()
+		if lastBlockSeen == 0 {
+			cmd.Return(errors.New("volumesnapshot: invalid lastBlockSeen 0. Cowardly refusing to take a snapshot"))
+			return nil
 		}
 
 		if err := volumesnapshotable.TakeVolumeSnapshot(o.options.VolumeSnapshotAppVer, o.options.Project, o.options.Namespace, o.options.Pod, o.options.PVCPrefix, lastBlockSeen); err != nil {
