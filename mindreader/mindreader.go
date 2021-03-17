@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/dfuse-io/bstream"
@@ -115,18 +114,6 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
 
-	var continuityChecker ContinuityChecker
-	cc, err := NewContinuityChecker(filepath.Join(workingDirectory, "continuity_check"), zlogger)
-	if err != nil {
-		return nil, fmt.Errorf("error setting up continuity checker: %w", err)
-	}
-
-	if failOnNonContinuousBlocks {
-		continuityChecker = cc
-	} else {
-		cc.Reset()
-	}
-
 	oneblockArchiveStore, err := dstore.NewDBinStore(archiveStoreURL) // never overwrites
 	if err != nil {
 		return nil, fmt.Errorf("setting up archive store: %w", err)
@@ -154,7 +141,6 @@ func NewMindReaderPlugin(
 		archiverSelector,
 		consoleReaderFactory,
 		consoleReaderTransformer,
-		continuityChecker,
 		startBlockNum,
 		stopBlockNum,
 		channelCapacity,
@@ -182,7 +168,6 @@ func newMindReaderPlugin(
 	archiver Archiver,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
-	continuityChecker ContinuityChecker,
 	startBlock uint64,
 	stopBlock uint64,
 	channelCapacity int,
@@ -199,7 +184,6 @@ func newMindReaderPlugin(
 	return &MindReaderPlugin{
 		Shutter:             shutter.New(),
 		consoleReader:       consoleReader,
-		continuityChecker:   continuityChecker,
 		consumeReadFlowDone: make(chan interface{}),
 		transformer:         consoleReaderTransformer,
 		writer:              pipeWriter,
