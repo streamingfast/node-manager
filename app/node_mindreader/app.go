@@ -29,7 +29,6 @@ import (
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -147,34 +146,14 @@ func (a *App) Run() error {
 		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
-	//todo: Extract ContinuityChecker functionality from MindreaderPlugin and create a interface
-	//todo: pass the ContinuityChecker to the plugins as a dep injection
-	//todo: pass the ContinuityChecker to the app as a dep injection
-	var httpOptions []operator.HTTPOption
-	if a.modules.ContinuityChecker != nil {
-		httpOptions = append(httpOptions, func(r *mux.Router) {
-			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-				a.modules.ContinuityChecker.ResetContinuityChecker()
-				w.Write([]byte("ok"))
-			})
-		})
-	}
-
-	//if a.modules.MindreaderPlugin.HasContinuityChecker() {
-	//	httpOptions = append(httpOptions, func(r *mux.Router) {
-	//		r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-	//			a.modules.MindreaderPlugin.ResetContinuityChecker()
-	//			w.Write([]byte("ok"))
-	//		})
-	//	})
-	//}
-
 	a.zlogger.Info("launching mindreader plugin")
 	//todo: move to dfuse
 	go a.modules.MindreaderPlugin.Launch(server)
 
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
+
+	var httpOptions []operator.HTTPOption
 	go a.Shutdown(a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...))
 
 	return nil
