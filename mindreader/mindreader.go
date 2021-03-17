@@ -39,7 +39,7 @@ type ConsolerReaderFactory func(reader io.Reader) (ConsolerReader, error)
 // ConsoleReaderBlockTransformer is a function that accepts an `obj` of type
 // `interface{}` as produced by a specialized ConsoleReader implementation and
 // turns it into a `bstream.Block` that is able to flow in block streams.
-type ConsoleReaderBlockTransformer func(obj interface{}) (*bstream.Block, error)
+type ConsoleReaderBlockTransformer func(obj interface{}) (*bstream.Block, *bstream.BlockData, error)
 
 type MindReaderPlugin struct {
 	*shutter.Shutter
@@ -291,7 +291,7 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 		return err
 	}
 
-	block, err := p.transformer(obj)
+	block, blockData, err := p.transformer(obj)
 	if err != nil {
 		return fmt.Errorf("unable to transform console read obj to bstream.Block: %w", err)
 	}

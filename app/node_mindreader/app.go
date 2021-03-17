@@ -114,15 +114,28 @@ func (a *App) Run() error {
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
+
+		//todo: wait for the operator to terminate
+		//todo: operator should wait for the supervisor to terminate
+		//todo: supervisor should wait for the plugins to terminate
 		<-a.modules.MindreaderPlugin.Terminated()
 	})
+
 	a.modules.Operator.OnTerminating(func(err error) {
 		// maintenance is set from operator cmd control flow
+		//todo: let's move this code to operator
 		a.modules.Operator.Superviser.Shutdown(err)
 	})
+
 	a.modules.Operator.Superviser.OnTerminating(func(err error) {
+		//todo: move to superviser
 		a.modules.MindreaderPlugin.Shutdown(err)
 	})
+
+	//todo: plugins should shutdown supervisor
+	//todo: supervisor should shutdown operator
+	//todo: operator should shutdown app
+	//todo: remove next line
 	a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
 
 	a.modules.Operator.OnTerminated(func(err error) {
@@ -134,17 +147,30 @@ func (a *App) Run() error {
 		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
+	//todo: Extract ContinuityChecker functionality from MindreaderPlugin and create a interface
+	//todo: pass the ContinuityChecker to the plugins as a dep injection
+	//todo: pass the ContinuityChecker to the app as a dep injection
 	var httpOptions []operator.HTTPOption
-	if a.modules.MindreaderPlugin.HasContinuityChecker() {
+	if a.modules.ContinuityChecker != nil {
 		httpOptions = append(httpOptions, func(r *mux.Router) {
 			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-				a.modules.MindreaderPlugin.ResetContinuityChecker()
+				a.modules.ContinuityChecker.ResetContinuityChecker()
 				w.Write([]byte("ok"))
 			})
 		})
 	}
 
+	//if a.modules.MindreaderPlugin.HasContinuityChecker() {
+	//	httpOptions = append(httpOptions, func(r *mux.Router) {
+	//		r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
+	//			a.modules.MindreaderPlugin.ResetContinuityChecker()
+	//			w.Write([]byte("ok"))
+	//		})
+	//	})
+	//}
+
 	a.zlogger.Info("launching mindreader plugin")
+	//todo: move to dfuse
 	go a.modules.MindreaderPlugin.Launch(server)
 
 	a.zlogger.Info("launching operator")
