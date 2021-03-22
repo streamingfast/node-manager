@@ -229,7 +229,7 @@ func (p *MindReaderPlugin) Launch(server *blockstream.Server) {
 
 			p.zlogger.Error("reading from console logs", zap.Error(err))
 			if !shutdownCalled {
-				p.shutdownFunc(err)
+				go p.shutdownFunc(err) // don't block, so we eventually get io.EOF, close(blocks) and leave
 				shutdownCalled = true
 			}
 			continue
