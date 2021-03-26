@@ -218,6 +218,7 @@ func (p *MindReaderPlugin) Launch() {
 
 			p.zlogger.Error("reading from console logs", zap.Error(err))
 			if !shutdownCalled {
+				p.zlogger.Info("mindreader plugin is shutting down")
 				p.shutdownFunc(err)
 				shutdownCalled = true
 			}

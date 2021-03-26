@@ -82,6 +82,10 @@ func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapL
 	return plugin
 }
 
+func (p *ToZapLogPlugin) Launch() {
+
+}
+
 func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
 }

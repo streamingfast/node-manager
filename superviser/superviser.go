@@ -49,6 +49,7 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 		Logger:    logger,
 	}
 	s.Shutter.OnTerminating(func(err error) {
+		s.Logger.Info("superviser is terminating")
 		sleepTime := time.Duration(0)
 		for {
 			time.Sleep(sleepTime)
@@ -67,8 +68,9 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 
 		//wait for plugins to terminated
 		for _, plugin := range s.logPlugins {
-			if s, ok := plugin.(logplugin.Shutter); ok {
-				<-s.Terminated()
+			if p, ok := plugin.(logplugin.Shutter); ok {
+				s.Logger.Info("waiting for plugin to terminate", zap.Reflect("plugin", p))
+				<-p.Terminated()
 			}
 		}
 	})
@@ -85,8 +87,9 @@ func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
 	defer s.logPluginsLock.Unlock()
 
 	s.logPlugins = append(s.logPlugins, plugin)
-	if s, ok := plugin.(logplugin.Shutter); ok {
-		s.OnTerminating(s.Shutdown)
+	if shut, ok := plugin.(logplugin.Shutter); ok {
+		s.Logger.Info("adding superviser shutdown to plugins", zap.Reflect("plugin", plugin))
+		shut.OnTerminating(s.Shutdown)
 	}
 
 	s.Logger.Info("registered log plugin", zap.Int("plugin count", len(s.logPlugins)))
@@ -189,13 +192,24 @@ func (s *Superviser) Stop() error {
 		s.Logger.Info("stopping underlying process")
 		err := s.cmd.Stop()
 		if err != nil {
+			s.Logger.Error("failed to stop overseer cmd", zap.Error(err))
 			return err
 		}
 	}
 
 	// Blocks until command finished completely
 	s.Logger.Debug("blocking until command actually ends")
-	<-s.cmd.Done()
+patate:
+	for {
+		select {
+		case <-s.cmd.Done():
+			break patate
+		case <-time.After(500 * time.Millisecond):
+			s.Logger.Debug("still blocking until command actually ends")
+		}
+	}
+
+	s.Logger.Debug("command is done")
 	s.cmd = nil
 
 	return nil
@@ -214,6 +228,7 @@ func (s *Superviser) isRunning() bool {
 		return false
 	}
 
+	s.Logger.Debug("isRunning", zap.Stringer("command_state", s.cmd.State))
 	return s.cmd.State == overseer.STARTING || s.cmd.State == overseer.RUNNING || s.cmd.State == overseer.STOPPING
 }
 
