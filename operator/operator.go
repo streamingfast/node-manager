@@ -117,14 +117,23 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		}
 	}
 
-	chainSuperviser.OnTerminating(func(err error) {
-		o.Shutdown(err)
+	chainSuperviser.OnTerminated(func(err error) {
+		if !o.IsTerminating() {
+			zlogger.Info("chain superviser is shutting down operator")
+			o.Shutdown(err)
+		}
 	})
 
 	o.OnTerminating(func(err error) {
 		//wait for supervisor to terminate, supervisor will wait for plugins to terminate
-		o.Superviser.Shutdown(err)
+		if !o.Superviser.IsTerminating() {
+			zlogger.Info("operator is terminating", zap.Error(err))
+			o.Superviser.Shutdown(err)
+		}
+
+		zlogger.Info("operator is waiting for superviser to shutdown", zap.Error(err))
 		<-o.Superviser.Terminated()
+		zlogger.Info("operator done waiting for superviser to shutdown", zap.Error(err))
 	})
 
 	return o, nil
@@ -196,16 +205,20 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 				}
 			}
 
-		case <-o.Terminating():
-			//todo: Can all this be done in OnTerminating declare in the New func
-			o.zlogger.Info("operator terminating, ending run/loop")
-			//todo: missing error handling here
-			err := o.runCommand(&Command{cmd: "maintenance"})
-			if err != nil {
-				o.zlogger.Error("failed to run command 'maintenance': %w", zap.Error(err))
-			}
-			o.zlogger.Info("operator run maintenance command")
-			return nil
+		//case <-o.Terminating():
+		//	////todo: Can all this be done in OnTerminating declare in the New func
+		//	//o.zlogger.Info("operator terminating, ending run/loop")
+		//	////todo: missing error handling here
+		//	//err := o.runCommand(&Command{cmd: "maintenance"})
+		//	//if err != nil {
+		//	//	o.zlogger.Error("failed to run command 'maintenance': %w", zap.Error(err))
+		//	//}
+		//	//o.zlogger.Info("operator run maintenance command")
+		//
+		//
+		//	//we do not want to go in maintenance here. We are what to terminate
+		//
+		//	return nil
 
 		case cmd := <-o.commandChan:
 			if cmd.cmd == "start" { // start 'sub' commands after a restore do NOT come through here

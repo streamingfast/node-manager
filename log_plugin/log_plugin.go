@@ -17,15 +17,20 @@ package logplugin
 import "github.com/dfuse-io/bstream/blockstream"
 
 type LogPlugin interface {
+	Name() string
 	Launch()
 	LogLine(in string)
-	Close(err error)
+	//Close(err error)
+	Shutdown(err error)
+	IsTerminating() bool
+	Stop()
 }
 
 type Shutter interface {
 	Terminated() <-chan struct{}
 	OnTerminating(f func(error))
 	OnTerminated(f func(error))
+	IsTerminating() bool
 	Shutdown(err error)
 }
 
@@ -37,5 +42,21 @@ type LogPluginFunc func(line string)
 
 func (f LogPluginFunc) Launch()             {}
 func (f LogPluginFunc) LogLine(line string) { f(line) }
+func (f LogPluginFunc) Name() string        { return "log plug func" }
+func (f LogPluginFunc) Stop()               {}
+func (f LogPluginFunc) Shutdown(_ error)    {}
+func (f LogPluginFunc) Terminated() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
 
-func (f LogPluginFunc) Close(_ error) {}
+func (f LogPluginFunc) IsTerminating() bool {
+	return false
+}
+
+func (f LogPluginFunc) OnTerminating(_ func(error)) {
+}
+
+func (f LogPluginFunc) OnTerminated(_ func(error)) {
+}

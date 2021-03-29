@@ -16,25 +16,31 @@ package logplugin
 
 import (
 	"strings"
+
+	"github.com/dfuse-io/shutter"
 )
 
 // KeepLastLinesLogPlugin takes a line and keep the last N lines as requested by the caller.
 type KeepLastLinesLogPlugin struct {
+	*shutter.Shutter
 	lastLines            *lineRingBuffer
 	includeDeepMindLines bool
 }
 
 func NewKeepLastLinesLogPlugin(lineCount int, includeDeepMindLines bool) *KeepLastLinesLogPlugin {
 	plugin := &KeepLastLinesLogPlugin{
+		Shutter:              shutter.New(),
 		lastLines:            &lineRingBuffer{maxCount: lineCount},
 		includeDeepMindLines: includeDeepMindLines,
 	}
 
 	return plugin
 }
-
+func (p *KeepLastLinesLogPlugin) Name() string {
+	return "KeepLastLinesLogPlugin"
+}
 func (p *KeepLastLinesLogPlugin) Launch() {}
-
+func (p KeepLastLinesLogPlugin) Stop()    {}
 func (p *KeepLastLinesLogPlugin) DebugDeepMind(enabled bool) {
 	p.includeDeepMindLines = enabled
 }
@@ -43,8 +49,8 @@ func (p *KeepLastLinesLogPlugin) LastLines() []string {
 	return p.lastLines.lines()
 }
 
-func (p *KeepLastLinesLogPlugin) Close(_ error) {
-}
+//func (p *KeepLastLinesLogPlugin) Close(_ error) {
+//}
 
 func (p *KeepLastLinesLogPlugin) LogLine(in string) {
 	if strings.HasPrefix(in, "DMLOG ") && !p.includeDeepMindLines {

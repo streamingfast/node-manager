@@ -48,8 +48,15 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 		Arguments: arguments,
 		Logger:    logger,
 	}
+
 	s.Shutter.OnTerminating(func(err error) {
 		s.Logger.Info("superviser is terminating")
+
+		if err := s.Stop(); err != nil {
+			s.Logger.Error("failed to to node process", zap.Error(err))
+			return
+		}
+
 		sleepTime := time.Duration(0)
 		for {
 			time.Sleep(sleepTime)
@@ -59,21 +66,25 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 				continue
 			}
 			if s.isBufferEmpty() {
+				s.Logger.Info("buffer is empty. done waiting")
 				break
 			}
 			s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
 		}
-		s.Logger.Info("supervised process stopped", zap.Int("last_exit_code", s.LastExitCode()))
+		s.Logger.Info("supervised node process stopped", zap.Int("last_exit_code", s.LastExitCode()))
 		s.endLogPlugins()
 
-		//wait for plugins to terminated
-		for _, plugin := range s.logPlugins {
-			if p, ok := plugin.(logplugin.Shutter); ok {
-				s.Logger.Info("waiting for plugin to terminate", zap.Reflect("plugin", p))
-				<-p.Terminated()
-			}
-		}
+		////wait for plugins to terminated
+		////todo: is this needed? endLogPlugins call close (that is blocking) on plugins
+		//s.Logger.Info("waiting for all plugins to terminate")
+		//for _, plugin := range s.logPlugins {
+		//	if p, ok := plugin.(logplugin.Shutter); ok {
+		//		s.Logger.Info("waiting for plugin to terminate", zap.String("plugin_name", plugin.Name()))
+		//		<-p.Terminated()
+		//	}
+		//}
 	})
+
 	return s
 }
 
@@ -88,8 +99,14 @@ func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
 
 	s.logPlugins = append(s.logPlugins, plugin)
 	if shut, ok := plugin.(logplugin.Shutter); ok {
-		s.Logger.Info("adding superviser shutdown to plugins", zap.Reflect("plugin", plugin))
-		shut.OnTerminating(s.Shutdown)
+		s.Logger.Info("adding superviser shutdown to plugins", zap.String("plugin_name", plugin.Name()))
+		shut.OnTerminating(func(err error) {
+			if !s.IsTerminating() {
+				s.Logger.Info("superviser shutting down because of a plugin", zap.String("plugin_name", plugin.Name()))
+				//todo: is clean to shutdown on a go routine
+				go s.Shutdown(err)
+			}
+		})
 	}
 
 	s.Logger.Info("registered log plugin", zap.Int("plugin count", len(s.logPlugins)))
@@ -141,6 +158,7 @@ func (s *Superviser) LastLogLines() []string {
 }
 
 func (s *Superviser) Start(options ...nodeManager.StartOption) error {
+
 	for _, opt := range options {
 		if opt == nodeManager.EnableDebugDeepmindOption {
 			s.setDeepMindDebug(true)
@@ -170,7 +188,12 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	}
 
 	s.Logger.Info("creating new command instance and launch read loop", zap.String("binary", s.Binary), zap.Strings("arguments", s.Arguments))
-	s.cmd = overseer.NewCmd(s.Binary, s.Arguments)
+	var args []interface{}
+	for _, a := range s.Arguments {
+		args = append(args, a)
+	}
+
+	s.cmd = overseer.NewCmd(s.Binary, s.Arguments, overseer.Options{Streaming: true})
 
 	go s.start(s.cmd)
 
@@ -258,27 +281,37 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 		case line := <-cmd.Stderr:
 			s.processLogLine(line)
 		}
-		if processTerminated && s.isBufferEmpty() {
-			return
+		if processTerminated {
+			s.Logger.Info("process terminated", zap.Bool("buffer_empty", s.isBufferEmpty()))
+			if s.isBufferEmpty() {
+				return
+			}
 		}
 	}
 }
 
 func (s *Superviser) endLogPlugins() {
-	s.logPluginsLock.RLock()
-	defer s.logPluginsLock.RUnlock()
+	s.logPluginsLock.Lock()
+	defer s.logPluginsLock.Unlock()
 
 	for _, plugin := range s.logPlugins {
-		plugin.Close(nil)
+		s.Logger.Info("stopping plugin", zap.String("plugin_name", plugin.Name()))
+		plugin.Stop()
 	}
+	s.Logger.Info("all plugins closed")
 }
-func (s *Superviser) processLogLine(line string) {
-	s.logPluginsLock.RLock()
-	defer s.logPluginsLock.RUnlock()
 
+func (s *Superviser) processLogLine(line string) {
+	s.logPluginsLock.Lock()
+	defer s.logPluginsLock.Unlock()
+
+	//s.Logger.Debug("processing log line", zap.String("log_line", line))
 	for _, plugin := range s.logPlugins {
+		//s.Logger.Debug("sending line to plugin", zap.String("plugin_name", plugin.Name()))
 		plugin.LogLine(line)
+		//s.Logger.Debug("sent line to plugin", zap.String("plugin_name", plugin.Name()))
 	}
+	//s.Logger.Debug("log line processed")
 }
 
 func (s *Superviser) hasToConsolePlugin() bool {

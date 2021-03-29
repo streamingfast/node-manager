@@ -17,6 +17,8 @@ package logplugin
 import (
 	"strings"
 
+	"github.com/dfuse-io/shutter"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -62,6 +64,8 @@ func ToZapLogPluginTransformer(transformer func(in string) string) ToZapLogPlugi
 // if we are actively debugging deep mind, will print the line to received
 // logger instance.
 type ToZapLogPlugin struct {
+	*shutter.Shutter
+
 	logger        *zap.Logger
 	debugDeepMind bool
 
@@ -71,6 +75,7 @@ type ToZapLogPlugin struct {
 
 func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapLogPluginOption) *ToZapLogPlugin {
 	plugin := &ToZapLogPlugin{
+		Shutter:       shutter.New(),
 		debugDeepMind: debugDeepMind,
 		logger:        logger,
 	}
@@ -82,16 +87,19 @@ func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapL
 	return plugin
 }
 
-func (p *ToZapLogPlugin) Launch() {
+func (p *ToZapLogPlugin) Launch() {}
+func (p ToZapLogPlugin) Stop()    {}
 
+func (p *ToZapLogPlugin) Name() string {
+	return "ToZapLogPlugin"
 }
 
 func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
 }
 
-func (p *ToZapLogPlugin) Close(_ error) {
-}
+//func (p *ToZapLogPlugin) Close(_ error) {
+//}
 
 func (p *ToZapLogPlugin) LogLine(in string) {
 	if strings.HasPrefix(in, "DMLOG ") {

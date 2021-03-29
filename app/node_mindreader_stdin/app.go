@@ -132,12 +132,12 @@ func (a *App) Run() error {
 			if err != nil {
 				if err != io.EOF {
 					a.zlogger.Error("got an error from readstring", zap.Error(err))
-					mindreaderLogPlugin.Close(err)
+					mindreaderLogPlugin.Shutdown(err)
 					return
 				}
 				if len(in) == 0 {
 					a.zlogger.Info("done reading from stdin")
-					mindreaderLogPlugin.Close(nil)
+					mindreaderLogPlugin.Shutdown(nil)
 					return
 				}
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")

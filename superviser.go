@@ -36,6 +36,10 @@ type ChainSuperviser interface {
 	Stop() error
 	Shutdown(error)
 	OnTerminating(func(error))
+	OnTerminated(func(error))
+	IsTerminated() bool
+	IsTerminating() bool
+
 	Terminated() <-chan struct{}
 
 	HasData() bool
