@@ -197,12 +197,8 @@ func (p *MindReaderPlugin) Name() string {
 func (p *MindReaderPlugin) Launch() {
 	p.zlogger.Info("starting mindreader")
 
-	p.OnTerminating(func(err error) {
-		p.zlogger.Info("mindreader plugin OnTerminating call")
-		//Done: this is no more needed after current refactoring
-		//go mindReaderPlugin.shutdownFunc(err) // this will call operator shutdown or similar
-	})
-
+	//todo: that will create a second channel and consumeReadFlow
+	//todo: if an error occure after a maintenance/resume the initial consumeReadFlow will panic
 	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	go p.consumeReadFlow(blocks)
@@ -234,7 +230,10 @@ func (p *MindReaderPlugin) Launch() {
 
 func (p MindReaderPlugin) Stop() {
 	p.zlogger.Info("mindreader is stopping")
-	_ = p.writer.CloseWithError(nil)
+	err := p.writer.CloseWithError(nil)
+	if err != nil {
+		p.zlogger.Warn("failed to close pipe write", zap.Error(err))
+	}
 	p.waitForReadFlowToComplete()
 }
 
@@ -260,8 +259,11 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			case <-p.archiver.Terminate():
 				p.zlogger.Info("archiver Terminate done")
 			}
+
 			return
 		}
+
+		p.zlogger.Debug("got one block", zap.Uint64("block_num", block.Number))
 
 		err := p.archiver.StoreBlock(block)
 		if err != nil {

@@ -57,20 +57,6 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 			return
 		}
 
-		sleepTime := time.Duration(0)
-		for {
-			time.Sleep(sleepTime)
-			sleepTime = 500 * time.Millisecond
-			if s.isRunning() {
-				s.Logger.Debug("waiting for supervised process to stop")
-				continue
-			}
-			if s.isBufferEmpty() {
-				s.Logger.Info("buffer is empty. done waiting")
-				break
-			}
-			s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
-		}
 		s.Logger.Info("supervised node process stopped", zap.Int("last_exit_code", s.LastExitCode()))
 		s.endLogPlugins()
 
@@ -204,7 +190,7 @@ func (s *Superviser) Stop() error {
 	s.cmdLock.Lock()
 	defer s.cmdLock.Unlock()
 
-	s.Logger.Info("supervisor received a stop request")
+	s.Logger.Info("supervisor received a stop request, terminating node process")
 
 	if !s.isRunning() {
 		s.Logger.Info("underlying process is not running, nothing to do")
@@ -232,9 +218,22 @@ patate:
 		}
 	}
 
-	s.Logger.Debug("command is done")
+	s.Logger.Info("node process has been terminated")
 	s.cmd = nil
 
+	s.Logger.Info("waiting for std out and err to drain")
+	sleepTime := time.Duration(0)
+	for {
+		time.Sleep(sleepTime)
+		sleepTime = 500 * time.Millisecond
+		if s.isBufferEmpty() {
+			s.Logger.Info("buffer is empty. done waiting")
+			break
+		}
+		s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
+	}
+
+	s.Logger.Info("std out and err are now drain")
 	return nil
 }
 
@@ -282,7 +281,7 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			s.processLogLine(line)
 		}
 		if processTerminated {
-			s.Logger.Info("process terminated", zap.Bool("buffer_empty", s.isBufferEmpty()))
+			s.Logger.Info("node process terminated", zap.Bool("buffer_empty", s.isBufferEmpty()))
 			if s.isBufferEmpty() {
 				return
 			}
