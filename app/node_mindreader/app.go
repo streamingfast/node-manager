@@ -53,13 +53,9 @@ type Modules struct {
 	Operator                   *operator.Operator
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
 
-	//Done: remove MindreaderPlugin reference
-	//MindreaderPlugin             *mindreader.MindReaderPlugin
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	StartFailureHandlerFunc      func()
-	//Done: move to dfuse
-	//RegisterGRPCService          func(server *grpc.Server) error
-	GrpcServer *grpc.Server
+	GrpcServer                   *grpc.Server
 }
 
 type App struct {
@@ -96,9 +92,6 @@ func (a *App) Run() error {
 		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
 	}
 
-	//Done: move to dfuse
-	//gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
-
 	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
@@ -106,32 +99,8 @@ func (a *App) Run() error {
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
-
-		//done: wait for the operator to terminate
-		//done: operator should wait for the supervisor to terminate
-		//Done: supervisor should wait for the plugins to terminate
-
-		//wait for Operator to terminate, Operator will wait for supervisor, supervisor will wait for plugins to terminate
 		<-a.modules.Operator.Terminated()
 	})
-
-	//Done: let's move this code to operator
-	//a.modules.Operator.OnTerminating(func(err error) {
-	//	// maintenance is set from operator cmd control flow
-	//	a.modules.Operator.Superviser.Shutdown(err)
-	//})
-
-	//Done: move to superviser
-	//a.modules.Operator.Superviser.OnTerminating(func(err error) {
-	//
-	//	a.modules.MindreaderPlugin.Shutdown(err)
-	//})
-
-	//Done: plugins should shutdown supervisor
-	//Done: supervisor should shutdown operator
-	//Done: operator should shutdown app
-	//Done: remove next line
-	//a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
 
 	a.modules.Operator.OnTerminated(func(err error) {
 		a.zlogger.Info("chain operator terminated shutting down mindreader app")
