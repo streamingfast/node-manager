@@ -57,7 +57,7 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.Launch()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"0000004ez"}`)
 
@@ -76,7 +76,7 @@ func TestMindReaderPlugin_GatePassed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.Launch()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
 	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
@@ -102,7 +102,7 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.Launch()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
 	s.consumeBlockFromChannel(t, 5*time.Millisecond)
@@ -133,7 +133,7 @@ func TestNewLocalStore(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.Launch()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
 
@@ -167,7 +167,7 @@ func TestNewGSStore(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.Launch()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
 

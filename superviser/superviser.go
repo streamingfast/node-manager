@@ -77,7 +77,6 @@ func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
 		shut.OnTerminating(func(err error) {
 			if !s.IsTerminating() {
 				s.Logger.Info("superviser shutting down because of a plugin", zap.String("plugin_name", plugin.Name()))
-				//todo: is clean to shutdown on a go routine
 				go s.Shutdown(err)
 			}
 		})
@@ -132,7 +131,6 @@ func (s *Superviser) LastLogLines() []string {
 }
 
 func (s *Superviser) Start(options ...nodeManager.StartOption) error {
-
 	for _, opt := range options {
 		if opt == nodeManager.EnableDebugDeepmindOption {
 			s.setDeepMindDebug(true)
@@ -143,8 +141,7 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	}
 
 	for _, plugin := range s.logPlugins {
-
-		go plugin.Launch()
+		plugin.Launch()
 	}
 
 	s.cmdLock.Lock()
@@ -197,11 +194,11 @@ func (s *Superviser) Stop() error {
 
 	// Blocks until command finished completely
 	s.Logger.Debug("blocking until command actually ends")
-patate:
+nodeProcessDone:
 	for {
 		select {
 		case <-s.cmd.Done():
-			break patate
+			break nodeProcessDone
 		case <-time.After(500 * time.Millisecond):
 			s.Logger.Debug("still blocking until command actually ends")
 		}

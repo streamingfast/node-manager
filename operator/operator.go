@@ -205,21 +205,6 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 				}
 			}
 
-		//case <-o.Terminating():
-		//	////todo: Can all this be done in OnTerminating declare in the New func
-		//	//o.zlogger.Info("operator terminating, ending run/loop")
-		//	////todo: missing error handling here
-		//	//err := o.runCommand(&Command{cmd: "maintenance"})
-		//	//if err != nil {
-		//	//	o.zlogger.Error("failed to run command 'maintenance': %w", zap.Error(err))
-		//	//}
-		//	//o.zlogger.Info("operator run maintenance command")
-		//
-		//
-		//	//we do not want to go in maintenance here. We are what to terminate
-		//
-		//	return nil
-
 		case cmd := <-o.commandChan:
 			if cmd.cmd == "start" { // start 'sub' commands after a restore do NOT come through here
 				o.lastStartCommand = time.Now()
