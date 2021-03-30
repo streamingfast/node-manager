@@ -103,61 +103,15 @@ func (a *App) Run() error {
 		a.modules.Operator.ConfigureAutoVolumeSnapshot(a.config.AutoVolumeSnapshotPeriod, a.config.AutoVolumeSnapshotModulo, a.config.AutoVolumeSnapshotSpecificBlocks)
 	}
 
-	// FIXME: The ownership relationship of how stuff should close in node-manager is really badly
-	//        managed. We can see here that we are trying to wired the shutdown sequence of every
-	//        component so all cases work as expected (logs are fully drain in mindreader, all blocks
-	//        as been produced, superviser has exited, operator as exited) and we need to ensure
-	//        that flow works as expected. We also need to ensure that if a really low level
-	//        component like the Mindreader Plugin errors out, the full application tree is correctly
-	//        tear-down.
-	//
-	//        The logical relationship within the code is Operator owns a Superviser that owns
-	//        0..N plugins.
-	//
-	//        When a shutdown happens, we want the following sequence of events to be respected:
-	//        - Operator stops accepting new commands and gracefully complete active commands (returning errors for on-going commands might be the safest)
-	//        - Superviser stops the process
-	//        - (optional) Mindreader plugin consume the remaining standard input of Superviser process
-	//        - (optional) Mindreader plugin consume the standard input lines and produce all possible blocks
-	//        - (optional) Mindreader plugin closes
-	//        - Superviser closes
-	//        - Operator closes
-	//
-	//        I feel that a better relationship behavior between the tree of ownership and correctly crafted
-	//        shutdown sequence across tree of ownership would solve all cases and and make the code much
-	//        clearer to reason about.
-
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
-		if hasMindreader {
-			<-a.modules.MindreaderPlugin.Terminated()
-		}
-	})
-	a.modules.Operator.OnTerminating(func(err error) {
-		// maintenance is set from operator cmd control flow
-		a.modules.Operator.Superviser.Shutdown(err)
+		<-a.modules.Operator.Terminated()
 	})
 
-	a.modules.Operator.Superviser.OnTerminating(func(err error) {
-		// FIXME: Not sure why node-manager & node-mindreader were diverging here, most probably to ensure correctly shutdown flow
-		if hasMindreader {
-			a.modules.MindreaderPlugin.Shutdown(err)
-		} else {
-			a.modules.Operator.Superviser.Stop()
-
-			a.zlogger.Info("chain operator terminated, shutting down app")
-			a.Shutdown(err)
-		}
+	a.modules.Operator.OnTerminated(func(err error) {
+		a.zlogger.Info("chain operator terminated shutting down mindreader app")
+		a.Shutdown(err)
 	})
-
-	// FIXME: The node-manager app didn't had this call, probably because invoked in the `a.modules.Operator.Superviser.OnTerminating` above in case of plain node-manager
-	if hasMindreader {
-		a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
-		a.modules.Operator.OnTerminated(func(err error) {
-			a.zlogger.Info("chain operator terminated, shutting down app")
-			a.Shutdown(err)
-		})
-	}
 
 	if a.config.StartupDelay != 0 {
 		time.Sleep(a.config.StartupDelay)

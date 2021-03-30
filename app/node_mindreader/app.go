@@ -112,8 +112,6 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Info("launching mindreader plugin")
-	//Done: move to dfuse
-	//go a.modules.MindreaderPlugin.Launch()
 
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
