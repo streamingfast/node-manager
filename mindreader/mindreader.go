@@ -29,7 +29,7 @@ import (
 )
 
 type ConsolerReader interface {
-	Read() (obj interface{}, success bool)
+	Read() (obj interface{}, err error)
 	Done() <-chan interface{}
 }
 
@@ -61,8 +61,9 @@ type MindReaderPlugin struct {
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
 
-	blockStreamServer   *blockstream.Server
-	headBlockUpdateFunc nodeManager.HeadBlockUpdater
+	blockStreamServer    *blockstream.Server
+	headBlockUpdateFunc  nodeManager.HeadBlockUpdater
+	consoleReaderFactory ConsolerReaderFactory
 }
 
 // NewMindReaderPlugin initiates its own:
@@ -168,26 +169,18 @@ func newMindReaderPlugin(
 	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
-	lines := make(chan string, 10000) //todo: need a config here?
-	consoleReader, err := consoleReaderFactory(lines)
-	if err != nil {
-		return nil, err
-	}
-
 	zlogger.Info("creating new mindreader plugin")
 	return &MindReaderPlugin{
-		Shutter:             shutter.New(),
-		consoleReader:       consoleReader,
-		consumeReadFlowDone: make(chan interface{}),
-		transformer:         consoleReaderTransformer,
-		lines:               lines,
-		archiver:            archiver,
-		startGate:           NewBlockNumberGate(startBlock),
-		stopBlock:           stopBlock,
-		channelCapacity:     channelCapacity,
-		headBlockUpdateFunc: headBlockUpdateFunc,
-		zlogger:             zlogger,
-		blockStreamServer:   blockStreamServer,
+		Shutter:              shutter.New(),
+		consoleReaderFactory: consoleReaderFactory,
+		transformer:          consoleReaderTransformer,
+		archiver:             archiver,
+		startGate:            NewBlockNumberGate(startBlock),
+		stopBlock:            stopBlock,
+		channelCapacity:      channelCapacity,
+		headBlockUpdateFunc:  headBlockUpdateFunc,
+		zlogger:              zlogger,
+		blockStreamServer:    blockStreamServer,
 	}, nil
 }
 
@@ -198,14 +191,21 @@ func (p *MindReaderPlugin) Name() string {
 func (p *MindReaderPlugin) Launch() {
 	p.zlogger.Info("starting mindreader")
 
-	//todo: that will create a second channel and consumeReadFlow
-	//todo: if an error occure after a maintenance/resume the initial consumeReadFlow will panic
+	p.consumeReadFlowDone = make(chan interface{})
 	blocks := make(chan *bstream.Block, p.channelCapacity)
+
+	lines := make(chan string, 10000) //todo: need a config here?
+	p.lines = lines
+
+	consoleReader, err := p.consoleReaderFactory(lines)
+	if err != nil {
+		p.Shutdown(err)
+	}
+	p.consoleReader = consoleReader
 
 	go p.consumeReadFlow(blocks)
 	go p.archiver.Start()
 
-	//shutdownCalled := false
 	for {
 		// Always read messages otherwise you'll stall the shutdown lifecycle of the managed process, leading to corrupted database if exit uncleanly afterward
 		err := p.readOneMessage(blocks)
@@ -215,15 +215,8 @@ func (p *MindReaderPlugin) Launch() {
 				close(blocks)
 				return
 			}
-
 			p.zlogger.Error("reading from console logs", zap.Error(err))
 			p.Shutdown(err)
-			//if !shutdownCalled {
-			//	p.zlogger.Info("mindreader plugin is shutting down")
-			//	//todo: we should only shut down our self
-			//	p.shutdownFunc(err)
-			//	shutdownCalled = true
-			//}
 			continue
 		}
 	}
@@ -292,9 +285,9 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 }
 
 func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
-	obj, success := p.consoleReader.Read()
-	if !success {
-		return fmt.Errorf("console reader failed to read")
+	obj, err := p.consoleReader.Read()
+	if err != nil {
+		return err
 	}
 
 	block, err := p.transformer(obj)

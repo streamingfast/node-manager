@@ -57,18 +57,6 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 			return
 		}
 
-		s.Logger.Info("supervised node process stopped", zap.Int("last_exit_code", s.LastExitCode()))
-		s.endLogPlugins()
-
-		////wait for plugins to terminated
-		////todo: is this needed? endLogPlugins call close (that is blocking) on plugins
-		//s.Logger.Info("waiting for all plugins to terminate")
-		//for _, plugin := range s.logPlugins {
-		//	if p, ok := plugin.(logplugin.Shutter); ok {
-		//		s.Logger.Info("waiting for plugin to terminate", zap.String("plugin_name", plugin.Name()))
-		//		<-p.Terminated()
-		//	}
-		//}
 	})
 
 	return s
@@ -155,6 +143,7 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	}
 
 	for _, plugin := range s.logPlugins {
+
 		go plugin.Launch()
 	}
 
@@ -234,6 +223,10 @@ patate:
 	}
 
 	s.Logger.Info("std out and err are now drain")
+
+	s.Logger.Info("shutting down plugins", zap.Int("last_exit_code", s.LastExitCode()))
+	s.endLogPlugins()
+
 	return nil
 }
 
@@ -304,13 +297,9 @@ func (s *Superviser) processLogLine(line string) {
 	s.logPluginsLock.Lock()
 	defer s.logPluginsLock.Unlock()
 
-	//s.Logger.Debug("processing log line", zap.String("log_line", line))
 	for _, plugin := range s.logPlugins {
-		//s.Logger.Debug("sending line to plugin", zap.String("plugin_name", plugin.Name()))
 		plugin.LogLine(line)
-		//s.Logger.Debug("sent line to plugin", zap.String("plugin_name", plugin.Name()))
 	}
-	//s.Logger.Debug("log line processed")
 }
 
 func (s *Superviser) hasToConsolePlugin() bool {

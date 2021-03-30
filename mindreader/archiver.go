@@ -49,6 +49,7 @@ type OneBlockArchiver struct {
 	uploadMutex sync.Mutex
 	workDir     string
 	logger      *zap.Logger
+	running     bool
 }
 
 func NewOneBlockArchiver(
@@ -115,6 +116,10 @@ func (s *OneBlockArchiver) StoreBlock(block *bstream.Block) error {
 }
 
 func (a *OneBlockArchiver) Start() {
+	if a.running {
+		return
+	}
+	a.running = true
 	lastUploadFailed := false
 	for {
 		err := a.uploadFiles()

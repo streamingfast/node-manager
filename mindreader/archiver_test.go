@@ -242,8 +242,9 @@ func (c *testConsolerReader) Done() <-chan interface{} {
 	return c.done
 }
 
-func (c *testConsolerReader) Read() (obj interface{}, success bool) {
-	obj, success = <-c.lines
+func (c *testConsolerReader) Read() (obj interface{}, err error) {
+	line, _ := <-c.lines
+	obj = line[6:]
 	return
 }
 

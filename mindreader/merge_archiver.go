@@ -41,6 +41,7 @@ type MergeArchiver struct {
 	buffer      *bytes.Buffer
 	blockWriter bstream.BlockWriter
 	logger      *zap.Logger
+	running     bool
 }
 
 func NewMergeArchiver(
@@ -63,6 +64,11 @@ func (m *MergeArchiver) Init() error {
 }
 
 func (m *MergeArchiver) Start() {
+	if m.running {
+		return
+	}
+	m.running = true
+
 	lastUploadFailed := false
 	for {
 		err := m.uploadFiles()

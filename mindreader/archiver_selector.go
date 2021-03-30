@@ -44,6 +44,7 @@ type ArchiverSelector struct {
 
 	workDir string
 	logger  *zap.Logger
+	running bool
 }
 
 func NewArchiverSelector(
@@ -274,14 +275,19 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 	}
 
 	return s.chooseArchiver(s.currentlyMerging).StoreBlock(block)
-
 }
 
 func (s *ArchiverSelector) Start() {
+	if s.running {
+		return
+	}
+	s.running = true
+
 	s.logger.Info("starting one block(s) uploads")
 	go s.oneblockArchiver.Start()
 	s.logger.Info("starting merged blocks(s) uploads")
 	go s.mergeArchiver.Start()
+
 }
 
 // Terminate assumes that no more 'StoreBlock' command is coming
