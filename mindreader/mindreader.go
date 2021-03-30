@@ -29,11 +29,11 @@ import (
 )
 
 type ConsolerReader interface {
-	Read() (obj interface{}, err error)
+	Read() (obj interface{}, success bool)
 	Done() <-chan interface{}
 }
 
-type ConsolerReaderFactory func(reader io.Reader) (ConsolerReader, error)
+type ConsolerReaderFactory func(lines chan string) (ConsolerReader, error)
 
 // ConsoleReaderBlockTransformer is a function that accepts an `obj` of type
 // `interface{}` as produced by a specialized ConsoleReader implementation and
@@ -50,7 +50,7 @@ type MindReaderPlugin struct {
 
 	waitUploadCompleteOnShutdown time.Duration // if non-zero, will try to upload files for this amount of time. Failed uploads will stay in workingDir
 
-	writer        *io.PipeWriter // LogLine writes there
+	lines         chan string
 	consoleReader ConsolerReader // contains the 'reader' part of the pipe
 
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
@@ -168,18 +168,19 @@ func newMindReaderPlugin(
 	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
-	pipeReader, pipeWriter := io.Pipe()
-	consoleReader, err := consoleReaderFactory(pipeReader)
+	lines := make(chan string, 10000) //todo: need a config here?
+	consoleReader, err := consoleReaderFactory(lines)
 	if err != nil {
 		return nil, err
 	}
+
 	zlogger.Info("creating new mindreader plugin")
 	return &MindReaderPlugin{
 		Shutter:             shutter.New(),
 		consoleReader:       consoleReader,
 		consumeReadFlowDone: make(chan interface{}),
 		transformer:         consoleReaderTransformer,
-		writer:              pipeWriter,
+		lines:               lines,
 		archiver:            archiver,
 		startGate:           NewBlockNumberGate(startBlock),
 		stopBlock:           stopBlock,
@@ -230,10 +231,7 @@ func (p *MindReaderPlugin) Launch() {
 
 func (p MindReaderPlugin) Stop() {
 	p.zlogger.Info("mindreader is stopping")
-	err := p.writer.CloseWithError(nil)
-	if err != nil {
-		p.zlogger.Warn("failed to close pipe write", zap.Error(err))
-	}
+	close(p.lines)
 	p.waitForReadFlowToComplete()
 }
 
@@ -294,9 +292,9 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 }
 
 func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
-	obj, err := p.consoleReader.Read()
-	if err != nil {
-		return err
+	obj, success := p.consoleReader.Read()
+	if !success {
+		return fmt.Errorf("console reader failed to read")
 	}
 
 	block, err := p.transformer(obj)
@@ -324,16 +322,10 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 
 // LogLine receives log line and write it to "pipe" of the local console reader
 func (p *MindReaderPlugin) LogLine(in string) {
-	//p.zlogger.Debug("receiving log line", zap.String("log_line", in))
-
 	if p.IsTerminating() { //todo: should we also check if we are terminating from and error from the consume read flow
 		return
 	}
-
-	if _, err := p.writer.Write(append([]byte(in), '\n')); err != nil {
-		p.zlogger.Error("writing to export pipeline", zap.Error(err))
-		p.Shutdown(err)
-	}
+	p.lines <- in
 }
 
 func (p *MindReaderPlugin) HasContinuityChecker() bool {

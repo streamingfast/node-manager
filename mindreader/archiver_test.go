@@ -15,7 +15,6 @@
 package mindreader
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,8 +52,8 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	s := NewTestStore()
 
 	mindReader, err := testNewMindReaderPlugin(s, 0, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
+	mindReader.OnTerminating(func(err error) {
+		t.Error("should not be called", err)
 	})
 	require.NoError(t, err)
 
@@ -224,18 +223,18 @@ func (w *testBlockWriter) Write(block *bstream.Block) error {
 	return err
 }
 
-func testConsoleReaderFactory(reader io.Reader) (ConsolerReader, error) {
-	return newTestConsolerReader(reader), nil
+func testConsoleReaderFactory(lines chan string) (ConsolerReader, error) {
+	return newTestConsolerReader(lines), nil
 }
 
 type testConsolerReader struct {
-	scanner *bufio.Scanner
-	done    chan interface{}
+	lines chan string
+	done  chan interface{}
 }
 
-func newTestConsolerReader(reader io.Reader) *testConsolerReader {
+func newTestConsolerReader(lines chan string) *testConsolerReader {
 	return &testConsolerReader{
-		scanner: bufio.NewScanner(reader),
+		lines: lines,
 	}
 }
 
@@ -243,18 +242,9 @@ func (c *testConsolerReader) Done() <-chan interface{} {
 	return c.done
 }
 
-func (c *testConsolerReader) Read() (obj interface{}, err error) {
-	success := c.scanner.Scan()
-	if !success {
-		err := c.scanner.Err()
-		if err == nil {
-			err = io.EOF
-		}
-
-		return nil, err
-	}
-
-	return c.scanner.Text()[6:], nil
+func (c *testConsolerReader) Read() (obj interface{}, success bool) {
+	obj, success = <-c.lines
+	return
 }
 
 func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
