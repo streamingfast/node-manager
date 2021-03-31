@@ -21,15 +21,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream/blockstream"
-	"github.com/dfuse-io/dgrpc"
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/node-manager/metrics"
 	"github.com/dfuse-io/node-manager/mindreader"
 	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -52,12 +49,12 @@ type Config struct {
 }
 
 type Modules struct {
-	Operator                     *operator.Operator
-	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
-	MindreaderPlugin             *mindreader.MindReaderPlugin
+	Operator                   *operator.Operator
+	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
+
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	StartFailureHandlerFunc      func()
-	RegisterGRPCService          func(server *grpc.Server) error
+	GrpcServer                   *grpc.Server
 }
 
 type App struct {
@@ -94,61 +91,31 @@ func (a *App) Run() error {
 		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
 	}
 
-	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
-
-	// It's important that this call goes prior running gRPC server since it's doing
-	// some service registration. If it's call later on, the overall application exits.
-	server := blockstream.NewServer(gs, blockstream.ServerOptionWithLogger(a.zlogger))
-
-	if a.modules.RegisterGRPCService != nil {
-		err := a.modules.RegisterGRPCService(gs)
-		if err != nil {
-			return fmt.Errorf("register extra grpc service: %w", err)
-		}
-	}
-
-	err := mindreader.RunGRPCServer(gs, a.config.GRPCAddr, a.zlogger)
+	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
 	}
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
-		<-a.modules.MindreaderPlugin.Terminated()
+		<-a.modules.Operator.Terminated()
 	})
-	a.modules.Operator.OnTerminating(func(err error) {
-		// maintenance is set from operator cmd control flow
-		a.modules.Operator.Superviser.Shutdown(err)
-	})
-	a.modules.Operator.Superviser.OnTerminating(func(err error) {
-		a.modules.MindreaderPlugin.Shutdown(err)
-	})
-	a.modules.MindreaderPlugin.OnTerminated(a.Shutdown)
 
 	a.modules.Operator.OnTerminated(func(err error) {
 		a.zlogger.Info("chain operator terminated shutting down mindreader app")
 		a.Shutdown(err)
 	})
 
+	// TODO remove the flag, the watchdog could be part of the operator itself.
 	if a.config.ConnectionWatchdog {
 		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
-	var httpOptions []operator.HTTPOption
-	if a.modules.MindreaderPlugin.HasContinuityChecker() {
-		httpOptions = append(httpOptions, func(r *mux.Router) {
-			r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-				a.modules.MindreaderPlugin.ResetContinuityChecker()
-				w.Write([]byte("ok"))
-			})
-		})
-	}
-
-	a.zlogger.Info("launching mindreader plugin")
-	go a.modules.MindreaderPlugin.Launch(server)
-
-	a.zlogger.Info("launching operator")
+	a.zlogger.Info("launching metrics and readinessManager")
 	go a.modules.MetricsAndReadinessManager.Launch()
+
+	var httpOptions []operator.HTTPOption
+	a.zlogger.Info("launching operator")
 	go a.Shutdown(a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...))
 
 	return nil

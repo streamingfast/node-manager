@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/dfuse-io/bstream"
@@ -34,7 +33,7 @@ type ConsolerReader interface {
 	Done() <-chan interface{}
 }
 
-type ConsolerReaderFactory func(reader io.Reader) (ConsolerReader, error)
+type ConsolerReaderFactory func(lines chan string) (ConsolerReader, error)
 
 // ConsoleReaderBlockTransformer is a function that accepts an `obj` of type
 // `interface{}` as produced by a specialized ConsoleReader implementation and
@@ -45,13 +44,12 @@ type MindReaderPlugin struct {
 	*shutter.Shutter
 	zlogger *zap.Logger
 
-	startGate    *BlockNumberGate // if set, discard blocks before this
-	stopBlock    uint64           // if set, call shutdownFunc(nil) when we hit this number
-	shutdownFunc func(error)      //
+	startGate *BlockNumberGate // if set, discard blocks before this
+	stopBlock uint64           // if set, call shutdownFunc(nil) when we hit this number
 
 	waitUploadCompleteOnShutdown time.Duration // if non-zero, will try to upload files for this amount of time. Failed uploads will stay in workingDir
 
-	writer        *io.PipeWriter // LogLine writes there
+	lines         chan string
 	consoleReader ConsolerReader // contains the 'reader' part of the pipe
 
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
@@ -62,8 +60,9 @@ type MindReaderPlugin struct {
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
 
-	blockServer         *blockstream.Server
-	headBlockUpdateFunc nodeManager.HeadBlockUpdater
+	blockStreamServer    *blockstream.Server
+	headBlockUpdateFunc  nodeManager.HeadBlockUpdater
+	consoleReaderFactory ConsolerReaderFactory
 }
 
 // NewMindReaderPlugin initiates its own:
@@ -90,6 +89,7 @@ func NewMindReaderPlugin(
 	failOnNonContinuousBlocks bool,
 	waitUploadCompleteOnShutdown time.Duration,
 	oneblockSuffix string,
+	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
 	zlogger.Info("creating mindreader plugin",
@@ -114,18 +114,6 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
 
-	var continuityChecker ContinuityChecker
-	cc, err := NewContinuityChecker(filepath.Join(workingDirectory, "continuity_check"), zlogger)
-	if err != nil {
-		return nil, fmt.Errorf("error setting up continuity checker: %w", err)
-	}
-
-	if failOnNonContinuousBlocks {
-		continuityChecker = cc
-	} else {
-		cc.Reset()
-	}
-
 	oneblockArchiveStore, err := dstore.NewDBinStore(archiveStoreURL) // never overwrites
 	if err != nil {
 		return nil, fmt.Errorf("setting up archive store: %w", err)
@@ -140,6 +128,7 @@ func NewMindReaderPlugin(
 	if batchMode {
 		mergeArchiveStore.SetOverwrite(true)
 	}
+
 	var mergeArchiver Archiver
 	mergeArchiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
@@ -153,23 +142,17 @@ func NewMindReaderPlugin(
 		archiverSelector,
 		consoleReaderFactory,
 		consoleReaderTransformer,
-		continuityChecker,
 		startBlockNum,
 		stopBlockNum,
 		channelCapacity,
 		headBlockUpdateFunc,
+		blockStreamServer,
 		zlogger,
 	)
 	if err != nil {
 		return nil, err
 	}
 	mindReaderPlugin.waitUploadCompleteOnShutdown = waitUploadCompleteOnShutdown
-	mindReaderPlugin.shutdownFunc = shutdownFunc
-
-	mindReaderPlugin.OnTerminating(func(err error) {
-		go mindReaderPlugin.shutdownFunc(err) // this will call operator shutdown or similar
-		mindReaderPlugin.waitForReadFlowToComplete()
-	})
 
 	return mindReaderPlugin, nil
 }
@@ -178,68 +161,78 @@ func newMindReaderPlugin(
 	archiver Archiver,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
-	continuityChecker ContinuityChecker,
 	startBlock uint64,
 	stopBlock uint64,
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
+	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
-	pipeReader, pipeWriter := io.Pipe()
-	consoleReader, err := consoleReaderFactory(pipeReader)
-	if err != nil {
-		return nil, err
-	}
 	zlogger.Info("creating new mindreader plugin")
 	return &MindReaderPlugin{
-		Shutter:             shutter.New(),
-		consoleReader:       consoleReader,
-		continuityChecker:   continuityChecker,
-		consumeReadFlowDone: make(chan interface{}),
-		transformer:         consoleReaderTransformer,
-		writer:              pipeWriter,
-		archiver:            archiver,
-		startGate:           NewBlockNumberGate(startBlock),
-		stopBlock:           stopBlock,
-		channelCapacity:     channelCapacity,
-		headBlockUpdateFunc: headBlockUpdateFunc,
-		zlogger:             zlogger,
+		Shutter:              shutter.New(),
+		consoleReaderFactory: consoleReaderFactory,
+		transformer:          consoleReaderTransformer,
+		archiver:             archiver,
+		startGate:            NewBlockNumberGate(startBlock),
+		stopBlock:            stopBlock,
+		channelCapacity:      channelCapacity,
+		headBlockUpdateFunc:  headBlockUpdateFunc,
+		zlogger:              zlogger,
+		blockStreamServer:    blockStreamServer,
 	}, nil
 }
 
-func (p *MindReaderPlugin) Launch(server *blockstream.Server) {
-	p.zlogger.Info("starting mindreader")
-	p.blockServer = server
+func (p *MindReaderPlugin) Name() string {
+	return "MindReaderPlugin"
+}
 
+func (p *MindReaderPlugin) Launch() {
+	p.zlogger.Info("starting mindreader")
+
+	p.consumeReadFlowDone = make(chan interface{})
 	blocks := make(chan *bstream.Block, p.channelCapacity)
+
+	lines := make(chan string, 10000) //need a config here?
+	p.lines = lines
+
+	consoleReader, err := p.consoleReaderFactory(lines)
+	if err != nil {
+		p.Shutdown(err)
+	}
+	p.consoleReader = consoleReader
 
 	go p.consumeReadFlow(blocks)
 	go p.archiver.Start()
 
-	shutdownCalled := false
-	for {
-		// Always read messages otherwise you'll stall the shutdown lifecycle of the managed process, leading to corrupted database if exit uncleanly afterward
-		err := p.readOneMessage(blocks)
-		if err != nil {
-			if err == io.EOF {
-				p.zlogger.Info("reached end of console reader stream, nothing more to do")
-				close(blocks)
-				return
+	go func() {
+		for {
+			// Always read messages otherwise you'll stall the shutdown lifecycle of the managed process, leading to corrupted database if exit uncleanly afterward
+			err := p.readOneMessage(blocks)
+			if err != nil {
+				if err == io.EOF {
+					p.zlogger.Info("reached end of console reader stream, nothing more to do")
+					close(blocks)
+					return
+				}
+				p.zlogger.Error("reading from console logs", zap.Error(err))
+				p.Shutdown(err)
+				continue
 			}
-
-			p.zlogger.Error("reading from console logs", zap.Error(err))
-			if !shutdownCalled {
-				go p.shutdownFunc(err) // don't block, so we eventually get io.EOF, close(blocks) and leave
-				shutdownCalled = true
-			}
-			continue
 		}
-	}
+	}()
+}
+
+func (p MindReaderPlugin) Stop() {
+	p.zlogger.Info("mindreader is stopping")
+	close(p.lines)
+	p.waitForReadFlowToComplete()
 }
 
 func (p *MindReaderPlugin) waitForReadFlowToComplete() {
 	p.zlogger.Info("waiting until consume read flow (i.e. blocks) is actually done processing blocks...")
 	<-p.consumeReadFlowDone
+	p.zlogger.Info("consume read flow terminate")
 }
 
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
@@ -248,28 +241,35 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	defer close(p.consumeReadFlowDone)
 
 	for {
+		p.zlogger.Debug("waiting to consume next block.")
 		block, ok := <-blocks
 		if !ok {
 			p.zlogger.Info("all blocks in channel were drained, exiting read flow")
+			p.archiver.Shutdown(nil)
 			select {
 			case <-time.After(p.waitUploadCompleteOnShutdown):
 				p.zlogger.Info("upload may not be complete: timeout waiting for UploadComplete on shutdown", zap.Duration("wait_upload_complete_on_shutdown", p.waitUploadCompleteOnShutdown))
-			case <-p.archiver.Terminate():
+			case <-p.archiver.Terminated():
 				p.zlogger.Info("archiver Terminate done")
 			}
+
 			return
 		}
+
+		p.zlogger.Debug("got one block", zap.Uint64("block_num", block.Number))
 
 		err := p.archiver.StoreBlock(block)
 		if err != nil {
 			p.zlogger.Error("failed storing block in archiver, shutting down and losing blocks in transit...", zap.Error(err))
-			go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
-			return
+			if !p.IsTerminating() {
+				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+				return
+			}
 		}
-		if p.blockServer != nil {
-			err = p.blockServer.PushBlock(block)
+		if p.blockStreamServer != nil {
+			err = p.blockStreamServer.PushBlock(block)
 			if err != nil {
-				p.zlogger.Error("failed passing block to blockServer (this should not happen)", zap.Error(err))
+				p.zlogger.Error("failed passing block to blockStreamServer (this should not happen)", zap.Error(err))
 				return
 			}
 		}
@@ -278,7 +278,10 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			err = p.continuityChecker.Write(block.Num())
 			if err != nil {
 				p.zlogger.Error("failed continuity check", zap.Error(err))
-				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+
+				if !p.IsTerminating() {
+					go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+				}
 				continue
 			}
 		}
@@ -314,18 +317,12 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	return nil
 }
 
-func (p *MindReaderPlugin) Close(err error) {
-	p.zlogger.Info("closing pipe writer and shutting down plugin")
-	p.writer.CloseWithError(err)
-	p.Shutdown(err)
-}
-
 // LogLine receives log line and write it to "pipe" of the local console reader
 func (p *MindReaderPlugin) LogLine(in string) {
-	if _, err := p.writer.Write(append([]byte(in), '\n')); err != nil {
-		p.zlogger.Error("writing to export pipeline", zap.Error(err))
-		p.Shutdown(err)
+	if p.IsTerminating() {
+		return
 	}
+	p.lines <- in
 }
 
 func (p *MindReaderPlugin) HasContinuityChecker() bool {

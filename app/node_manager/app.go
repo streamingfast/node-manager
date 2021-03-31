@@ -44,8 +44,8 @@ type Config struct {
 	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
 
 	// Volume Snapshot Flags
-	AutoVolumeSnapshotModulo        int
-	AutoVolumeSnapshotPeriod        time.Duration
+	AutoVolumeSnapshotModulo         int
+	AutoVolumeSnapshotPeriod         time.Duration
 	AutoVolumeSnapshotSpecificBlocks []uint64
 
 	StartupDelay time.Duration
@@ -94,13 +94,13 @@ func (a *App) Run() error {
 		a.modules.Operator.ConfigureAutoVolumeSnapshot(a.config.AutoVolumeSnapshotPeriod, a.config.AutoVolumeSnapshotModulo, a.config.AutoVolumeSnapshotSpecificBlocks)
 	}
 
-	a.OnTerminating(a.modules.Operator.Shutdown)
-	a.modules.Operator.OnTerminating(func(err error) {
-		// maintenance is set from operator cmd control flow
-		a.modules.Operator.Superviser.Shutdown(err)
+	a.OnTerminating(func(err error) {
+		a.modules.Operator.Shutdown(err)
+		<-a.modules.Operator.Terminated()
 	})
-	a.modules.Operator.Superviser.OnTerminating(func(err error) {
-		a.modules.Operator.Superviser.Stop()
+
+	a.modules.Operator.OnTerminated(func(err error) {
+		a.zlogger.Info("chain operator terminated shutting down mindreader app")
 		a.Shutdown(err)
 	})
 

@@ -117,6 +117,25 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		}
 	}
 
+	chainSuperviser.OnTerminated(func(err error) {
+		if !o.IsTerminating() {
+			zlogger.Info("chain superviser is shutting down operator")
+			o.Shutdown(err)
+		}
+	})
+
+	o.OnTerminating(func(err error) {
+		//wait for supervisor to terminate, supervisor will wait for plugins to terminate
+		if !o.Superviser.IsTerminating() {
+			zlogger.Info("operator is terminating", zap.Error(err))
+			o.Superviser.Shutdown(err)
+		}
+
+		zlogger.Info("operator is waiting for superviser to shutdown", zap.Error(err))
+		<-o.Superviser.Terminated()
+		zlogger.Info("operator done waiting for superviser to shutdown", zap.Error(err))
+	})
+
 	return o, nil
 }
 
@@ -143,7 +162,10 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	for {
 		o.zlogger.Info("operator ready to receive commands")
 		select {
-		case <-o.Superviser.Stopped(): // stopped outside of a command that was expecting it
+		case <-o.Superviser.Stopped(): // the chain stopped outside of a command that was expecting it.
+			if o.Superviser.IsTerminating() || o.IsTerminating() { // This is the natural way of exiting this loop on global shutdown.
+				return nil
+			}
 			if o.attemptedAutoRestore || time.Since(o.lastStartCommand) > 10*time.Second {
 				lastLogLines := o.Superviser.LastLogLines()
 
@@ -185,12 +207,6 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 					}
 				}
 			}
-
-		case <-o.Terminating():
-			o.zlogger.Info("operator terminating, ending run/loop")
-			o.runCommand(&Command{cmd: "maintenance"})
-			o.zlogger.Info("operator run maintenance command")
-			return nil
 
 		case cmd := <-o.commandChan:
 			if cmd.cmd == "start" { // start 'sub' commands after a restore do NOT come through here

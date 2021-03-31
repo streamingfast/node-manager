@@ -19,6 +19,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/dfuse-io/shutter"
 )
 
 var DebugLineLength = int64(4096)
@@ -36,20 +38,24 @@ func init() {
 // if we are actively debugging deep mind, will print the line to the
 // standard output
 type ToConsoleLogPlugin struct {
+	*shutter.Shutter
 	debugDeepMind bool
 }
 
 func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
 	return &ToConsoleLogPlugin{
+		Shutter:       shutter.New(),
 		debugDeepMind: debugDeepMind,
 	}
 }
 
+func (p *ToConsoleLogPlugin) Launch() {}
+func (p ToConsoleLogPlugin) Stop()    {}
+func (p *ToConsoleLogPlugin) Name() string {
+	return "ToConsoleLogPlugin"
+}
 func (p *ToConsoleLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
-}
-
-func (p *ToConsoleLogPlugin) Close(_ error) {
 }
 
 func (p *ToConsoleLogPlugin) LogLine(in string) {

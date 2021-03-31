@@ -25,33 +25,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
-	s := &Superviser{
-		Shutter:   shutter.New(),
-		Binary:    binary,
-		Arguments: arguments,
-		Logger:    logger,
-	}
-	s.Shutter.OnTerminating(func(err error) {
-		sleepTime := time.Duration(0)
-		for {
-			time.Sleep(sleepTime)
-			sleepTime = 500 * time.Millisecond
-			if s.isRunning() {
-				s.Logger.Debug("waiting for supervised process to stop")
-				continue
-			}
-			if s.isBufferEmpty() {
-				break
-			}
-			s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
-		}
-		s.Logger.Info("supervised process stopped", zap.Int("last_exit_code", s.LastExitCode()))
-		s.endLogPlugins()
-	})
-	return s
-}
-
 type Superviser struct {
 	*shutter.Shutter
 	Binary    string
@@ -68,6 +41,27 @@ type Superviser struct {
 	enableDeepMind bool
 }
 
+func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
+	s := &Superviser{
+		Shutter:   shutter.New(),
+		Binary:    binary,
+		Arguments: arguments,
+		Logger:    logger,
+	}
+
+	s.Shutter.OnTerminating(func(err error) {
+		s.Logger.Info("superviser is terminating")
+
+		if err := s.Stop(); err != nil {
+			s.Logger.Error("failed to to node process", zap.Error(err))
+			return
+		}
+
+	})
+
+	return s
+}
+
 // RegisterPostRestoreHandler adds a function called after a restore from backup or from snapshot
 func (s *Superviser) RegisterPostRestoreHandler(f func()) {
 	s.HandlePostRestore = f
@@ -78,6 +72,16 @@ func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
 	defer s.logPluginsLock.Unlock()
 
 	s.logPlugins = append(s.logPlugins, plugin)
+	if shut, ok := plugin.(logplugin.Shutter); ok {
+		s.Logger.Info("adding superviser shutdown to plugins", zap.String("plugin_name", plugin.Name()))
+		shut.OnTerminating(func(err error) {
+			if !s.IsTerminating() {
+				s.Logger.Info("superviser shutting down because of a plugin", zap.String("plugin_name", plugin.Name()))
+				go s.Shutdown(err)
+			}
+		})
+	}
+
 	s.Logger.Info("registered log plugin", zap.Int("plugin count", len(s.logPlugins)))
 }
 
@@ -136,6 +140,10 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 		}
 	}
 
+	for _, plugin := range s.logPlugins {
+		plugin.Launch()
+	}
+
 	s.cmdLock.Lock()
 	defer s.cmdLock.Unlock()
 
@@ -152,7 +160,12 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	}
 
 	s.Logger.Info("creating new command instance and launch read loop", zap.String("binary", s.Binary), zap.Strings("arguments", s.Arguments))
-	s.cmd = overseer.NewCmd(s.Binary, s.Arguments)
+	var args []interface{}
+	for _, a := range s.Arguments {
+		args = append(args, a)
+	}
+
+	s.cmd = overseer.NewCmd(s.Binary, s.Arguments, overseer.Options{Streaming: true})
 
 	go s.start(s.cmd)
 
@@ -163,7 +176,7 @@ func (s *Superviser) Stop() error {
 	s.cmdLock.Lock()
 	defer s.cmdLock.Unlock()
 
-	s.Logger.Info("supervisor received a stop request")
+	s.Logger.Info("supervisor received a stop request, terminating node process")
 
 	if !s.isRunning() {
 		s.Logger.Info("underlying process is not running, nothing to do")
@@ -174,14 +187,42 @@ func (s *Superviser) Stop() error {
 		s.Logger.Info("stopping underlying process")
 		err := s.cmd.Stop()
 		if err != nil {
+			s.Logger.Error("failed to stop overseer cmd", zap.Error(err))
 			return err
 		}
 	}
 
 	// Blocks until command finished completely
 	s.Logger.Debug("blocking until command actually ends")
-	<-s.cmd.Done()
+nodeProcessDone:
+	for {
+		select {
+		case <-s.cmd.Done():
+			break nodeProcessDone
+		case <-time.After(500 * time.Millisecond):
+			s.Logger.Debug("still blocking until command actually ends")
+		}
+	}
+
+	s.Logger.Info("node process has been terminated")
 	s.cmd = nil
+
+	s.Logger.Info("waiting for std out and err to drain")
+	sleepTime := time.Duration(0)
+	for {
+		time.Sleep(sleepTime)
+		sleepTime = 500 * time.Millisecond
+		if s.isBufferEmpty() {
+			s.Logger.Info("buffer is empty. done waiting")
+			break
+		}
+		s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
+	}
+
+	s.Logger.Info("std out and err are now drain")
+
+	s.Logger.Info("shutting down plugins", zap.Int("last_exit_code", s.LastExitCode()))
+	s.endLogPlugins()
 
 	return nil
 }
@@ -199,6 +240,7 @@ func (s *Superviser) isRunning() bool {
 		return false
 	}
 
+	s.Logger.Debug("isRunning", zap.Stringer("command_state", s.cmd.State))
 	return s.cmd.State == overseer.STARTING || s.cmd.State == overseer.RUNNING || s.cmd.State == overseer.STOPPING
 }
 
@@ -228,23 +270,29 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 		case line := <-cmd.Stderr:
 			s.processLogLine(line)
 		}
-		if processTerminated && s.isBufferEmpty() {
-			return
+		if processTerminated {
+			s.Logger.Info("node process terminated", zap.Bool("buffer_empty", s.isBufferEmpty()))
+			if s.isBufferEmpty() {
+				return
+			}
 		}
 	}
 }
 
 func (s *Superviser) endLogPlugins() {
-	s.logPluginsLock.RLock()
-	defer s.logPluginsLock.RUnlock()
+	s.logPluginsLock.Lock()
+	defer s.logPluginsLock.Unlock()
 
 	for _, plugin := range s.logPlugins {
-		plugin.Close(nil)
+		s.Logger.Info("stopping plugin", zap.String("plugin_name", plugin.Name()))
+		plugin.Stop()
 	}
+	s.Logger.Info("all plugins closed")
 }
+
 func (s *Superviser) processLogLine(line string) {
-	s.logPluginsLock.RLock()
-	defer s.logPluginsLock.RUnlock()
+	s.logPluginsLock.Lock()
+	defer s.logPluginsLock.Unlock()
 
 	for _, plugin := range s.logPlugins {
 		plugin.LogLine(line)
