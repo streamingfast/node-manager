@@ -22,12 +22,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dfuse-io/shutter"
+
 	"github.com/dfuse-io/bstream"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
 type ArchiverSelector struct {
+	*shutter.Shutter
 	oneblockArchiver Archiver
 	mergeArchiver    Archiver
 
@@ -57,7 +60,8 @@ func NewArchiverSelector(
 	workDir string,
 	logger *zap.Logger,
 ) *ArchiverSelector {
-	s := &ArchiverSelector{
+	a := &ArchiverSelector{
+		Shutter:                shutter.New(),
 		oneblockArchiver:       oneblockArchiver,
 		mergeArchiver:          mergeArchiver,
 		blockReaderFactory:     blockReaderFactory,
@@ -69,9 +73,24 @@ func NewArchiverSelector(
 		logger:                 logger,
 	}
 	if !batchMode {
-		s.launchLastLIBUpdater()
+		a.launchLastLIBUpdater()
 	}
-	return s
+
+	a.OnTerminating(func(err error) {
+		a.logger.Info("archiver selector is terminating", zap.Error(err))
+		if !a.mergeArchiver.IsTerminating() {
+			a.mergeArchiver.Shutdown(err)
+		}
+		if !a.oneblockArchiver.IsTerminating() {
+			a.oneblockArchiver.Shutdown(err)
+		}
+	})
+
+	a.OnTerminated(func(err error) {
+		a.logger.Info("archiver selector is terminated", zap.Error(err))
+	})
+
+	return a
 }
 
 func (s *ArchiverSelector) updateLastLIB() error {
@@ -288,17 +307,6 @@ func (s *ArchiverSelector) Start() {
 	s.logger.Info("starting merged blocks(s) uploads")
 	go s.mergeArchiver.Start()
 
-}
-
-// Terminate assumes that no more 'StoreBlock' command is coming
-func (s *ArchiverSelector) Terminate() <-chan interface{} {
-	ch := make(chan interface{})
-	go func() {
-		<-s.mergeArchiver.Terminate()
-		<-s.oneblockArchiver.Terminate()
-		close(ch)
-	}()
-	return ch
 }
 
 func (s *ArchiverSelector) Init() error {

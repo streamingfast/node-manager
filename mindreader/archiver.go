@@ -28,6 +28,7 @@ import (
 	"github.com/abourget/llerrgroup"
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
+	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )
 
@@ -35,13 +36,15 @@ type BlockMarshaller func(block *bstream.Block) ([]byte, error)
 
 type Archiver interface {
 	Init() error
-	Terminate() <-chan interface{}
-
 	StoreBlock(block *bstream.Block) error
 	Start()
+	Shutdown(err error)
+	Terminated() <-chan struct{}
+	IsTerminating() bool
 }
 
 type OneBlockArchiver struct {
+	*shutter.Shutter
 	oneBlockStore      dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
 	suffix             string
@@ -59,14 +62,28 @@ func NewOneBlockArchiver(
 	suffix string,
 	logger *zap.Logger,
 ) *OneBlockArchiver {
-	return &OneBlockArchiver{
+	a := &OneBlockArchiver{
+		Shutter:            shutter.New(),
 		oneBlockStore:      oneBlockStore,
 		blockWriterFactory: blockWriterFactory,
 		suffix:             suffix,
-
-		workDir: workDir,
-		logger:  logger,
+		workDir:            workDir,
+		logger:             logger,
 	}
+
+	a.OnTerminating(func(err error) {
+		a.logger.Info("one block archiver is terminating", zap.Error(err))
+		e := a.uploadFiles()
+		if e != nil {
+			logger.Error("terminating: uploading file", zap.Error(e))
+		}
+	})
+
+	a.OnTerminated(func(err error) {
+		a.logger.Info("one block archiver is terminated", zap.Error(err))
+	})
+
+	return a
 }
 
 func (s *OneBlockArchiver) StoreBlock(block *bstream.Block) error {
@@ -134,6 +151,9 @@ func (a *OneBlockArchiver) Start() {
 		}
 
 		select {
+		case <-a.Terminating():
+			a.logger.Info("terminating upload loop")
+			return
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
@@ -176,16 +196,6 @@ func (s *OneBlockArchiver) uploadFiles() error {
 	}
 
 	return eg.Wait()
-}
-
-// Terminate assumes that no more 'StoreBlock' command is coming
-func (s *OneBlockArchiver) Terminate() <-chan interface{} {
-	ch := make(chan interface{})
-	go func() {
-		s.uploadFiles()
-		close(ch)
-	}()
-	return ch
 }
 
 func (s *OneBlockArchiver) Init() error {

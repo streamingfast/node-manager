@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dfuse-io/shutter"
+
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
 	"github.com/eoscanada/eos-go"
@@ -129,7 +131,7 @@ func TestNewLocalStore(t *testing.T) {
 
 	mindReader, err := testNewMindReaderPlugin(archiver, 0, 0)
 	mindReader.OnTerminating(func(e error) {
-		t.Errorf("should not be called: %w", e)
+		t.Errorf("should not be called: %s", e)
 	})
 	require.NoError(t, err)
 
@@ -271,19 +273,15 @@ func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) 
 }
 
 type testArchiver struct {
+	*shutter.Shutter
 	blocks []*bstream.Block
 }
 
-func (_ *testArchiver) Init() error {
+func (a *testArchiver) Init() error {
 	return nil
 }
-func (_ *testArchiver) Terminate() <-chan interface{} {
-	out := make(chan interface{})
-	close(out)
-	return out
-}
 
-func (_ *testArchiver) Start() {
+func (a *testArchiver) Start() {
 }
 
 func (a *testArchiver) StoreBlock(block *bstream.Block) error {

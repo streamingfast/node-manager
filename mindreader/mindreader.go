@@ -128,6 +128,7 @@ func NewMindReaderPlugin(
 	if batchMode {
 		mergeArchiveStore.SetOverwrite(true)
 	}
+
 	var mergeArchiver Archiver
 	mergeArchiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
@@ -244,10 +245,11 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 		block, ok := <-blocks
 		if !ok {
 			p.zlogger.Info("all blocks in channel were drained, exiting read flow")
+			p.archiver.Shutdown(nil)
 			select {
 			case <-time.After(p.waitUploadCompleteOnShutdown):
 				p.zlogger.Info("upload may not be complete: timeout waiting for UploadComplete on shutdown", zap.Duration("wait_upload_complete_on_shutdown", p.waitUploadCompleteOnShutdown))
-			case <-p.archiver.Terminate():
+			case <-p.archiver.Terminated():
 				p.zlogger.Info("archiver Terminate done")
 			}
 

@@ -21,8 +21,6 @@ import (
 	"os"
 	"time"
 
-	"google.golang.org/grpc"
-
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/dfuse-io/node-manager"
 	"github.com/dfuse-io/node-manager/metrics"
@@ -30,6 +28,7 @@ import (
 	"github.com/dfuse-io/node-manager/operator"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
