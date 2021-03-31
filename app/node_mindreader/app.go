@@ -106,16 +106,16 @@ func (a *App) Run() error {
 		a.Shutdown(err)
 	})
 
+	// TODO remove the flag, the watchdog could be part of the operator itself.
 	if a.config.ConnectionWatchdog {
 		go a.modules.LaunchConnectionWatchdogFunc(a.modules.Operator.Terminating())
 	}
 
-	a.zlogger.Info("launching mindreader plugin")
-
-	a.zlogger.Info("launching operator")
+	a.zlogger.Info("launching metrics and readinessManager")
 	go a.modules.MetricsAndReadinessManager.Launch()
 
 	var httpOptions []operator.HTTPOption
+	a.zlogger.Info("launching operator")
 	go a.Shutdown(a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...))
 
 	return nil

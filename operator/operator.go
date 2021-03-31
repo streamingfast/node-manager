@@ -162,7 +162,10 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 	for {
 		o.zlogger.Info("operator ready to receive commands")
 		select {
-		case <-o.Superviser.Stopped(): // stopped outside of a command that was expecting it
+		case <-o.Superviser.Stopped(): // stopped outside of a command that was expecting it.
+			if o.IsTerminating() { // This is the natural way of exiting this loop on global shutdown.
+				return
+			}
 			if o.attemptedAutoRestore || time.Since(o.lastStartCommand) > 10*time.Second {
 				lastLogLines := o.Superviser.LastLogLines()
 
