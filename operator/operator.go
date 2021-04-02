@@ -41,13 +41,20 @@ type Operator struct {
 	lastStartCommand     time.Time
 	attemptedAutoRestore bool
 
-	commandChan    chan *Command
-	httpServer     *http.Server
-	Superviser     nodeManager.ChainSuperviser
-	chainReadiness nodeManager.Readiness
-	aboutToStop    *atomic.Bool
-	snapshotStore  dstore.Store
-	zlogger        *zap.Logger
+	bootstrapper    Bootstrapper
+	backupModules   map[string]BackupModule
+	backupSchedules []*BackupSchedule
+	commandChan     chan *Command
+	httpServer      *http.Server
+	Superviser      nodeManager.ChainSuperviser
+	chainReadiness  nodeManager.Readiness
+	aboutToStop     *atomic.Bool
+	snapshotStore   dstore.Store
+	zlogger         *zap.Logger
+}
+
+type Bootstrapper interface {
+	Bootstrap() error
 }
 
 type Options struct {
@@ -60,8 +67,8 @@ type Options struct {
 	PVCPrefix            string
 	Project              string //gcp project
 
-	BootstrapSnapshotName   string
-	BootstrapDataURL        string
+	Bootstrapper Bootstrapper
+
 	AutoRestoreSource       string
 	NumberOfSnapshotsToKeep int
 	RestoreBackupName       string
@@ -148,12 +155,13 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			go monitorable.Monitor()
 		}
 	}
-
-	err := o.bootstrap()
-	if err != nil {
-		return fmt.Errorf("unable to bootstrap chain: %w", err)
+	if o.options.Bootstrapper != nil {
+		o.zlogger.Info("Operator calling bootstrap function")
+		err := o.options.Bootstrapper.Bootstrap()
+		if err != nil {
+			return fmt.Errorf("unable to bootstrap chain: %w", err)
+		}
 	}
-
 	if startOnLaunch {
 		o.zlogger.Debug("sending initial start command")
 		o.commandChan <- &Command{cmd: "start", logger: o.zlogger}
@@ -183,10 +191,10 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 				break
 			}
 
-			o.zlogger.Warn("instance stopped, attempting restore from source", zap.String("source", o.options.AutoRestoreSource), zap.String("command", o.Superviser.GetCommand()))
 			o.attemptedAutoRestore = true
 			switch o.options.AutoRestoreSource {
 			case "backup":
+				o.zlogger.Warn("instance stopped, attempting restore from backup", zap.String("command", o.Superviser.GetCommand()))
 				if err := o.runCommand(&Command{
 					cmd:    "restore",
 					logger: o.zlogger,
@@ -197,6 +205,7 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 					}
 				}
 			case "snapshot":
+				o.zlogger.Warn("instance stopped, attempting restore from snapshot", zap.String("command", o.Superviser.GetCommand()))
 				if err := o.runCommand(&Command{
 					cmd:    "snapshot_restore",
 					logger: o.zlogger,
@@ -567,41 +576,41 @@ func (c *Command) Return(err error) {
 	})
 }
 
-func (o *Operator) bootstrap() error {
-	// Forcing restore here
-	if o.options.RestoreBackupName != "" {
-		o.zlogger.Info("performing bootstrap from backup")
-		return o.bootstrapFromBackup(o.options.RestoreBackupName)
-	}
-	if o.options.RestoreSnapshotName != "" {
-		o.zlogger.Info("performing bootstrap from snapshot")
-		return o.bootstrapFromSnapshot(o.options.RestoreSnapshotName)
-	}
-
-	if o.Superviser.HasData() {
-		o.zlogger.Debug("chain has prior data, skipping bootstrap from snapshot or data")
-		return nil
-	}
-
-	// Must comes before `o.options.BootstrapDataURL` check has it has precedence over it
-	if o.options.BootstrapSnapshotName != "" {
-		o.zlogger.Info("chain has no prior data and bootstrap snapshot name is set, attempting bootstrap from snapshot")
-		return o.bootstrapFromSnapshot(o.options.BootstrapSnapshotName)
-	}
-
-	if o.options.BootstrapDataURL != "" {
-		o.zlogger.Info("chain has no prior data and bootstrap data url is set, attempting bootstrap from URL")
-		err := o.bootstrapFromDataURL(o.options.BootstrapDataURL)
-		if err != nil {
-			o.zlogger.Warn("could not bootstrap from URL", zap.Error(err))
-		} else {
-			o.zlogger.Info("success bootstrap from URL")
-			return nil
-		}
-	}
-
-	return nil
-}
+//func (o *Operator) bootstrap() error {
+//	// Forcing restore here
+//	if o.options.RestoreBackupName != "" {
+//		o.zlogger.Info("performing bootstrap from backup")
+//		return o.bootstrapFromBackup(o.options.RestoreBackupName)
+//	}
+//	if o.options.RestoreSnapshotName != "" {
+//		o.zlogger.Info("performing bootstrap from snapshot")
+//		return o.bootstrapFromSnapshot(o.options.RestoreSnapshotName)
+//	}
+//
+//	if o.Superviser.HasData() {
+//		o.zlogger.Debug("chain has prior data, skipping bootstrap from snapshot or data")
+//		return nil
+//	}
+//
+//	// Must comes before `o.options.BootstrapDataURL` check has it has precedence over it
+//	if o.options.BootstrapSnapshotName != "" {
+//		o.zlogger.Info("chain has no prior data and bootstrap snapshot name is set, attempting bootstrap from snapshot")
+//		return o.bootstrapFromSnapshot(o.options.BootstrapSnapshotName)
+//	}
+//
+//	if o.options.BootstrapDataURL != "" {
+//		o.zlogger.Info("chain has no prior data and bootstrap data url is set, attempting bootstrap from URL")
+//		err := o.bootstrapFromDataURL(o.options.BootstrapDataURL)
+//		if err != nil {
+//			o.zlogger.Warn("could not bootstrap from URL", zap.Error(err))
+//		} else {
+//			o.zlogger.Info("success bootstrap from URL")
+//			return nil
+//		}
+//	}
+//
+//	return nil
+//}
 
 func (o *Operator) bootstrapFromDataURL(bootstrapDataURL string) error {
 	o.zlogger.Info("bootstraping from pre-existing data prior starting process")

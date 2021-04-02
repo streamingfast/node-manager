@@ -42,7 +42,6 @@ type ChainSuperviser interface {
 
 	Terminated() <-chan struct{}
 
-	HasData() bool
 	IsRunning() bool
 	Stopped() <-chan struct{}
 	ServerID() (string, error)
