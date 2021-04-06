@@ -135,7 +135,7 @@ func (a *App) Run() error {
 
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
-	go a.Shutdown(a.modules.Operator.Launch(true, a.config.HTTPAddr, httpOptions...))
+	go a.Shutdown(a.modules.Operator.Launch(a.config.HTTPAddr, httpOptions...))
 
 	if a.config.ConnectionWatchdog {
 		go a.modules.LaunchConnectionWatchdogFunc(a.Terminating())

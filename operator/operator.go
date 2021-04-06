@@ -16,19 +16,16 @@ package operator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dfuse-io/derr"
 	"github.com/dfuse-io/dstore"
 	nodeManager "github.com/dfuse-io/node-manager"
-	"github.com/dfuse-io/node-manager/profiler"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -37,20 +34,20 @@ import (
 
 type Operator struct {
 	*shutter.Shutter
-	options              *Options
-	lastStartCommand     time.Time
-	attemptedAutoRestore bool
+	options          *Options
+	lastStartCommand time.Time
 
 	bootstrapper    Bootstrapper
 	backupModules   map[string]BackupModule
 	backupSchedules []*BackupSchedule
-	commandChan     chan *Command
-	httpServer      *http.Server
-	Superviser      nodeManager.ChainSuperviser
-	chainReadiness  nodeManager.Readiness
-	aboutToStop     *atomic.Bool
-	snapshotStore   dstore.Store
-	zlogger         *zap.Logger
+
+	commandChan    chan *Command
+	httpServer     *http.Server
+	Superviser     nodeManager.ChainSuperviser
+	chainReadiness nodeManager.Readiness
+	aboutToStop    *atomic.Bool
+	snapshotStore  dstore.Store
+	zlogger        *zap.Logger
 }
 
 type Bootstrapper interface {
@@ -58,27 +55,11 @@ type Bootstrapper interface {
 }
 
 type Options struct {
-	BackupTag            string
-	BackupStoreURL       string
-	SnapshotStoreURL     string
-	VolumeSnapshotAppVer string
-	Namespace            string //k8s namespace
-	Pod                  string //k8s podname
-	PVCPrefix            string
-	Project              string //gcp project
-
 	Bootstrapper Bootstrapper
-
-	AutoRestoreSource       string
-	NumberOfSnapshotsToKeep int
-	RestoreBackupName       string
-	RestoreSnapshotName     string
-	Profiler                *profiler.Profiler
-	StartFailureHandlerFunc CallbackFunc
 
 	EnableSupervisorMonitoring bool
 
-	// Delay before shutting manager when sigterm received
+	// Delay before sending Stop() to superviser, during which we return NotReady
 	ShutdownDelay time.Duration
 }
 
@@ -96,13 +77,6 @@ func (c *Command) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
 	return nil
 }
 
-type CallbackFunc func()
-
-// MarshalJSON our func type so that zap JSON reflection works correctly
-func (c CallbackFunc) MarshalJSON() ([]byte, error) {
-	return []byte(`"func()"`), nil
-}
-
 func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chainReadiness nodeManager.Readiness, options *Options) (*Operator, error) {
 	zlogger.Info("creating operator", zap.Reflect("options", options))
 
@@ -114,14 +88,6 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 		Superviser:     chainSuperviser,
 		aboutToStop:    atomic.NewBool(false),
 		zlogger:        zlogger,
-	}
-
-	if options.SnapshotStoreURL != "" {
-		var err error
-		o.snapshotStore, err = dstore.NewSimpleStore(options.SnapshotStoreURL)
-		if err != nil {
-			return nil, fmt.Errorf("unable to create snapshot store from url %q: %w", options.SnapshotStoreURL, err)
-		}
 	}
 
 	chainSuperviser.OnTerminated(func(err error) {
@@ -146,15 +112,19 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 	return o, nil
 }
 
-func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...HTTPOption) error {
+func (o *Operator) Launch(httpListenAddr string, options ...HTTPOption) error {
 	o.zlogger.Info("launching operator HTTP server", zap.String("http_listen_addr", httpListenAddr))
 	o.httpServer = o.RunHTTPServer(httpListenAddr, options...)
 
+	// FIXME: too many options for that, maybe use monitoring module like with bootstrapper
 	if o.options.EnableSupervisorMonitoring {
 		if monitorable, ok := o.Superviser.(nodeManager.MonitorableChainSuperviser); ok {
 			go monitorable.Monitor()
 		}
 	}
+
+	o.LaunchBackupSchedules()
+
 	if o.options.Bootstrapper != nil {
 		o.zlogger.Info("Operator calling bootstrap function")
 		err := o.options.Bootstrapper.Bootstrap()
@@ -162,10 +132,7 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			return fmt.Errorf("unable to bootstrap chain: %w", err)
 		}
 	}
-	if startOnLaunch {
-		o.zlogger.Debug("sending initial start command")
-		o.commandChan <- &Command{cmd: "start", logger: o.zlogger}
-	}
+	o.commandChan <- &Command{cmd: "start", logger: o.zlogger}
 
 	for {
 		o.zlogger.Info("operator ready to receive commands")
@@ -174,53 +141,25 @@ func (o *Operator) Launch(startOnLaunch bool, httpListenAddr string, options ...
 			if o.Superviser.IsTerminating() || o.IsTerminating() { // This is the natural way of exiting this loop on global shutdown.
 				return nil
 			}
-			if o.attemptedAutoRestore || time.Since(o.lastStartCommand) > 10*time.Second {
-				lastLogLines := o.Superviser.LastLogLines()
+			// FIXME call a restore handler if passed...
+			lastLogLines := o.Superviser.LastLogLines()
 
-				// FIXME: Actually, we should create a custom error type that contains the required data, the catching
-				//        code can thus perform the required formatting!
-				baseFormat := "instance %q stopped (exit code: %d), shutting down"
-				var shutdownErr error
-				if len(lastLogLines) > 0 {
-					shutdownErr = fmt.Errorf(baseFormat+": last log lines:\n%s", o.Superviser.GetName(), o.Superviser.LastExitCode(), formatLogLines(lastLogLines))
-				} else {
-					shutdownErr = fmt.Errorf(baseFormat, o.Superviser.GetName(), o.Superviser.LastExitCode())
-				}
-
-				o.Shutdown(shutdownErr)
-				break
+			// FIXME: Actually, we should create a custom error type that contains the required data, the catching
+			//        code can thus perform the required formatting!
+			baseFormat := "instance %q stopped (exit code: %d), shutting down"
+			var shutdownErr error
+			if len(lastLogLines) > 0 {
+				shutdownErr = fmt.Errorf(baseFormat+": last log lines:\n%s", o.Superviser.GetName(), o.Superviser.LastExitCode(), formatLogLines(lastLogLines))
+			} else {
+				shutdownErr = fmt.Errorf(baseFormat, o.Superviser.GetName(), o.Superviser.LastExitCode())
 			}
 
-			o.attemptedAutoRestore = true
-			switch o.options.AutoRestoreSource {
-			case "backup":
-				o.zlogger.Warn("instance stopped, attempting restore from backup", zap.String("command", o.Superviser.GetCommand()))
-				if err := o.runCommand(&Command{
-					cmd:    "restore",
-					logger: o.zlogger,
-				}); err != nil {
-					o.Shutdown(fmt.Errorf("attempted restore failed"))
-					if o.options.StartFailureHandlerFunc != nil {
-						o.options.StartFailureHandlerFunc()
-					}
-				}
-			case "snapshot":
-				o.zlogger.Warn("instance stopped, attempting restore from snapshot", zap.String("command", o.Superviser.GetCommand()))
-				if err := o.runCommand(&Command{
-					cmd:    "snapshot_restore",
-					logger: o.zlogger,
-				}); err != nil {
-					o.Shutdown(fmt.Errorf("attempted restore failed"))
-					if o.options.StartFailureHandlerFunc != nil {
-						o.options.StartFailureHandlerFunc()
-					}
-				}
-			}
+			o.Shutdown(shutdownErr)
+			break
 
 		case cmd := <-o.commandChan:
 			if cmd.cmd == "start" { // start 'sub' commands after a restore do NOT come through here
 				o.lastStartCommand = time.Now()
-				o.attemptedAutoRestore = false
 			}
 			err := o.runCommand(cmd)
 			cmd.Return(err)
@@ -282,6 +221,18 @@ func (o *Operator) runSubCommand(name string, parentCmd *Command) error {
 	return o.runCommand(&Command{cmd: name, returnch: parentCmd.returnch, logger: o.zlogger})
 }
 
+func (o *Operator) cleanSuperviserStop() error {
+	o.aboutToStop.Store(true)
+	defer o.aboutToStop.Store(false)
+	if o.options.ShutdownDelay != 0 && !derr.IsShuttingDown() {
+		o.zlogger.Info("marked as not_ready, waiting delay before actually stopping for maintenance", zap.Duration("delay", o.options.ShutdownDelay))
+		time.Sleep(o.options.ShutdownDelay)
+	}
+
+	err := o.Superviser.Stop()
+	return err
+}
+
 // runCommand does its work, and returns an error for irrecoverable states.
 func (o *Operator) runCommand(cmd *Command) error {
 	o.zlogger.Info("received operator command", zap.String("command", cmd.cmd), zap.Reflect("params", cmd.params))
@@ -289,14 +240,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 	case "maintenance":
 		o.zlogger.Info("preparing to stop process")
 
-		o.aboutToStop.Store(true)
-		defer o.aboutToStop.Store(false)
-		if o.options.ShutdownDelay != 0 {
-			o.zlogger.Info("marked as not_ready, waiting delay before actually stopping for maintenance", zap.Duration("delay", o.options.ShutdownDelay))
-			time.Sleep(o.options.ShutdownDelay)
-		}
-
-		if err := o.Superviser.Stop(); err != nil {
+		if err := o.cleanSuperviserStop(); err != nil {
 			return err
 		}
 
@@ -304,20 +248,17 @@ func (o *Operator) runCommand(cmd *Command) error {
 		o.zlogger.Info("successfully put in maintenance")
 
 	case "restore":
-		o.zlogger.Info("preparing for restore")
-		backupable, ok := o.Superviser.(nodeManager.BackupableChainSuperviser)
-		if !ok {
-			cmd.Return(errors.New("the chain Superviser does not support backups"))
+		restoreMod, err := selectRestoreModule(o.backupModules, cmd.params["name"])
+		if err != nil {
+			cmd.Return(err)
 			return nil
 		}
 
-		if err := o.Superviser.Stop(); err != nil {
-			return err
-		}
-
-		o.zlogger.Info("asking chain Superviser to restore a backup")
-		if err := o.Superviser.Stop(); err != nil {
-			return err
+		o.zlogger.Info("Stopping to restore a backup")
+		if restoreMod.RequiresStop() {
+			if err := o.cleanSuperviserStop(); err != nil {
+				return err
+			}
 		}
 
 		backupName := "latest"
@@ -325,121 +266,45 @@ func (o *Operator) runCommand(cmd *Command) error {
 			backupName = b
 		}
 
-		if err := backupable.RestoreBackup(backupName, o.options.BackupTag, o.options.BackupStoreURL); err != nil {
+		if err := restoreMod.Restore(backupName); err != nil {
 			return err
 		}
 
-		return o.runSubCommand("start", cmd)
-
-	case "volumesnapshot":
-		o.zlogger.Info("preparing for volumesnapshot")
-		volumesnapshotable, ok := o.Superviser.(nodeManager.VolumeSnapshotableChainSuperviser)
-		if !ok {
-			cmd.Return(errors.New("the chain Superviser does not support volume snapshot"))
-			return nil
+		o.zlogger.Info("Restarting after restore")
+		if restoreMod.RequiresStop() {
+			return o.runSubCommand("start", cmd)
 		}
-		o.aboutToStop.Store(true)
-		defer o.aboutToStop.Store(false)
-		if o.options.ShutdownDelay != 0 {
-			o.zlogger.Info("marked as not_ready, waiting delay before actually stopping for volume snapshot", zap.Duration("delay", o.options.ShutdownDelay))
-			time.Sleep(o.options.ShutdownDelay)
-		}
-
-		o.zlogger.Info("asking chain superviser to take a volume snapshot")
-		if err := o.Superviser.Stop(); err != nil {
-			return err
-		}
-
-		lastBlockSeen := o.Superviser.LastSeenBlockNum()
-		if lastBlockSeen == 0 {
-			cmd.Return(errors.New("volumesnapshot: invalid lastBlockSeen 0. Cowardly refusing to take a snapshot"))
-			return nil
-		}
-
-		if err := volumesnapshotable.TakeVolumeSnapshot(o.options.VolumeSnapshotAppVer, o.options.Project, o.options.Namespace, o.options.Pod, o.options.PVCPrefix, lastBlockSeen); err != nil {
-			cmd.Return(err)
-			// restart geth even if snapshot failed...
-		}
-
-		return o.runSubCommand("start", cmd)
+		return nil
 
 	case "backup":
-		o.zlogger.Info("preparing for backup")
-		backupable, ok := o.Superviser.(nodeManager.BackupableChainSuperviser)
-		if !ok {
-			cmd.Return(errors.New("the chain superviser does not support backups"))
+		backupMod, err := selectBackupModule(o.backupModules, cmd.params["name"])
+		if err != nil {
+			cmd.Return(err)
 			return nil
 		}
 
-		o.aboutToStop.Store(true)
-		defer o.aboutToStop.Store(false)
-		if o.options.ShutdownDelay != 0 {
-			o.zlogger.Info("marked as not_ready, waiting delay before actually stopping for backup", zap.Duration("delay", o.options.ShutdownDelay))
-			time.Sleep(o.options.ShutdownDelay)
+		o.zlogger.Info("Stopping to perform a backup")
+		if backupMod.RequiresStop() {
+			if err := o.cleanSuperviserStop(); err != nil {
+				return err
+			}
 		}
 
-		o.zlogger.Info("asking chain superviser to take a backup")
-		if err := o.Superviser.Stop(); err != nil {
-			return err
-		}
-
-		if err := backupable.TakeBackup(o.options.BackupTag, o.options.BackupStoreURL); err != nil {
-			return err
-		}
-
-		return o.runSubCommand("start", cmd)
-
-	case "snapshot":
-		o.zlogger.Info("preparing for snapshot")
-		snapshotable, ok := o.Superviser.(nodeManager.SnapshotableChainSuperviser)
-		if !ok {
-			cmd.Return(fmt.Errorf("the chain superviser does not support snapshots"))
-			return nil
-		}
-
-		o.aboutToStop.Store(true)
-		defer o.aboutToStop.Store(false)
-		if o.options.ShutdownDelay != 0 {
-			o.zlogger.Info("marked as not_ready, waiting delay before actually taking snapshot", zap.Duration("delay", o.options.ShutdownDelay))
-			time.Sleep(o.options.ShutdownDelay)
-		}
-
-		if err := snapshotable.TakeSnapshot(o.getSnapshotStore(), o.options.NumberOfSnapshotsToKeep); err != nil {
-			cmd.Return(fmt.Errorf("unable to take snapshot: %w", err))
-			return nil
-		}
-
-		o.zlogger.Info("snapshot completed")
-
-	case "snapshot_restore":
-		o.zlogger.Info("preparing for performing a snapshot restore")
-		snapshotable, ok := o.Superviser.(nodeManager.SnapshotableChainSuperviser)
-		if !ok {
-			cmd.Return(errors.New("the chain superviser does not support snapshots"))
-			return nil
-		}
-
-		o.zlogger.Info("asking chain superviser to stop due to snapshot restore command")
-		if err := o.Superviser.Stop(); err != nil {
-			return err
-		}
-
-		snapshotName := "latest"
-		if b, ok := cmd.params["snapshotName"]; ok {
-			snapshotName = b
-		}
-
-		err := o.restoreSnapshot(snapshotable, snapshotName)
+		backupName, err := backupMod.Backup(uint32(o.Superviser.LastSeenBlockNum()))
 		if err != nil {
 			return err
 		}
+		cmd.logger.Info("Completed backup", zap.String("backup_name", backupName))
 
-		o.zlogger.Warn("restarting node from snapshot, the restart will perform the actual snapshot restoration")
-		return o.runSubCommand("start", cmd)
+		o.zlogger.Info("Restarting after backup")
+		if backupMod.RequiresStop() {
+			return o.runSubCommand("start", cmd)
+		}
+		return nil
 
 	case "reload":
 		o.zlogger.Info("preparing for reload")
-		if err := o.Superviser.Stop(); err != nil {
+		if err := o.cleanSuperviserStop(); err != nil {
 			return err
 		}
 
@@ -576,180 +441,43 @@ func (c *Command) Return(err error) {
 	})
 }
 
-//func (o *Operator) bootstrap() error {
-//	// Forcing restore here
-//	if o.options.RestoreBackupName != "" {
-//		o.zlogger.Info("performing bootstrap from backup")
-//		return o.bootstrapFromBackup(o.options.RestoreBackupName)
-//	}
-//	if o.options.RestoreSnapshotName != "" {
-//		o.zlogger.Info("performing bootstrap from snapshot")
-//		return o.bootstrapFromSnapshot(o.options.RestoreSnapshotName)
-//	}
-//
-//	if o.Superviser.HasData() {
-//		o.zlogger.Debug("chain has prior data, skipping bootstrap from snapshot or data")
-//		return nil
-//	}
-//
-//	// Must comes before `o.options.BootstrapDataURL` check has it has precedence over it
-//	if o.options.BootstrapSnapshotName != "" {
-//		o.zlogger.Info("chain has no prior data and bootstrap snapshot name is set, attempting bootstrap from snapshot")
-//		return o.bootstrapFromSnapshot(o.options.BootstrapSnapshotName)
-//	}
-//
-//	if o.options.BootstrapDataURL != "" {
-//		o.zlogger.Info("chain has no prior data and bootstrap data url is set, attempting bootstrap from URL")
-//		err := o.bootstrapFromDataURL(o.options.BootstrapDataURL)
-//		if err != nil {
-//			o.zlogger.Warn("could not bootstrap from URL", zap.Error(err))
-//		} else {
-//			o.zlogger.Info("success bootstrap from URL")
-//			return nil
-//		}
-//	}
-//
-//	return nil
-//}
-
-func (o *Operator) bootstrapFromDataURL(bootstrapDataURL string) error {
-	o.zlogger.Info("bootstraping from pre-existing data prior starting process")
-	bootstrapable, ok := o.Superviser.(nodeManager.BootstrapableChainSuperviser)
-	if !ok {
-		return errors.New("the chain superviser does not support bootstrap")
-	}
-
-	err := bootstrapable.Bootstrap(bootstrapDataURL)
-	if err != nil {
-		return fmt.Errorf("unable to bootstrap from data URL %q: %w", bootstrapDataURL, err)
-	}
-
-	return nil
-}
-
-func (o *Operator) bootstrapFromSnapshot(snapshotName string) error {
-	o.zlogger.Debug("restoring snapshot prior starting process")
-	snapshotable, ok := o.Superviser.(nodeManager.SnapshotableChainSuperviser)
-	if !ok {
-		return errors.New("the chain superviser does not support snapshots")
-	}
-
-	return o.restoreSnapshot(snapshotable, snapshotName)
-}
-
-func (o *Operator) bootstrapFromBackup(backupName string) error {
-	o.zlogger.Debug("restoring backup prior starting process")
-	backupable, ok := o.Superviser.(nodeManager.BackupableChainSuperviser)
-	if !ok {
-		return errors.New("the chain superviser does not support backups")
-	}
-
-	err := backupable.RestoreBackup(backupName, o.options.BackupTag, o.options.BackupStoreURL)
-	if err != nil {
-		return fmt.Errorf("unable to restore backup %q: %w", backupName, err)
-	}
-
-	return nil
-}
-
-func (o *Operator) restoreSnapshot(snapshotable nodeManager.SnapshotableChainSuperviser, snapshotName string) error {
-	store := o.getSnapshotStore()
-
-	o.zlogger.Debug("checking if snapshot exists, mayber performing local override if it doesn't", zap.String("snapshot_name", snapshotName))
-	if exists, err := store.FileExists(context.Background(), snapshotName); err == nil && !exists {
-		newName, newStore := o.maybeSnapshotFromLocalFile(snapshotName)
-		if newName != "" && newStore != nil {
-			o.zlogger.Info("snapshot name is local file, override snapshot store to point to local file")
-			store = newStore
-			snapshotName = newName
+func (o *Operator) LaunchBackupSchedules() {
+	for _, sched := range o.backupSchedules {
+		if sched.RequiredHostnameMatch != "" {
+			hostname, err := os.Hostname()
+			if err != nil {
+				o.zlogger.Error("Disabling automatic backup schedule because requiredHostname is set and cannot retrieve hostname", zap.Error(err))
+				continue
+			}
+			if sched.RequiredHostnameMatch != hostname {
+				o.zlogger.Info("Disabling automatic backup schedule because hostname does not match required value",
+					zap.String("hostname", hostname),
+					zap.String("required_hostname", sched.RequiredHostnameMatch),
+					zap.String("backuper_name", sched.BackuperName))
+				continue
+			}
 		}
-	} else if err != nil {
-		o.zlogger.Debug("unable to check if name exists in snapshot store", zap.Error(err))
-	}
 
-	if err := snapshotable.RestoreSnapshot(snapshotName, store); err != nil {
-		return fmt.Errorf("unable to restore snapshot %q: %w", snapshotName, err)
-	}
+		cmdParams := map[string]string{"name": sched.BackuperName}
 
-	return nil
-}
-
-func (o *Operator) maybeSnapshotFromLocalFile(snapshotName string) (newName string, newStore dstore.Store) {
-	o.zlogger.Debug("snapshot not found in store, checking if it's a local file")
-	localFile, err := filepath.Abs(filepath.Clean(snapshotName))
-	if err != nil {
-		o.zlogger.Debug("snapshot name does not appear to be a valid local file, continuing without local override")
-		return
-	}
-
-	if stat, err := os.Stat(localFile); err != nil || stat.IsDir() {
-		o.zlogger.Debug("local snapshot does not seems to be a local file (or lookup failed), continue without local override")
-		return
-	}
-
-	store, err := dstore.NewSimpleStore("file://" + filepath.Dir(localFile))
-	if err != nil {
-		o.zlogger.Debug("unable to create local snapshot store override, continue without local override")
-		return
-	}
-
-	return filepath.Base(localFile), store
-}
-
-func (o *Operator) getSnapshotStore() dstore.Store {
-	if o.snapshotStore == nil {
-		o.Shutdown(errors.New("trying to get snapshot store, but instance is nil, have you provided --snapshot-store-url flag?"))
-	}
-
-	return o.snapshotStore
-}
-
-func (o *Operator) ConfigureAutoBackup(autoBackupInterval time.Duration, autoBackupBlockFrequency int, expectedHostname, hostname string) {
-	if expectedHostname != "" && hostname != expectedHostname {
-		o.zlogger.Info("not setting auto-backup because hostname does not match expected value", zap.String("hostname", hostname), zap.String("expected_hostname", expectedHostname))
-		return
-	}
-
-	if autoBackupInterval != 0 {
-		go o.RunEveryPeriod(autoBackupInterval, "backup")
-	}
-
-	if autoBackupBlockFrequency != 0 {
-		go o.RunEveryXBlock(uint32(autoBackupBlockFrequency), "backup")
+		if sched.TimeBetweenRuns > time.Second { //loose validation of not-zero (I've seen issues with .IsZero())
+			o.zlogger.Info("starting time-based schedule for backup",
+				zap.Duration("time_between_runs", sched.TimeBetweenRuns),
+				zap.String("backuper_name", sched.BackuperName),
+			)
+			go o.RunEveryPeriod(sched.TimeBetweenRuns, "backup", cmdParams)
+		}
+		if sched.BlocksBetweenRuns > 0 {
+			o.zlogger.Info("starting block-based schedule for backup",
+				zap.Int("blocks_between_runs", sched.BlocksBetweenRuns),
+				zap.String("backuper_name", sched.BackuperName),
+			)
+			go o.RunEveryXBlock(uint32(sched.BlocksBetweenRuns), "backup", cmdParams)
+		}
 	}
 }
 
-func (o *Operator) ConfigureAutoSnapshot(autoSnapshotInterval time.Duration, autoSnapshotBlockFrequency int, expectedHostname, hostname string) {
-	if expectedHostname != "" && hostname != expectedHostname {
-		o.zlogger.Info("not setting auto-snapshot because hostname does not match expected value", zap.String("hostname", hostname), zap.String("expected_hostname", expectedHostname))
-		return
-	}
-
-	if autoSnapshotInterval != 0 {
-		go o.RunEveryPeriod(autoSnapshotInterval, "snapshot")
-	}
-
-	if autoSnapshotBlockFrequency != 0 {
-		go o.RunEveryXBlock(uint32(autoSnapshotBlockFrequency), "snapshot")
-	}
-}
-
-func (o *Operator) ConfigureAutoVolumeSnapshot(autoVolumeSnapshotInterval time.Duration, autoVolumeSnapshotBlockFrequency int, autoVolumeSnapshotSpecificBlocks []uint64) {
-	if autoVolumeSnapshotInterval != 0 {
-		go o.RunEveryPeriod(autoVolumeSnapshotInterval, "volumesnapshot")
-	}
-
-	if autoVolumeSnapshotBlockFrequency != 0 {
-		go o.RunEveryXBlock(uint32(autoVolumeSnapshotBlockFrequency), "volumesnapshot")
-	}
-
-	if len(autoVolumeSnapshotSpecificBlocks) > 0 {
-		go o.RunAtSpecificBlocks(autoVolumeSnapshotSpecificBlocks, "volumesnapshot")
-	}
-}
-
-// RunEveryPeriod will skip a run if Nodeos is NOT alive when period expired.
-func (o *Operator) RunEveryPeriod(period time.Duration, commandName string) {
+func (o *Operator) RunEveryPeriod(period time.Duration, commandName string, params map[string]string) {
 	for {
 		time.Sleep(1)
 		if o.Superviser.IsRunning() {
@@ -762,39 +490,13 @@ func (o *Operator) RunEveryPeriod(period time.Duration, commandName string) {
 		select {
 		case <-ticker.C:
 			if o.Superviser.IsRunning() {
-				o.commandChan <- &Command{cmd: commandName, logger: o.zlogger}
+				o.commandChan <- &Command{cmd: commandName, logger: o.zlogger, params: params}
 			}
 		}
 	}
 }
 
-func (o *Operator) RunAtSpecificBlocks(specificBlocks []uint64, commandName string) {
-	o.zlogger.Info("scheduled for running a job a specific blocks", zap.String("command_name", commandName), zap.Any("specific_blocks", specificBlocks))
-	sort.Slice(specificBlocks, func(i, j int) bool { return specificBlocks[i] < specificBlocks[j] })
-	nextIndex := 0
-	for {
-		time.Sleep(1 * time.Second)
-		head := o.Superviser.LastSeenBlockNum()
-		if head == 0 {
-			continue
-		}
-
-		if head > specificBlocks[nextIndex] {
-			o.commandChan <- &Command{cmd: commandName, logger: o.zlogger}
-			for {
-				nextIndex++
-				if nextIndex >= len(specificBlocks) {
-					return
-				}
-				if head < specificBlocks[nextIndex] {
-					break
-				}
-			}
-		}
-	}
-}
-
-func (o *Operator) RunEveryXBlock(freq uint32, commandName string) {
+func (o *Operator) RunEveryXBlock(freq uint32, commandName string, params map[string]string) {
 	var lastHeadReference uint64
 	for {
 		time.Sleep(1 * time.Second)
@@ -808,7 +510,7 @@ func (o *Operator) RunEveryXBlock(freq uint32, commandName string) {
 		}
 
 		if lastSeenBlockNum > lastHeadReference+uint64(freq) {
-			o.commandChan <- &Command{cmd: commandName, logger: o.zlogger}
+			o.commandChan <- &Command{cmd: commandName, logger: o.zlogger, params: params}
 			lastHeadReference = lastSeenBlockNum
 		}
 	}

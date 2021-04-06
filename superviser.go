@@ -17,7 +17,6 @@ package node_manager
 import (
 	"time"
 
-	"github.com/dfuse-io/dstore"
 	logplugin "github.com/dfuse-io/node-manager/log_plugin"
 )
 
@@ -26,21 +25,24 @@ type StartOption string
 var EnableDebugDeepmindOption = StartOption("enable-debug-deep-mind")
 var DisableDebugDeepmindOption = StartOption("disable-debug-deep-mind")
 
-type ChainSuperviser interface {
-	GetCommand() string
-	GetName() string
-
-	RegisterPostRestoreHandler(func())
-	RegisterLogPlugin(plugin logplugin.LogPlugin)
-	Start(options ...StartOption) error
-	Stop() error
+type ShutterInterface interface {
 	Shutdown(error)
 	OnTerminating(func(error))
 	OnTerminated(func(error))
 	IsTerminated() bool
 	IsTerminating() bool
-
 	Terminated() <-chan struct{}
+}
+
+type ChainSuperviser interface {
+	ShutterInterface
+
+	GetCommand() string
+	GetName() string
+
+	RegisterLogPlugin(plugin logplugin.LogPlugin)
+	Start(options ...StartOption) error
+	Stop() error
 
 	IsRunning() bool
 	Stopped() <-chan struct{}
@@ -49,13 +51,6 @@ type ChainSuperviser interface {
 	LastExitCode() int
 	LastLogLines() []string
 	LastSeenBlockNum() uint64
-}
-
-type BootstrapableChainSuperviser interface {
-	// Bootstrap receives a single data url format and uses this single data source to bootstrap the chain.
-	// One can use `dstore.OpenObject(ctx, bootstrapDataURL)` to easily open the object in one shot to
-	// avoid having to split, extract the path, create a store and then open the object.
-	Bootstrap(bootstrapDataURL string) error
 }
 
 type MonitorableChainSuperviser interface {
@@ -70,20 +65,6 @@ type ProducerChainSuperviser interface {
 	PauseProduction() error
 
 	WaitUntilEndOfNextProductionRound(timeout time.Duration) error
-}
-
-type BackupableChainSuperviser interface {
-	TakeBackup(backupTag string, backupStoreURL string) error
-	RestoreBackup(backupName, backupTag string, backupStoreURL string) error
-}
-
-type SnapshotableChainSuperviser interface {
-	TakeSnapshot(snapshotStore dstore.Store, numberOfSnapshotsToKeep int) error
-	RestoreSnapshot(snapshotName string, snapshotStore dstore.Store) error
-}
-
-type VolumeSnapshotableChainSuperviser interface {
-	TakeVolumeSnapshot(volumeSnapshotTag, project, namespace, pod, prefix string, lastSeenBlockNum uint64) error
 }
 
 type ProductionState int
