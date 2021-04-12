@@ -262,15 +262,16 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 		err := p.archiver.StoreBlock(block)
 		if err != nil {
-			p.zlogger.Error("failed storing block in archiver, shutting down and losing blocks in transit...", zap.Error(err))
-			go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
-			return
+			p.zlogger.Error("failed storing block in archiver, shutting down. You will need to reprocess over this range to get this block.", zap.Error(err), zap.Stringer("block", block))
+			go p.Shutdown(fmt.Errorf("mindreader archiver store block failed: %w", err))
+			continue
 		}
 		if p.blockServer != nil {
 			err = p.blockServer.PushBlock(block)
 			if err != nil {
-				p.zlogger.Error("failed passing block to blockServer (this should not happen)", zap.Error(err))
-				return
+				p.zlogger.Error("failed passing block to blockServer (this should not happen, shutting down)", zap.Error(err))
+				go p.Shutdown(fmt.Errorf("mindreader blockserver failed: %w", err))
+				continue
 			}
 		}
 
@@ -278,7 +279,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			err = p.continuityChecker.Write(block.Num())
 			if err != nil {
 				p.zlogger.Error("failed continuity check", zap.Error(err))
-				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+				go p.Shutdown(fmt.Errorf("continuity check failed: %w", err))
 				continue
 			}
 		}
