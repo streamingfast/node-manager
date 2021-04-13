@@ -93,7 +93,7 @@ func (a *App) Run() error {
 		a.Config.StopBlockNum,
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
-		func(_ error) {},
+		a.Shutdown,
 		a.Config.FailOnNonContinuousBlocks,
 		a.Config.WaitUploadCompleteOnShutdown,
 		a.Config.OneblockSuffix,
@@ -104,7 +104,6 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Debug("configuring shutter")
-	mindreaderLogPlugin.OnTerminated(a.Shutdown)
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
 	// It's important that this call goes prior running gRPC server since it's doing
