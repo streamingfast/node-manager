@@ -53,8 +53,10 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 
 		if err := s.Stop(); err != nil {
 			s.Logger.Error("failed to to node process", zap.Error(err))
-			return
 		}
+
+		s.Logger.Info("shutting down plugins", zap.Int("last_exit_code", s.LastExitCode()))
+		s.endLogPlugins()
 
 	})
 
@@ -214,9 +216,6 @@ nodeProcessDone:
 	}
 
 	s.Logger.Info("std out and err are now drain")
-
-	s.Logger.Info("shutting down plugins", zap.Int("last_exit_code", s.LastExitCode()))
-	s.endLogPlugins()
 
 	return nil
 }
