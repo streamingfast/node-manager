@@ -35,16 +35,6 @@ type Config struct {
 	ManagerAPIAddress  string
 	ConnectionWatchdog bool
 
-	// Backup Flags
-	AutoBackupModulo        int
-	AutoBackupPeriod        time.Duration
-	AutoBackupHostnameMatch string // If non-empty, will only apply autobackup if we have that hostname
-
-	// Snapshot Flags
-	AutoSnapshotModulo        int
-	AutoSnapshotPeriod        time.Duration
-	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
-
 	GRPCAddr string
 }
 
@@ -83,14 +73,6 @@ func (a *App) Run() error {
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
-	if a.config.AutoBackupPeriod != 0 || a.config.AutoBackupModulo != 0 {
-		a.modules.Operator.ConfigureAutoBackup(a.config.AutoBackupPeriod, a.config.AutoBackupModulo, a.config.AutoBackupHostnameMatch, hostname)
-	}
-
-	if a.config.AutoSnapshotPeriod != 0 || a.config.AutoSnapshotModulo != 0 {
-		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
-	}
-
 	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)
 	if err != nil {
 		return err
@@ -116,7 +98,7 @@ func (a *App) Run() error {
 
 	var httpOptions []operator.HTTPOption
 	a.zlogger.Info("launching operator")
-	go a.Shutdown(a.modules.Operator.Launch(true, a.config.ManagerAPIAddress, httpOptions...))
+	go a.Shutdown(a.modules.Operator.Launch(a.config.ManagerAPIAddress, httpOptions...))
 
 	return nil
 }

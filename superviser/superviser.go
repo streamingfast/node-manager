@@ -34,9 +34,8 @@ type Superviser struct {
 	cmd     *overseer.Cmd
 	cmdLock sync.Mutex
 
-	logPlugins        []logplugin.LogPlugin
-	logPluginsLock    sync.RWMutex
-	HandlePostRestore func()
+	logPlugins     []logplugin.LogPlugin
+	logPluginsLock sync.RWMutex
 
 	enableDeepMind bool
 }
@@ -60,11 +59,6 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 	})
 
 	return s
-}
-
-// RegisterPostRestoreHandler adds a function called after a restore from backup or from snapshot
-func (s *Superviser) RegisterPostRestoreHandler(f func()) {
-	s.HandlePostRestore = f
 }
 
 func (s *Superviser) RegisterLogPlugin(plugin logplugin.LogPlugin) {
