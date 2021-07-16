@@ -22,9 +22,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dfuse-io/shutter"
-
 	"github.com/dfuse-io/bstream"
+	"github.com/dfuse-io/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )

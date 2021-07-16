@@ -15,6 +15,8 @@
 package superviser
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -255,7 +257,7 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			if status.Exit == 0 {
 				s.Logger.Info("command terminated with zero status", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
 			} else {
-				s.Logger.Error("command terminated with non-zero status", zap.Any("status", status))
+				s.Logger.Error(fmt.Sprintf("command terminated with non-zero status, last log lines:\n%s\n", formatLogLines(s.LastLogLines())), zap.Any("status", status))
 			}
 
 		case line := <-cmd.Stdout:
@@ -270,6 +272,19 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 			}
 		}
 	}
+}
+
+func formatLogLines(lines []string) string {
+	if len(lines) == 0 {
+		return "<None>"
+	}
+
+	formattedLines := make([]string, len(lines))
+	for i, line := range lines {
+		formattedLines[i] = "  " + line
+	}
+
+	return strings.Join(formattedLines, "\n")
 }
 
 func (s *Superviser) endLogPlugins() {
