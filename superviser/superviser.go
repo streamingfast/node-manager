@@ -234,8 +234,6 @@ func (s *Superviser) isRunning() bool {
 	if s.cmd == nil {
 		return false
 	}
-
-	s.Logger.Debug("isRunning", zap.Stringer("command_state", s.cmd.State))
 	return s.cmd.State == overseer.STARTING || s.cmd.State == overseer.RUNNING || s.cmd.State == overseer.STOPPING
 }
 
