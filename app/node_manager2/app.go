@@ -34,26 +34,12 @@ import (
 )
 
 type Config struct {
-	GRPCAddr string
-	HTTPAddr string
+	StartupDelay      time.Duration
 
-	// Backup Flags
-	AutoBackupModulo        int
-	AutoBackupPeriod        time.Duration
-	AutoBackupHostnameMatch string // If non-empty, will only apply autobackup if we have that hostname
-
-	// Snapshot Flags
-	AutoSnapshotModulo        int
-	AutoSnapshotPeriod        time.Duration
-	AutoSnapshotHostnameMatch string // If non-empty, will only apply autosnapshot if we have that hostname
-
-	// Volume Snapshot Flags
-	AutoVolumeSnapshotModulo         int
-	AutoVolumeSnapshotPeriod         time.Duration
-	AutoVolumeSnapshotSpecificBlocks []uint64
-
-	StartupDelay       time.Duration
+	HTTPAddr string // was ManagerAPIAddress
 	ConnectionWatchdog bool
+
+	GRPCAddr string
 }
 
 type Modules struct {
@@ -91,17 +77,6 @@ func (a *App) Run() error {
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
-	if a.config.AutoBackupPeriod != 0 || a.config.AutoBackupModulo != 0 {
-		a.modules.Operator.ConfigureAutoBackup(a.config.AutoBackupPeriod, a.config.AutoBackupModulo, a.config.AutoBackupHostnameMatch, hostname)
-	}
-
-	if a.config.AutoSnapshotPeriod != 0 || a.config.AutoSnapshotModulo != 0 {
-		a.modules.Operator.ConfigureAutoSnapshot(a.config.AutoSnapshotPeriod, a.config.AutoSnapshotModulo, a.config.AutoSnapshotHostnameMatch, hostname)
-	}
-
-	if a.config.AutoVolumeSnapshotPeriod != 0 || a.config.AutoVolumeSnapshotModulo != 0 || len(a.config.AutoVolumeSnapshotSpecificBlocks) > 0 {
-		a.modules.Operator.ConfigureAutoVolumeSnapshot(a.config.AutoVolumeSnapshotPeriod, a.config.AutoVolumeSnapshotModulo, a.config.AutoVolumeSnapshotSpecificBlocks)
-	}
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
