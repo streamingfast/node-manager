@@ -23,8 +23,8 @@ import (
 
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dgrpc"
-	nodeManager "github.com/dfuse-io/node-manager"
-	"github.com/dfuse-io/node-manager/mindreader"
+	nodeManager "github.com/streamingfast/node-manager"
+	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

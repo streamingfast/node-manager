@@ -17,7 +17,7 @@ package node_manager
 import (
 	"time"
 
-	logplugin "github.com/dfuse-io/node-manager/log_plugin"
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 )
 
 type StartOption string

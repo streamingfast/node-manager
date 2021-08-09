@@ -25,7 +25,7 @@ import (
 
 	"github.com/dfuse-io/derr"
 	"github.com/dfuse-io/dstore"
-	nodeManager "github.com/dfuse-io/node-manager"
+	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
