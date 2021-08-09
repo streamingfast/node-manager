@@ -17,6 +17,8 @@ package mindreader
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,25 +31,10 @@ import (
 
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/dstore"
-	"github.com/eoscanada/eos-go"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func getTestMindReaderPluginCallbacks(t *testing.T) (onError func(error), onComplete func()) {
-	t.Helper()
-
-	onError = func(err error) {
-		t.Error("should not called", err)
-	}
-
-	onComplete = func() {
-		t.Error("should not called")
-	}
-
-	return
-}
 
 func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	s := NewTestStore()
@@ -275,7 +262,7 @@ func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) 
 
 	return &bstream.Block{
 		Id:     data.ID,
-		Number: uint64(eos.BlockNum(data.ID)),
+		Number: toBlockNum(data.ID),
 	}, nil
 }
 
@@ -326,4 +313,15 @@ func createEmptyFile(filename string) error {
 	}
 	emptyFile.Close()
 	return nil
+}
+
+func toBlockNum(blockID string) uint64 {
+	if len(blockID) < 8 {
+		return 0
+	}
+	bin, err := hex.DecodeString(blockID[:8])
+	if err != nil {
+		return 0
+	}
+	return uint64(binary.BigEndian.Uint32(bin))
 }
