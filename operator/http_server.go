@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	"github.com/dfuse-io/derr"
-	"github.com/dfuse-io/node-manager/superviser"
 	"github.com/gorilla/mux"
+	"github.com/streamingfast/node-manager/superviser"
 	"go.uber.org/zap"
 )
 

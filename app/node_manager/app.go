@@ -22,9 +22,9 @@ import (
 	"time"
 
 	"github.com/dfuse-io/dmetrics"
-	nodeManager "github.com/dfuse-io/node-manager"
-	"github.com/dfuse-io/node-manager/metrics"
-	"github.com/dfuse-io/node-manager/operator"
+	nodeManager "github.com/streamingfast/node-manager"
+	"github.com/streamingfast/node-manager/metrics"
+	"github.com/streamingfast/node-manager/operator"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )

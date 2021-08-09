@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/ShinyTrinkets/overseer"
-	nodeManager "github.com/dfuse-io/node-manager"
-	logplugin "github.com/dfuse-io/node-manager/log_plugin"
+	nodeManager "github.com/streamingfast/node-manager"
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/zap"
 )

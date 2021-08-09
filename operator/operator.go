@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"github.com/dfuse-io/dstore"
-	nodeManager "github.com/dfuse-io/node-manager"
-	"github.com/dfuse-io/node-manager/profiler"
 	"github.com/dfuse-io/shutter"
+	nodeManager "github.com/streamingfast/node-manager"
+	"github.com/streamingfast/node-manager/profiler"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
