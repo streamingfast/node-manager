@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/dbin"
+	"github.com/streamingfast/dbin"
 	"github.com/dfuse-io/dstore"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"

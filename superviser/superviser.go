@@ -21,7 +21,7 @@ import (
 	"github.com/ShinyTrinkets/overseer"
 	nodeManager "github.com/streamingfast/node-manager"
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 )
 
