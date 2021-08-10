@@ -17,7 +17,7 @@ package node_manager
 import (
 	"time"
 
-	"github.com/dfuse-io/dstore"
+	"github.com/streamingfast/dstore"
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
 )
 

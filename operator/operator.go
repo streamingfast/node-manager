@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dfuse-io/dstore"
+	"github.com/streamingfast/dstore"
 	"github.com/streamingfast/shutter"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/profiler"
