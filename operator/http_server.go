@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dfuse-io/derr"
+	"github.com/streamingfast/derr"
 	"github.com/gorilla/mux"
 	"github.com/streamingfast/node-manager/superviser"
 	"go.uber.org/zap"
