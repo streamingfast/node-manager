@@ -3,7 +3,7 @@ package node_manager
 import (
 	"time"
 
-	"github.com/dfuse-io/dmetrics"
+	"github.com/streamingfast/dmetrics"
 	"go.uber.org/atomic"
 )
 

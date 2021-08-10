@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/streamingfast/dgrpc"
-	"github.com/dfuse-io/dmetrics"
+	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/metrics"
 	"github.com/streamingfast/node-manager/mindreader"
