@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/dfuse-io/bstream/blockstream"
-	"github.com/dfuse-io/dgrpc"
+	"github.com/streamingfast/dgrpc"
 	"github.com/dfuse-io/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/metrics"
