@@ -15,7 +15,7 @@ require (
 	github.com/lytics/lifecycle v0.0.0-20130117214539-7b4c4028d422 // indirect
 	github.com/streamingfast/dbin v0.0.0-20210809205249-73d5eca35dc5
 	github.com/streamingfast/derr v0.0.0-20210810022442-32249850a4fb
-	github.com/streamingfast/dgrpc v0.0.0-20210810185305-905172f728e8
+	github.com/streamingfast/dgrpc v0.0.0-20210810185305-905172f728e8 // indirect
 	github.com/streamingfast/dmetrics v0.0.0-20210810172555-564d623b116f
 	github.com/streamingfast/dstore v0.1.1-0.20210810110932-928f221474e4
 	github.com/streamingfast/shutter v1.5.0
