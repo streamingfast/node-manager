@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 )
 
 var DebugLineLength = int64(4096)

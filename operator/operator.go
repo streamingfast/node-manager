@@ -26,7 +26,7 @@ import (
 	"github.com/streamingfast/derr"
 	"github.com/streamingfast/dstore"
 	nodeManager "github.com/streamingfast/node-manager"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

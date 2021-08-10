@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"github.com/dfuse-io/bstream"
 	"github.com/streamingfast/dstore"
 	"github.com/klauspost/compress/zstd"

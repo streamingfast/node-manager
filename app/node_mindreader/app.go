@@ -26,7 +26,7 @@ import (
 	"github.com/streamingfast/node-manager/metrics"
 	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/streamingfast/node-manager/operator"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )

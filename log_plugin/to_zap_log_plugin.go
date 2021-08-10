@@ -17,7 +17,7 @@ package logplugin
 import (
 	"strings"
 
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

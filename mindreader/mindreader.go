@@ -24,7 +24,7 @@ import (
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/streamingfast/dstore"
 	nodeManager "github.com/streamingfast/node-manager"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 )
 

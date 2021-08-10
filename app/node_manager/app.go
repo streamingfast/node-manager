@@ -24,7 +24,7 @@ import (
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/metrics"
 	"github.com/streamingfast/node-manager/operator"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 )
 
