@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dfuse-io/derr"
+	"github.com/streamingfast/derr"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )

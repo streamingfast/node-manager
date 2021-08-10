@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dfuse-io/derr"
+	"github.com/streamingfast/derr"
 	"github.com/dfuse-io/dstore"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/dfuse-io/shutter"
