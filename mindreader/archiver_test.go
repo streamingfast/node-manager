@@ -30,7 +30,7 @@ import (
 
 	"github.com/dfuse-io/shutter"
 	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/dstore"
+	"github.com/streamingfast/dstore"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

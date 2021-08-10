@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/streamingfast/derr"
-	"github.com/dfuse-io/dstore"
+	"github.com/streamingfast/dstore"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/dfuse-io/shutter"
 	"go.uber.org/atomic"
