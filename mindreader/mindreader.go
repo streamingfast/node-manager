@@ -20,8 +20,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/bstream/blockstream"
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/bstream/blockstream"
 	"github.com/streamingfast/dstore"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/shutter"

@@ -27,7 +27,7 @@ import (
 	"github.com/streamingfast/shutter"
 
 	"github.com/abourget/llerrgroup"
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
 	"go.uber.org/zap"
 )

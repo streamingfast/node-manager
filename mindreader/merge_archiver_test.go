@@ -18,7 +18,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dbin"
 	"github.com/streamingfast/dstore"
 	"github.com/stretchr/testify/assert"

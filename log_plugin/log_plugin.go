@@ -14,7 +14,7 @@
 
 package logplugin
 
-import "github.com/dfuse-io/bstream/blockstream"
+import "github.com/streamingfast/bstream/blockstream"
 
 type LogPlugin interface {
 	Name() string
