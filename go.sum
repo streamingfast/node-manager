@@ -134,10 +134,7 @@ github.com/dfuse-io/dgrpc v0.0.0-20210810041652-d033fee35ae0/go.mod h1:D+ID5BdUi
 github.com/dfuse-io/dtracing v0.0.0-20200406213603-4b0c0063b125 h1:XvwJj/xDY0TQV1y1MvMBINLK/4RGrhuc2HmHscnRgdM=
 github.com/dfuse-io/dtracing v0.0.0-20200406213603-4b0c0063b125/go.mod h1:SA/v5q2RIuah2W5uvVldEUwfFprEhGiw66Id0j68rtw=
 github.com/dfuse-io/logging v0.0.0-20200406213449-45fc25dc6a8d/go.mod h1:80YyilHcgoqrnoIeeJKgcsOw6Y/0/bQzDO/XzNIrIdM=
-github.com/dfuse-io/logging v0.0.0-20200407175011-14021b7a79af h1:eh9e9gPlX+pMYcAPqcC66ESCSSqBVkznxwloijoH9Ic=
 github.com/dfuse-io/logging v0.0.0-20200407175011-14021b7a79af/go.mod h1:80YyilHcgoqrnoIeeJKgcsOw6Y/0/bQzDO/XzNIrIdM=
-github.com/dfuse-io/logging v0.0.0-20201120222745-9988f63324bc/go.mod h1:n0Np6Dr/Yv56l8Rq2wgDZpv4vfjT8qlvY34pb3dcI0k=
-github.com/dfuse-io/logging v0.0.0-20210109005628-b97a57253f70 h1:CuJS05R9jmNlUK8GOxrEELPbfXm0EuGh/30LjkjN5vo=
 github.com/dfuse-io/logging v0.0.0-20210109005628-b97a57253f70/go.mod h1:EoK/8RFbMEteaCaz89uessDTnCWjbbcr+DXcBh4el5o=
 github.com/dfuse-io/overseer v0.2.1-0.20210326144022-ee491780e3ef h1:WxHxSPrlZyIVajMLPVBSGJqdJjhxpvu9nNxKu2neOtc=
 github.com/dfuse-io/overseer v0.2.1-0.20210326144022-ee491780e3ef/go.mod h1:cq8CvbZ3ioFmGrHokSAJalS0lC+pVXLKhITScItUGXY=
@@ -423,6 +420,12 @@ github.com/streamingfast/dtracing v0.0.0-20210810035915-473055fed32a h1:f2z0hl0E
 github.com/streamingfast/dtracing v0.0.0-20210810035915-473055fed32a/go.mod h1:z8WI8Y2sVfFZQQewUC40hE3TgISt3K4n5RwKzXG65Pg=
 github.com/streamingfast/dtracing v0.0.0-20210811175635-d55665d3622a h1:/7Rw3pYpueJYOQReTJpfAhAPk0uZD4I58LfiUAr4IMc=
 github.com/streamingfast/dtracing v0.0.0-20210811175635-d55665d3622a/go.mod h1:bqiYZaX6L/MoXNfFQeAdau6g9HLA3yKHkX8KzStt58Q=
+github.com/streamingfast/logging v0.0.0-20200406213449-45fc25dc6a8d/go.mod h1:80YyilHcgoqrnoIeeJKgcsOw6Y/0/bQzDO/XzNIrIdM=
+github.com/streamingfast/logging v0.0.0-20200407175011-14021b7a79af h1:eh9e9gPlX+pMYcAPqcC66ESCSSqBVkznxwloijoH9Ic=
+github.com/streamingfast/logging v0.0.0-20200407175011-14021b7a79af/go.mod h1:80YyilHcgoqrnoIeeJKgcsOw6Y/0/bQzDO/XzNIrIdM=
+github.com/streamingfast/logging v0.0.0-20201120222745-9988f63324bc/go.mod h1:n0Np6Dr/Yv56l8Rq2wgDZpv4vfjT8qlvY34pb3dcI0k=
+github.com/streamingfast/logging v0.0.0-20210109005628-b97a57253f70 h1:CuJS05R9jmNlUK8GOxrEELPbfXm0EuGh/30LjkjN5vo=
+github.com/streamingfast/logging v0.0.0-20210109005628-b97a57253f70/go.mod h1:EoK/8RFbMEteaCaz89uessDTnCWjbbcr+DXcBh4el5o=
 github.com/streamingfast/logging v0.0.0-20210811175431-f3b44b61606a h1:Hy7ST3+wGmk4nyBanXKzhRXE63E77UEF93oG51dfq6c=
 github.com/streamingfast/logging v0.0.0-20210811175431-f3b44b61606a/go.mod h1:4GdqELhZOXj4xwc4IaBmzofzdErGynnaSzuzxy0ZIBo=
 github.com/streamingfast/opaque v0.0.0-20210809210154-b964592beb5d/go.mod h1:TiogU5+Boyfq0oyvLUd6jy5kAsEZP6r1590Z8IFPhMg=

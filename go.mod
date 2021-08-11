@@ -6,7 +6,6 @@ require (
 	github.com/ShinyTrinkets/overseer v0.3.0
 	github.com/abourget/llerrgroup v0.0.0-20161118145731-75f536392d17
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
-	github.com/dfuse-io/logging v0.0.0-20210109005628-b97a57253f70
 	github.com/google/renameio v0.1.0
 	github.com/gorilla/mux v1.7.3
 	github.com/klauspost/compress v1.10.2
@@ -18,6 +17,7 @@ require (
 	github.com/streamingfast/dhammer v0.0.0-20210811180702-456c4cf0a840 // indirect
 	github.com/streamingfast/dmetrics v0.0.0-20210811180524-8494aeb34447
 	github.com/streamingfast/dstore v0.1.1-0.20210811180812-4db13e99cc22
+	github.com/streamingfast/logging v0.0.0-20210811175431-f3b44b61606a // indirect
 	github.com/streamingfast/shutter v1.5.0
 	github.com/stretchr/testify v1.7.0
 	go.uber.org/atomic v1.6.0
