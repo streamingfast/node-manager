@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dfuse-io/logging"
+	"github.com/streamingfast/logging"
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
