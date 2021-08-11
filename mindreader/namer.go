@@ -3,7 +3,7 @@ package mindreader
 import (
 	"fmt"
 
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/bstream"
 )
 
 func blockFileName(block *bstream.Block, suffix string) string {

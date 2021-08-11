@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"

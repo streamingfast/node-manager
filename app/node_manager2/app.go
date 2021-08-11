@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream/blockstream"
+	"github.com/streamingfast/bstream/blockstream"
 	"github.com/streamingfast/dgrpc"
 	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
