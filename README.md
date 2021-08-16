@@ -7,9 +7,8 @@ This service is a wrapping process that operates blockchain nodes as part of **[
 ## Installation
 
 Build and run from here:
-
 * [**EOSIO on StreamingFast**](https://github.com/streamingfast/sf-eosio)
-* [**Etherieum on StreamingFast**](https://github.com/streamingfast/sf-ethereum)
+* [**Ethereum on StreamingFast**](https://github.com/streamingfast/sf-ethereum)
 
 ## Overview
 
