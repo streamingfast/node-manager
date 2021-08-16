@@ -16,23 +16,25 @@ package node_mindreader_stdin
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 	"time"
 
-	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/bstream/blockstream"
-	"github.com/dfuse-io/dgrpc"
-	nodeManager "github.com/dfuse-io/node-manager"
-	"github.com/dfuse-io/node-manager/mindreader"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/dgrpc"
+	nodeManager "github.com/streamingfast/node-manager"
+	"github.com/streamingfast/node-manager/mindreader"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
 	GRPCAddr                     string
 	ArchiveStoreURL              string
 	MergeArchiveStoreURL         string
+	OneblockSuffix               string
 	BatchMode                    bool
 	MergeThresholdBlockAge       time.Duration
 	MindReadBlocksChanCapacity   int
@@ -48,6 +50,7 @@ type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
 	ConsoleReaderTransformer   mindreader.ConsoleReaderBlockTransformer
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
+	RegisterGRPCService        func(server *grpc.Server) error
 	Tracker                    *bstream.Tracker
 }
 
@@ -89,10 +92,11 @@ func (a *App) Run() error {
 		a.Config.StopBlockNum,
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
-		func() {},
-		func() {},
+		func(_ error) {},
 		a.Config.FailOnNonContinuousBlocks,
 		a.Config.WaitUploadCompleteOnShutdown,
+		a.Config.OneblockSuffix,
+		nil,
 		a.zlogger,
 	)
 	if err != nil {
@@ -103,9 +107,12 @@ func (a *App) Run() error {
 	mindreaderLogPlugin.OnTerminated(a.Shutdown)
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
-	// It's important that this call goes prior running gRPC server since it's doing
-	// some service registration. If it's call later on, the overall application exits.
-	blockServer := blockstream.NewServer(gs)
+	if a.modules.RegisterGRPCService != nil {
+		err := a.modules.RegisterGRPCService(gs)
+		if err != nil {
+			return fmt.Errorf("register extra grpc service: %w", err)
+		}
+	}
 
 	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlogger)
 	if err != nil {
@@ -113,7 +120,7 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Debug("running mindreader log plugin")
-	go mindreaderLogPlugin.Run(blockServer)
+	go mindreaderLogPlugin.Launch()
 
 	go a.modules.MetricsAndReadinessManager.Launch()
 
@@ -125,12 +132,12 @@ func (a *App) Run() error {
 			if err != nil {
 				if err != io.EOF {
 					a.zlogger.Error("got an error from readstring", zap.Error(err))
-					mindreaderLogPlugin.Close(err)
+					mindreaderLogPlugin.Shutdown(err)
 					return
 				}
 				if len(in) == 0 {
 					a.zlogger.Info("done reading from stdin")
-					mindreaderLogPlugin.Close(nil)
+					mindreaderLogPlugin.Shutdown(nil)
 					return
 				}
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")

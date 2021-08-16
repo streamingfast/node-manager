@@ -3,10 +3,10 @@ package mindreader
 import (
 	"fmt"
 
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/bstream"
 )
 
-func blockFileName(block *bstream.Block) string {
+func blockFileName(block *bstream.Block, suffix string) string {
 	blockTime := block.Time()
 	blockTimeString := fmt.Sprintf("%s.%01d", blockTime.Format("20060102T150405"), blockTime.Nanosecond()/100000000)
 
@@ -20,5 +20,9 @@ func blockFileName(block *bstream.Block) string {
 		previousID = previousID[len(previousID)-8:]
 	}
 
-	return fmt.Sprintf("%010d-%s-%s-%s", block.Num(), blockTimeString, blockID, previousID)
+	suffixString := ""
+	if suffix != "" {
+		suffixString = fmt.Sprintf("-%s", suffix)
+	}
+	return fmt.Sprintf("%010d-%s-%s-%s%s", block.Num(), blockTimeString, blockID, previousID, suffixString)
 }

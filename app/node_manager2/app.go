@@ -12,30 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package node_manager
+package nodemanager
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/streamingfast/dgrpc"
 	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/metrics"
+	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/streamingfast/node-manager/operator"
 	"github.com/streamingfast/shutter"
+	"github.com/gorilla/mux"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
-	ManagerAPIAddress string
 	StartupDelay      time.Duration
+
+	HTTPAddr string // was ManagerAPIAddress
+	ConnectionWatchdog bool
+
+	GRPCAddr string
 }
 
 type Modules struct {
-	Operator                   *operator.Operator
-	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
+	Operator                     *operator.Operator
+	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
+	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
+	MindreaderPlugin             *mindreader.MindReaderPlugin
+	RegisterGRPCService          func(server *grpc.Server) error
+	StartFailureHandlerFunc      func()
 }
 
 type App struct {
@@ -55,10 +68,15 @@ func New(config *Config, modules *Modules, zlogger *zap.Logger) *App {
 }
 
 func (a *App) Run() error {
-	a.zlogger.Info("running nodeos manager app", zap.Reflect("config", a.config))
+	hasMindreader := a.modules.MindreaderPlugin != nil
+	a.zlogger.Info("running nodeos manager app", zap.Reflect("config", a.config), zap.Bool("mindreader", hasMindreader))
+
+	hostname, _ := os.Hostname()
+	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
+
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
@@ -74,9 +92,29 @@ func (a *App) Run() error {
 		time.Sleep(a.config.StartupDelay)
 	}
 
+	var httpOptions []operator.HTTPOption
+	if hasMindreader {
+		if err := a.startMindreader(); err != nil {
+			return fmt.Errorf("unable to start mindreader: %w", err)
+		}
+
+		if a.modules.MindreaderPlugin.HasContinuityChecker() {
+			httpOptions = append(httpOptions, func(r *mux.Router) {
+				r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
+					a.modules.MindreaderPlugin.ResetContinuityChecker()
+					w.Write([]byte("ok"))
+				})
+			})
+		}
+	}
+
 	a.zlogger.Info("launching operator")
 	go a.modules.MetricsAndReadinessManager.Launch()
-	go a.Shutdown(a.modules.Operator.Launch(a.config.ManagerAPIAddress))
+	go a.Shutdown(a.modules.Operator.Launch(a.config.HTTPAddr, httpOptions...))
+
+	if a.config.ConnectionWatchdog {
+		go a.modules.LaunchConnectionWatchdogFunc(a.Terminating())
+	}
 
 	return nil
 }
@@ -85,7 +123,7 @@ func (a *App) IsReady() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	url := fmt.Sprintf("http://%s/healthz", a.config.ManagerAPIAddress)
+	url := fmt.Sprintf("http://%s/healthz", a.config.HTTPAddr)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		a.zlogger.Warn("unable to build get health request", zap.Error(err))
@@ -100,4 +138,25 @@ func (a *App) IsReady() bool {
 	}
 
 	return res.StatusCode == 200
+}
+
+func (a *App) startMindreader() error {
+	a.zlogger.Info("starting mindreader gRPC server")
+	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
+
+	if a.modules.RegisterGRPCService != nil {
+		err := a.modules.RegisterGRPCService(gs)
+		if err != nil {
+			return fmt.Errorf("register extra grpc service: %w", err)
+		}
+	}
+
+	err := mindreader.RunGRPCServer(gs, a.config.GRPCAddr, a.zlogger)
+	if err != nil {
+		return err
+	}
+
+	a.zlogger.Info("launching mindreader plugin")
+	go a.modules.MindreaderPlugin.Launch()
+	return nil
 }

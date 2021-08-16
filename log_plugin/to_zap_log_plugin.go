@@ -15,8 +15,9 @@
 package logplugin
 
 import (
-	"regexp"
 	"strings"
+
+	"github.com/streamingfast/shutter"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -34,14 +35,28 @@ func (s toZapLogPluginOptionFunc) apply(p *ToZapLogPlugin) {
 	s(p)
 }
 
-func ToZapLogPluginAdjustLevels(mappings map[string]zapcore.Level) ToZapLogPluginOption {
+// ToZapLogPluginLogLevel is the option that defines which function to use to extract the log level
+// from the line.
+//
+// The received function will be invoked with the actual line to log. The function should then return
+// the log level value to use for this line. If the return value is the special value `NoDisplay` constant
+// (which corresponds to log level `15` which does not exist within zap), the line is actually discarded
+// completely and not logged to the logger.
+func ToZapLogPluginLogLevel(extractLevel func(in string) zapcore.Level) ToZapLogPluginOption {
 	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
-		if len(mappings) > 0 {
-			p.levelAdjustements = make(map[*regexp.Regexp]zapcore.Level)
-			for regexString, adjustedLevel := range mappings {
-				p.levelAdjustements[regexp.MustCompile(regexString)] = adjustedLevel
-			}
-		}
+		p.levelExtractor = extractLevel
+	})
+}
+
+// ToZapLogPluginTransformer is the option that defines which function to use to transform the line before
+// being logged to the logger.
+//
+// The received function will be invoked with the actual line to log **after** the level have been determined.
+// The function should then return the transformed line. If the return line is the empty string, it is discarded
+// completely.
+func ToZapLogPluginTransformer(transformer func(in string) string) ToZapLogPluginOption {
+	return toZapLogPluginOptionFunc(func(p *ToZapLogPlugin) {
+		p.lineTransformer = transformer
 	})
 }
 
@@ -49,14 +64,18 @@ func ToZapLogPluginAdjustLevels(mappings map[string]zapcore.Level) ToZapLogPlugi
 // if we are actively debugging deep mind, will print the line to received
 // logger instance.
 type ToZapLogPlugin struct {
+	*shutter.Shutter
+
 	logger        *zap.Logger
 	debugDeepMind bool
 
-	levelAdjustements map[*regexp.Regexp]zapcore.Level
+	levelExtractor  func(in string) zapcore.Level
+	lineTransformer func(in string) string
 }
 
 func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapLogPluginOption) *ToZapLogPlugin {
 	plugin := &ToZapLogPlugin{
+		Shutter:       shutter.New(),
 		debugDeepMind: debugDeepMind,
 		logger:        logger,
 	}
@@ -68,39 +87,44 @@ func NewToZapLogPlugin(debugDeepMind bool, logger *zap.Logger, options ...ToZapL
 	return plugin
 }
 
+func (p *ToZapLogPlugin) Launch() {}
+func (p ToZapLogPlugin) Stop()    {}
+
+func (p *ToZapLogPlugin) Name() string {
+	return "ToZapLogPlugin"
+}
+
 func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
 }
 
-func (p *ToZapLogPlugin) Close(_ error) {
-}
+//func (p *ToZapLogPlugin) Close(_ error) {
+//}
 
 func (p *ToZapLogPlugin) LogLine(in string) {
 	if strings.HasPrefix(in, "DMLOG ") {
 		if p.debugDeepMind {
-			p.logger.Debug(in)
+			// Needs to be an info since often used in production where debug level is not enabled by default
+			p.logger.Info(in)
 		}
 
 		return
 	}
 
 	level := zap.DebugLevel
-	if strings.HasPrefix(in, "<6>info") || strings.HasPrefix(in, "info") {
-		level = zap.InfoLevel
-	} else if strings.HasPrefix(in, "<3>error") || strings.HasPrefix(in, "error") {
-		level = zap.ErrorLevel
-	} else if strings.HasPrefix(in, "<4>warn") || strings.HasPrefix(in, "warn") {
-		level = zap.WarnLevel
+	if p.levelExtractor != nil {
+		level = p.levelExtractor(in)
+		if level == NoDisplay {
+			// This is ignored, nothing else to do here ...
+			return
+		}
 	}
 
-	for lineRegex, adjustedLevel := range p.levelAdjustements {
-		if lineRegex.MatchString(in) {
-			if adjustedLevel == NoDisplay {
-				// This is know ignored
-				return
-			}
-
-			level = adjustedLevel
+	if p.lineTransformer != nil {
+		in = p.lineTransformer(in)
+		if in == "" {
+			// This is ignored, nothing else to do here ...
+			return
 		}
 	}
 

@@ -3,7 +3,7 @@ package node_manager
 import (
 	"time"
 
-	"github.com/dfuse-io/dmetrics"
+	"github.com/streamingfast/dmetrics"
 	"go.uber.org/atomic"
 )
 
@@ -64,6 +64,10 @@ func (m *MetricsAndReadinessManager) Launch() {
 		// metrics
 		if m.headBlockNumber != nil {
 			m.headBlockNumber.SetUint64(lastSeenBlock.Num)
+		}
+
+		if lastSeenBlock.Time.IsZero() { // never act upon zero timestamps
+			continue
 		}
 		if m.headBlockTimeDrift != nil {
 			m.headBlockTimeDrift.SetBlockTime(lastSeenBlock.Time)

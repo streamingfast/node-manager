@@ -17,8 +17,7 @@ package node_manager
 import (
 	"time"
 
-	"github.com/dfuse-io/dstore"
-	logplugin "github.com/dfuse-io/node-manager/log_plugin"
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 )
 
 type StartOption string
@@ -26,26 +25,32 @@ type StartOption string
 var EnableDebugDeepmindOption = StartOption("enable-debug-deep-mind")
 var DisableDebugDeepmindOption = StartOption("disable-debug-deep-mind")
 
+type ShutterInterface interface {
+	Shutdown(error)
+	OnTerminating(func(error))
+	OnTerminated(func(error))
+	IsTerminated() bool
+	IsTerminating() bool
+	Terminated() <-chan struct{}
+}
+
 type ChainSuperviser interface {
+	ShutterInterface
+
 	GetCommand() string
 	GetName() string
-	LastExitCode() int
 
-	RegisterPostRestoreHandler(func())
 	RegisterLogPlugin(plugin logplugin.LogPlugin)
 	Start(options ...StartOption) error
 	Stop() error
 
-	HasData() bool
 	IsRunning() bool
 	Stopped() <-chan struct{}
 	ServerID() (string, error)
 
+	LastExitCode() int
+	LastLogLines() []string
 	LastSeenBlockNum() uint64
-}
-
-type BootstrapableChainSuperviser interface {
-	Bootstrap(dataName string, dataStore dstore.Store) error
 }
 
 type MonitorableChainSuperviser interface {
@@ -60,20 +65,6 @@ type ProducerChainSuperviser interface {
 	PauseProduction() error
 
 	WaitUntilEndOfNextProductionRound(timeout time.Duration) error
-}
-
-type BackupableChainSuperviser interface {
-	TakeBackup(backupTag string, backupStoreURL string) error
-	RestoreBackup(backupName, backupTag string, backupStoreURL string) error
-}
-
-type SnapshotableChainSuperviser interface {
-	TakeSnapshot(snapshotStore dstore.Store, numberOfSnapshotsToKeep int) error
-	RestoreSnapshot(snapshotName string, snapshotStore dstore.Store) error
-}
-
-type VolumeSnapshotableChainSuperviser interface {
-	TakeVolumeSnapshot(volumeSnapshotTag, project, namespace, pod, prefix string, lastSeenBlockNum uint64) error
 }
 
 type ProductionState int

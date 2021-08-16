@@ -24,13 +24,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/dstore"
+	"github.com/streamingfast/shutter"
+
+	"github.com/abourget/llerrgroup"
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/dstore"
 	"go.uber.org/zap"
 )
 
 // MergeArchiver does the merging in one swift, no need for a merger here.
 type MergeArchiver struct {
+	*shutter.Shutter
 	store              dstore.Store
 	blockWriterFactory bstream.BlockWriterFactory
 
@@ -40,6 +44,7 @@ type MergeArchiver struct {
 	buffer      *bytes.Buffer
 	blockWriter bstream.BlockWriter
 	logger      *zap.Logger
+	running     bool
 }
 
 func NewMergeArchiver(
@@ -48,13 +53,27 @@ func NewMergeArchiver(
 	workDir string,
 	logger *zap.Logger,
 ) *MergeArchiver {
-	ra := &MergeArchiver{
+	a := &MergeArchiver{
+		Shutter:            shutter.New(),
 		store:              store,
 		workDir:            workDir,
 		blockWriterFactory: blockWriterFactory,
 		logger:             logger,
 	}
-	return ra
+
+	a.OnTerminating(func(err error) {
+		a.logger.Info("merger archiver is terminating", zap.Error(err))
+		e := a.uploadFiles()
+		if e != nil {
+			logger.Error("terminating: uploading file", zap.Error(e))
+		}
+	})
+
+	a.OnTerminated(func(err error) {
+		a.logger.Info("merger archiver is terminated", zap.Error(err))
+	})
+
+	return a
 }
 
 func (m *MergeArchiver) Init() error {
@@ -62,6 +81,11 @@ func (m *MergeArchiver) Init() error {
 }
 
 func (m *MergeArchiver) Start() {
+	if m.running {
+		return
+	}
+	m.running = true
+
 	lastUploadFailed := false
 	for {
 		err := m.uploadFiles()
@@ -76,6 +100,9 @@ func (m *MergeArchiver) Start() {
 		}
 
 		select {
+		case <-m.Terminating():
+			m.logger.Info("terminating upload loop")
+			return
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
@@ -93,23 +120,31 @@ func (m *MergeArchiver) uploadFiles() error {
 		return nil
 	}
 
+	eg := llerrgroup.New(5)
 	for _, file := range filesToUpload {
+		if eg.Stop() {
+			break
+		}
 
 		file := file
 		toBaseName := strings.TrimSuffix(filepath.Base(file), ".merged")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
+		eg.Go(func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
 
-		if traceEnabled {
-			m.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
-		}
+			if traceEnabled {
+				m.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
+			}
 
-		if err = m.store.PushLocalFile(ctx, file, toBaseName); err != nil {
-			return fmt.Errorf("moving file %q to storage: %w", file, err)
-		}
+			if err = m.store.PushLocalFile(ctx, file, toBaseName); err != nil {
+				return fmt.Errorf("moving file %q to storage: %w", file, err)
+			}
+			return nil
+		})
 	}
-	return nil
+
+	return eg.Wait()
 }
 
 func (m *MergeArchiver) newBuffer() error {

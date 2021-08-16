@@ -19,7 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/shutter"
+
+	"github.com/streamingfast/bstream"
 	"go.uber.org/zap"
 )
 
@@ -32,6 +34,7 @@ func init() {
 }
 
 type TestStore struct {
+	*shutter.Shutter
 	blocks        []*bstream.Block
 	receivedBlock chan *bstream.Block
 }
@@ -45,12 +48,6 @@ func NewTestStore() *TestStore {
 
 func (s *TestStore) Init() error {
 	return nil
-}
-
-func (s *TestStore) Terminate() <-chan interface{} {
-	ch := make(chan interface{})
-	close(ch)
-	return ch
 }
 
 func (s *TestStore) StoreBlock(block *bstream.Block) error {

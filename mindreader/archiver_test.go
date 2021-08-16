@@ -15,49 +15,37 @@
 package mindreader
 
 import (
-	"bufio"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/dstore"
-	"github.com/eoscanada/eos-go"
+	"github.com/streamingfast/shutter"
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/dstore"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func getTestMindReaderPluginCallbacks(t *testing.T) (onError func(error), onComplete func()) {
-	t.Helper()
-
-	onError = func(err error) {
-		t.Error("should not called", err)
-	}
-
-	onComplete = func() {
-		t.Error("should not called")
-	}
-
-	return
-}
-
 func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	s := NewTestStore()
 
 	mindReader, err := testNewMindReaderPlugin(s, 0, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
+	mindReader.OnTerminating(func(err error) {
+		t.Error("should not be called", err)
 	})
 	require.NoError(t, err)
 
-	go mindReader.ReadFlow()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"0000004ez"}`)
 
@@ -76,7 +64,7 @@ func TestMindReaderPlugin_GatePassed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.ReadFlow()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
 	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
@@ -102,7 +90,7 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.ReadFlow()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
 	s.consumeBlockFromChannel(t, 5*time.Millisecond)
@@ -129,11 +117,11 @@ func TestNewLocalStore(t *testing.T) {
 
 	mindReader, err := testNewMindReaderPlugin(archiver, 0, 0)
 	mindReader.OnTerminating(func(e error) {
-		t.Errorf("should not be called: %w", e)
+		t.Errorf("should not be called: %s", e)
 	})
 	require.NoError(t, err)
 
-	go mindReader.ReadFlow()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
 
@@ -167,7 +155,7 @@ func TestNewGSStore(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	go mindReader.ReadFlow()
+	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
 
@@ -179,17 +167,17 @@ func TestNewGSStore(t *testing.T) {
 }
 
 func testNewArchiver(path string, store dstore.Store) *OneBlockArchiver {
-	return NewOneBlockArchiver(store, testBlockWriteFactory, path, testLogger)
+	return NewOneBlockArchiver(store, testBlockWriteFactory, path, "", testLogger)
 }
 
 func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
 	return newMindReaderPlugin(archiver,
 		testConsoleReaderFactory,
 		testConsoleReaderBlockTransformer,
-		&testContinuityChecker{},
 		startBlock,
 		stopBlock,
 		10,
+		nil,
 		nil,
 		testLogger,
 	)
@@ -223,18 +211,18 @@ func (w *testBlockWriter) Write(block *bstream.Block) error {
 	return err
 }
 
-func testConsoleReaderFactory(reader io.Reader) (ConsolerReader, error) {
-	return newTestConsolerReader(reader), nil
+func testConsoleReaderFactory(lines chan string) (ConsolerReader, error) {
+	return newTestConsolerReader(lines), nil
 }
 
 type testConsolerReader struct {
-	scanner *bufio.Scanner
-	done    chan interface{}
+	lines chan string
+	done  chan interface{}
 }
 
-func newTestConsolerReader(reader io.Reader) *testConsolerReader {
+func newTestConsolerReader(lines chan string) *testConsolerReader {
 	return &testConsolerReader{
-		scanner: bufio.NewScanner(reader),
+		lines: lines,
 	}
 }
 
@@ -243,17 +231,9 @@ func (c *testConsolerReader) Done() <-chan interface{} {
 }
 
 func (c *testConsolerReader) Read() (obj interface{}, err error) {
-	success := c.scanner.Scan()
-	if !success {
-		err := c.scanner.Err()
-		if err == nil {
-			err = io.EOF
-		}
-
-		return nil, err
-	}
-
-	return c.scanner.Text()[6:], nil
+	line, _ := <-c.lines
+	obj = line[6:]
+	return
 }
 
 func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
@@ -274,27 +254,63 @@ func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) 
 
 	return &bstream.Block{
 		Id:     data.ID,
-		Number: uint64(eos.BlockNum(data.ID)),
+		Number: toBlockNum(data.ID),
 	}, nil
 }
 
 type testArchiver struct {
+	*shutter.Shutter
 	blocks []*bstream.Block
 }
 
-func (_ *testArchiver) Init() error {
+func (a *testArchiver) Init() error {
 	return nil
 }
-func (_ *testArchiver) Terminate() <-chan interface{} {
-	out := make(chan interface{})
-	close(out)
-	return out
-}
 
-func (_ *testArchiver) Start() {
+func (a *testArchiver) Start() {
 }
 
 func (a *testArchiver) StoreBlock(block *bstream.Block) error {
 	a.blocks = append(a.blocks, block)
 	return nil
+}
+
+func TestFindFilesToUpload(t *testing.T) {
+	tmp, err := ioutil.TempDir(os.TempDir(), "archivertest")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmp)
+	for _, f := range []string{"alpha", "charlie", "bravo", "foxtrot", "echo"} {
+		require.NoError(t, createEmptyFile(path.Join(tmp, fmt.Sprintf("%s.merged", f))))
+	}
+	files, err := findFilesToUpload(tmp, nil, "merged")
+	require.NoError(t, err)
+
+	expectedShort := []string{"alpha", "bravo", "charlie", "echo", "foxtrot"}
+	var expectedLong []string
+	for _, s := range expectedShort {
+		expectedLong = append(expectedLong, tmp+"/"+s+".merged")
+	}
+	assert.Equal(t, files, expectedLong)
+
+}
+
+func createEmptyFile(filename string) error {
+	emptyFile, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	emptyFile.Close()
+	return nil
+}
+
+
+func toBlockNum(blockID string) uint64 {
+	if len(blockID) < 8 {
+		return 0
+	}
+	bin, err := hex.DecodeString(blockID[:8])
+	if err != nil {
+		return 0
+	}
+	return uint64(binary.BigEndian.Uint32(bin))
 }

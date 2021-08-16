@@ -20,14 +20,17 @@ import (
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
+	"github.com/streamingfast/shutter"
 )
 
-var DebugLineLength = int64(1000)
+var DebugLineLength = int64(4096)
 
 func init() {
 	if os.Getenv("DEBUG_LINE_LENGTH") != "" {
-		DebugLineLength, _ = strconv.ParseInt(os.Getenv("DEBUG_LINE_LENGTH"), 10, 64)
+		value, err := strconv.ParseInt(os.Getenv("DEBUG_LINE_LENGTH"), 10, 64)
+		if err == nil {
+			DebugLineLength = value
+		}
 	}
 }
 
@@ -35,32 +38,35 @@ func init() {
 // if we are actively debugging deep mind, will print the line to the
 // standard output
 type ToConsoleLogPlugin struct {
+	*shutter.Shutter
 	debugDeepMind bool
-	zlogger       *zap.Logger
 }
 
-func NewToConsoleLogPlugin(debugDeepMind bool, zlogger *zap.Logger) *ToConsoleLogPlugin {
+func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
 	return &ToConsoleLogPlugin{
+		Shutter:       shutter.New(),
 		debugDeepMind: debugDeepMind,
-		zlogger:       zlogger,
 	}
 }
 
+func (p *ToConsoleLogPlugin) Launch() {}
+func (p ToConsoleLogPlugin) Stop()    {}
+func (p *ToConsoleLogPlugin) Name() string {
+	return "ToConsoleLogPlugin"
+}
 func (p *ToConsoleLogPlugin) DebugDeepMind(enabled bool) {
 	p.debugDeepMind = enabled
-}
-
-func (p *ToConsoleLogPlugin) Close(_ error) {
 }
 
 func (p *ToConsoleLogPlugin) LogLine(in string) {
 	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
 		logLineLength := int64(len(in))
 
+		// We really want to write lines to stdout and not through our logger, it's the purpose of our plugin!
 		if logLineLength > DebugLineLength {
 			fmt.Printf("%s ... bytes: %d\n", in[:DebugLineLength], (logLineLength - DebugLineLength))
 		} else {
-			p.zlogger.Debug(in)
+			fmt.Println(in)
 		}
 	}
 }

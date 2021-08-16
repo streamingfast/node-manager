@@ -22,12 +22,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dfuse-io/bstream"
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
 type ArchiverSelector struct {
+	*shutter.Shutter
 	oneblockArchiver Archiver
 	mergeArchiver    Archiver
 
@@ -44,6 +46,7 @@ type ArchiverSelector struct {
 
 	workDir string
 	logger  *zap.Logger
+	running bool
 }
 
 func NewArchiverSelector(
@@ -56,7 +59,8 @@ func NewArchiverSelector(
 	workDir string,
 	logger *zap.Logger,
 ) *ArchiverSelector {
-	s := &ArchiverSelector{
+	a := &ArchiverSelector{
+		Shutter:                shutter.New(),
 		oneblockArchiver:       oneblockArchiver,
 		mergeArchiver:          mergeArchiver,
 		blockReaderFactory:     blockReaderFactory,
@@ -68,9 +72,24 @@ func NewArchiverSelector(
 		logger:                 logger,
 	}
 	if !batchMode {
-		s.launchLastLIBUpdater()
+		a.launchLastLIBUpdater()
 	}
-	return s
+
+	a.OnTerminating(func(err error) {
+		a.logger.Info("archiver selector is terminating", zap.Error(err))
+		if !a.mergeArchiver.IsTerminating() {
+			a.mergeArchiver.Shutdown(err)
+		}
+		if !a.oneblockArchiver.IsTerminating() {
+			a.oneblockArchiver.Shutdown(err)
+		}
+	})
+
+	a.OnTerminated(func(err error) {
+		a.logger.Info("archiver selector is terminated", zap.Error(err))
+	})
+
+	return a
 }
 
 func (s *ArchiverSelector) updateLastLIB() error {
@@ -274,25 +293,19 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 	}
 
 	return s.chooseArchiver(s.currentlyMerging).StoreBlock(block)
-
 }
 
 func (s *ArchiverSelector) Start() {
-	s.logger.Info("Starting OneBlock uploads")
-	go s.oneblockArchiver.Start()
-	s.logger.Info("Starting MergedBlocks uploads")
-	go s.mergeArchiver.Start()
-}
+	if s.running {
+		return
+	}
+	s.running = true
 
-// Terminate assumes that no more 'StoreBlock' command is coming
-func (s *ArchiverSelector) Terminate() <-chan interface{} {
-	ch := make(chan interface{})
-	go func() {
-		<-s.mergeArchiver.Terminate()
-		<-s.oneblockArchiver.Terminate()
-		close(ch)
-	}()
-	return ch
+	s.logger.Info("starting one block(s) uploads")
+	go s.oneblockArchiver.Start()
+	s.logger.Info("starting merged blocks(s) uploads")
+	go s.mergeArchiver.Start()
+
 }
 
 func (s *ArchiverSelector) Init() error {

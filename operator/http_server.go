@@ -15,13 +15,11 @@
 package operator
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/dfuse-io/node-manager/superviser"
+	"github.com/streamingfast/derr"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
@@ -41,10 +39,6 @@ func (o *Operator) RunHTTPServer(httpListenAddr string, options ...HTTPOption) *
 	r.HandleFunc("/v1/backup", o.backupHandler).Methods("POST")
 	r.HandleFunc("/v1/restore", o.restoreHandler).Methods("POST")
 	r.HandleFunc("/v1/list_backups", o.listBackupsHandler).Methods("GET")
-	r.HandleFunc("/v1/volumesnapshot", o.volumeSnapshotHandler).Methods("POST")
-	r.HandleFunc("/v1/snapshot", o.snapshotHandler).Methods("POST")
-	r.HandleFunc("/v1/snapshot_restore", o.snapshotRestoreHandler).Methods("POST")
-	r.HandleFunc("/v1/profiler/perf", o.perfProfilerHandler).Methods("POST")
 	r.HandleFunc("/v1/reload", o.reloadHandler).Methods("POST")
 	r.HandleFunc("/v1/safely_reload", o.safelyReloadHandler).Methods("POST")
 	r.HandleFunc("/v1/safely_pause_production", o.safelyPauseProdHandler).Methods("POST")
@@ -91,16 +85,16 @@ func (o *Operator) pingHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (o *Operator) startcommandHandler(w http.ResponseWriter, _ *http.Request) {
-	command := "Command:\n" + o.superviser.GetCommand() + "\n"
+	command := "Command:\n" + o.Superviser.GetCommand() + "\n"
 	_, _ = w.Write([]byte(command))
 }
 
 func (o *Operator) isRunningHandler(w http.ResponseWriter, _ *http.Request) {
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"is_running":%t}`, o.superviser.IsRunning())))
+	_, _ = w.Write([]byte(fmt.Sprintf(`{"is_running":%t}`, o.Superviser.IsRunning())))
 }
 
 func (o *Operator) serverIDHandler(w http.ResponseWriter, _ *http.Request) {
-	id, err := o.superviser.ServerID()
+	id, err := o.Superviser.ServerID()
 	if err != nil {
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
 		return
@@ -110,7 +104,7 @@ func (o *Operator) serverIDHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (o *Operator) healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	if !o.superviser.IsRunning() {
+	if !o.Superviser.IsRunning() {
 		http.Error(w, "not ready: chain is not running", http.StatusServiceUnavailable)
 		return
 	}
@@ -120,7 +114,7 @@ func (o *Operator) healthzHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	if o.aboutToStop.Load() {
+	if o.aboutToStop.Load() || derr.IsShuttingDown() {
 		http.Error(w, "not ready: chain about to stop", http.StatusServiceUnavailable)
 		return
 	}
@@ -145,84 +139,28 @@ func (o *Operator) safelyPauseProdHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (o *Operator) restoreHandler(w http.ResponseWriter, r *http.Request) {
-	params := make(map[string]string)
-	for _, p := range []string{"backupName", "backupTag", "forceVerify"} {
-		val := r.FormValue(p)
-		if val != "" {
-			params[p] = val
-		}
-	}
+	params := getRequestParams(r, "backupName", "backupTag", "forceVerify")
 	o.triggerWebCommand("restore", params, w, r)
 }
 
 func (o *Operator) listBackupsHandler(w http.ResponseWriter, r *http.Request) {
-	prefix := r.FormValue("prefix")
-	backupTag := r.FormValue("backupTag")
-	if backupTag == "" {
-		backupTag = o.options.BackupTag
-	}
-
-	limit, err := strconv.ParseInt(r.FormValue("limit"), 10, 64)
-	if err != nil || limit == 0 {
-		limit = 20
-	}
-	offset, err := strconv.ParseInt(r.FormValue("offset"), 10, 64)
-
-	backups, err := superviser.ListPitreosBackup(o.zlogger, backupTag, o.options.BackupStoreURL, prefix, int(limit), int(offset))
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(fmt.Sprintf("ERROR: listBackups failed: %s\n", err)))
-		return
-	}
-
-	answer := ""
-	for _, b := range backups {
-		if b.Meta != nil {
-			cnt, _ := json.Marshal(b.Meta) // no worries
-			answer += fmt.Sprintf("- %s\t%s\n", b.Name, string(cnt))
-		} else {
-			answer += fmt.Sprintf("- %s\n", b.Name)
-		}
-	}
-	_, _ = w.Write([]byte(answer))
+	params := getRequestParams(r, "offset", "limit")
+	o.triggerWebCommand("list", params, w, r)
 }
 
-func (o *Operator) backupHandler(w http.ResponseWriter, r *http.Request) {
-	o.triggerWebCommand("backup", nil, w, r)
-}
-
-func (o *Operator) volumeSnapshotHandler(w http.ResponseWriter, r *http.Request) {
-	o.triggerWebCommand("volumesnapshot", nil, w, r)
-}
-
-func (o *Operator) snapshotHandler(w http.ResponseWriter, r *http.Request) {
-	o.triggerWebCommand("snapshot", nil, w, r)
-}
-
-func (o *Operator) snapshotRestoreHandler(w http.ResponseWriter, r *http.Request) {
+func getRequestParams(r *http.Request, terms ...string) map[string]string {
 	params := make(map[string]string)
-	for _, p := range []string{"snapshotName"} {
+	for _, p := range terms {
 		val := r.FormValue(p)
 		if val != "" {
 			params[p] = val
 		}
 	}
-
-	o.triggerWebCommand("snapshot_restore", params, w, r)
+	return params
 }
 
-func (o *Operator) perfProfilerHandler(w http.ResponseWriter, _ *http.Request) {
-	if o.options.Profiler == nil {
-		w.WriteHeader(http.StatusNotImplemented)
-	}
-
-	result, err := o.options.Profiler.Run()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(err.Error()))
-	}
-
-	_, _ = w.Write([]byte(result))
+func (o *Operator) backupHandler(w http.ResponseWriter, r *http.Request) {
+	o.triggerWebCommand("backup", nil, w, r)
 }
 
 func (o *Operator) maintenanceHandler(w http.ResponseWriter, r *http.Request) {
@@ -253,12 +191,14 @@ func (o *Operator) triggerWebCommand(cmdName string, params map[string]string, w
 }
 
 func (o *Operator) sendCommandAsync(c *Command, w http.ResponseWriter) {
+	o.zlogger.Info("sending async command to operator through channel", zap.Object("command", c))
 	o.commandChan <- c
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(fmt.Sprintf("%s command submitted\n", c.cmd)))
 }
 
 func (o *Operator) sendCommandSync(c *Command, w http.ResponseWriter) {
+	o.zlogger.Info("sending sync command to operator through channel", zap.Object("command", c))
 	c.returnch = make(chan error)
 	o.commandChan <- c
 	err := <-c.returnch
