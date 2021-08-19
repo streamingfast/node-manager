@@ -80,7 +80,6 @@ func NewMindReaderPlugin(
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	tracker *bstream.Tracker,
-
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
@@ -118,8 +117,7 @@ func NewMindReaderPlugin(
 	if err != nil {
 		return nil, fmt.Errorf("setting up archive store: %w", err)
 	}
-	var oneBlockArchiver Archiver
-	oneBlockArchiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
+	var oneBlockArchiver Archiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
 
 	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
 	if err != nil {
@@ -129,11 +127,17 @@ func NewMindReaderPlugin(
 		mergeArchiveStore.SetOverwrite(true)
 	}
 
-	var mergeArchiver Archiver
-	mergeArchiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
+	var mergeArchiver Archiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
-	archiverSelector := NewArchiverSelector(oneBlockArchiver, mergeArchiver, bstream.GetBlockReaderFactory, batchMode, tracker, mergeThresholdBlockAge, workingDirectory, zlogger)
-
+	archiverSelector := NewArchiverSelector(
+		oneBlockArchiver,
+		mergeArchiver,
+		bstream.GetBlockReaderFactory,
+		batchMode, tracker,
+		mergeThresholdBlockAge,
+		workingDirectory,
+		zlogger,
+	)
 	if err := archiverSelector.Init(); err != nil {
 		return nil, fmt.Errorf("failed to init archiver: %w", err)
 	}
