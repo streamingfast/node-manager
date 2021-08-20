@@ -229,10 +229,15 @@ func (p *MindReaderPlugin) Launch() {
 
 func (p MindReaderPlugin) Stop() {
 	p.zlogger.Info("mindreader is stopping")
-	if p.lines != nil {
-		close(p.lines)
+	if p.lines == nil {
+		// If the `lines` channel was not created yet, it means everything was shut down very rapidly
+		// and means MindreaderPlugin has not launched yet. Since it has not launched yet, there is
+		// no point in waiting for the read flow to complete since the read flow never started. So
+		// we exit right now.
+		return
 	}
 
+	close(p.lines)
 	p.waitForReadFlowToComplete()
 }
 
