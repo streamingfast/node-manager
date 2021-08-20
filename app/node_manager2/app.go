@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/streamingfast/dgrpc"
 	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
@@ -28,15 +29,14 @@ import (
 	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/streamingfast/node-manager/operator"
 	"github.com/streamingfast/shutter"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 type Config struct {
-	StartupDelay      time.Duration
+	StartupDelay time.Duration
 
-	HTTPAddr string // was ManagerAPIAddress
+	HTTPAddr           string // was ManagerAPIAddress
 	ConnectionWatchdog bool
 
 	GRPCAddr string
@@ -69,14 +69,13 @@ func New(config *Config, modules *Modules, zlogger *zap.Logger) *App {
 
 func (a *App) Run() error {
 	hasMindreader := a.modules.MindreaderPlugin != nil
-	a.zlogger.Info("running nodeos manager app", zap.Reflect("config", a.config), zap.Bool("mindreader", hasMindreader))
+	a.zlogger.Info("running node manager app", zap.Reflect("config", a.config), zap.Bool("mindreader", hasMindreader))
 
 	hostname, _ := os.Hostname()
 	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
 	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
-
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
