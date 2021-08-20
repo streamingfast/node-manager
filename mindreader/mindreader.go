@@ -229,7 +229,10 @@ func (p *MindReaderPlugin) Launch() {
 
 func (p MindReaderPlugin) Stop() {
 	p.zlogger.Info("mindreader is stopping")
-	close(p.lines)
+	if p.lines != nil {
+		close(p.lines)
+	}
+
 	p.waitForReadFlowToComplete()
 }
 
