@@ -24,5 +24,5 @@ func blockFileName(block *bstream.Block, suffix string) string {
 	if suffix != "" {
 		suffixString = fmt.Sprintf("-%s", suffix)
 	}
-	return fmt.Sprintf("%010d-%s-%s-%s%s", block.Num(), blockTimeString, blockID, previousID, suffixString)
+	return fmt.Sprintf("%010d-%s-%s-%s-%d%s", block.Num(), blockTimeString, blockID, previousID, block.LibNum, suffixString)
 }
