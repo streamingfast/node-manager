@@ -152,7 +152,9 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 	}
 
 	s.Logger.Info("creating new command instance and launch read loop", zap.String("binary", s.Binary), zap.Strings("arguments", s.Arguments))
-	s.cmd = overseer.NewCmd(s.Binary, s.Arguments)
+	s.cmd = overseer.NewCmd(s.Binary, s.Arguments, overseer.Options{
+		Streaming: true,
+	})
 
 	go s.start(s.cmd)
 
