@@ -32,7 +32,7 @@ func TestNamer_blockFileName(t *testing.T) {
 				PayloadBuffer:  nil,
 			},
 			suffix:           "",
-			expectedFileName: "0000000001-20211231T123055.0-0000101a-0000100a-99",
+			expectedFileName: "0000000001-20211231T123055.0-0000101a-0000100a-99-default",
 		},
 		{
 			name: "With suffix",

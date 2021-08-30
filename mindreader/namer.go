@@ -20,9 +20,9 @@ func blockFileName(block *bstream.Block, suffix string) string {
 		previousID = previousID[len(previousID)-8:]
 	}
 
-	suffixString := ""
-	if suffix != "" {
-		suffixString = fmt.Sprintf("-%s", suffix)
+	if suffix == "" {
+		suffix = "default"
 	}
-	return fmt.Sprintf("%010d-%s-%s-%s-%d%s", block.Num(), blockTimeString, blockID, previousID, block.LibNum, suffixString)
+
+	return fmt.Sprintf("%010d-%s-%s-%s-%d-%s", block.Num(), blockTimeString, blockID, previousID, block.LibNum, suffix)
 }
