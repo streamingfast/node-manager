@@ -18,10 +18,11 @@ import (
 	"io"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dbin"
 	"github.com/streamingfast/dstore"
-	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
 
@@ -45,49 +46,52 @@ func TestMergeArchiver(t *testing.T) {
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 	}
 
-	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
-	assert.Nil(t, a.buffer)
-
-	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 100, PayloadBuffer: []byte{0x01}}))
-	assert.NotNil(t, a.buffer)
-	assert.Equal(t, uint64(101), a.expectBlock)
+	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
+	require.Equal(t, uint64(200), a.nextExclusiveHighestBlockLimit)
+	require.Equal(t, uint64(100), a.skipBlockUpTo)
+	require.Equal(t, uint64(0), a.currentBlock)
+	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 100, PayloadBuffer: []byte{0x01}}))
+	require.Equal(t, uint64(100), a.currentBlock)
 	prevSize := a.buffer.Len()
 
-	assert.Error(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
+	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
+	require.Equal(t, uint64(100), a.skipBlockUpTo)
+	require.Equal(t, uint64(100), a.currentBlock)
 
-	for i := 101; i < 199; i++ {
-		assert.NoError(t, a.StoreBlock(&bstream.Block{Number: uint64(i), PayloadBuffer: []byte{0x01}}))
-		assert.True(t, a.buffer.Len() > prevSize)
-		assert.Equal(t, uint64(i+1), a.expectBlock)
+	for i := 101; i < 200; i++ {
+		require.NoError(t, a.StoreBlock(&bstream.Block{Number: uint64(i), PayloadBuffer: []byte{0x01}}))
+		require.True(t, a.buffer.Len() > prevSize)
+		require.Equal(t, uint64(i), a.currentBlock)
 		prevSize = a.buffer.Len()
 	}
 
-	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 199, PayloadBuffer: []byte{0x01}}))
-	assert.True(t, a.buffer.Len() == 0)
+	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 200, PayloadBuffer: []byte{0x01}}))
+	require.Equal(t, uint64(200), a.currentBlock)
+	require.Equal(t, uint64(300), a.nextExclusiveHighestBlockLimit)
 
-	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 300, PayloadBuffer: []byte{0x01}}), "should accept any block ...00 after block ...99")
-	assert.True(t, a.buffer.Len() < prevSize)
-	assert.True(t, a.buffer.Len() > 0)
-	assert.Equal(t, uint64(301), a.expectBlock)
+	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 300, PayloadBuffer: []byte{0x01}}), "should accept any block ...00 after block ...99")
+	require.Equal(t, uint64(300), a.currentBlock)
+	require.Equal(t, uint64(400), a.nextExclusiveHighestBlockLimit)
 
 }
 
-func TestMergeArchiverSpecialCase(t *testing.T) {
+func TestMergeArchiver_GetProtocolFirstStreamableBlock(t *testing.T) {
 	mStore := dstore.NewMockStore(nil)
 	a := &MergeArchiver{
 		store:              mStore,
 		blockWriterFactory: bstream.GetBlockWriterFactory,
 	}
 
-	assert.NoError(t, a.StoreBlock(&bstream.Block{Number: 1, PayloadBuffer: []byte{0x01}}))
-	assert.NotNil(t, a.buffer)
-	assert.Equal(t, uint64(2), a.expectBlock)
+	bstream.GetProtocolFirstStreamableBlock = 1
+	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 1, PayloadBuffer: []byte{0x01}}))
+	require.NotNil(t, a.buffer)
+	require.Equal(t, uint64(1), a.currentBlock)
 	prevSize := a.buffer.Len()
 
 	for i := 2; i < 99; i++ {
-		assert.NoError(t, a.StoreBlock(&bstream.Block{Number: uint64(i), PayloadBuffer: []byte{0x01}}))
-		assert.True(t, a.buffer.Len() > prevSize)
-		assert.Equal(t, uint64(i+1), a.expectBlock)
+		require.NoError(t, a.StoreBlock(&bstream.Block{Number: uint64(i), PayloadBuffer: []byte{0x01}}))
+		require.True(t, a.buffer.Len() > prevSize)
+		require.Equal(t, uint64(i), a.currentBlock)
 		prevSize = a.buffer.Len()
 	}
 }
