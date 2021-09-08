@@ -2,13 +2,12 @@ package mindreader
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/streamingfast/bstream"
 )
 
 func blockFileName(block *bstream.Block, suffix string) string {
-	blockTime := block.Time()
-	blockTimeString := fmt.Sprintf("%s.%01d", blockTime.Format("20060102T150405"), blockTime.Nanosecond()/100000000)
 
 	blockID := block.ID()
 	if len(blockID) > 8 {
@@ -24,5 +23,11 @@ func blockFileName(block *bstream.Block, suffix string) string {
 		suffix = "default"
 	}
 
-	return fmt.Sprintf("%010d-%s-%s-%s-%d-%s", block.Num(), blockTimeString, blockID, previousID, block.LibNum, suffix)
+	return blockFileNameFromArgs(block.Num(), block.Time(), blockID, previousID, block.LibNum, suffix)
+
+}
+
+func blockFileNameFromArgs(num uint64, t time.Time, id string, prevID string, libNum uint64, suffix string) string {
+	timeString := fmt.Sprintf("%s.%01d", t.Format("20060102T150405"), t.Nanosecond()/100000000)
+	return fmt.Sprintf("%010d-%s-%s-%s-%d-%s", num, timeString, id, prevID, libNum, suffix)
 }

@@ -44,9 +44,6 @@ type MergeArchiver struct {
 	blockWriter  bstream.BlockWriter
 	logger       *zap.Logger
 	running      bool
-
-	nextExclusiveHighestBlockLimit uint64
-	skipBlockUpTo                  uint64
 }
 
 func NewMergeArchiver(
@@ -62,6 +59,7 @@ func NewMergeArchiver(
 		blockWriterFactory: blockWriterFactory,
 		logger:             logger,
 	}
+	a.newBuffer()
 
 	a.OnTerminating(func(err error) {
 		a.logger.Info("merger archiver is terminating", zap.Error(err))
@@ -76,10 +74,6 @@ func NewMergeArchiver(
 	})
 
 	return a
-}
-
-func (a *MergeArchiver) Init() error {
-	return nil
 }
 
 func (a *MergeArchiver) Start() {
@@ -149,37 +143,17 @@ func (a *MergeArchiver) uploadFiles() error {
 	return eg.Wait()
 }
 
-func (a *MergeArchiver) newBuffer() error {
+func (a *MergeArchiver) newBuffer() {
 	a.buffer = &bytes.Buffer{}
 	blockWriter, err := a.blockWriterFactory.New(a.buffer)
 	if err != nil {
-		return fmt.Errorf("blockWriteFactory: %w", err)
+		panic(err) // this should never fail
 	}
 	a.blockWriter = blockWriter
-	return nil
 }
 
-// Terminate assumes that no more 'StoreBlock' command is coming
-func (a *MergeArchiver) Terminate() <-chan interface{} {
-	ch := make(chan interface{})
-	if a.buffer != nil {
-		err := a.writePartialFile()
-		if err != nil {
-			a.logger.Error("writing partial file", zap.Error(err))
-		}
-	}
-	go func() {
-		err := a.uploadFiles()
-		if err != nil {
-			a.logger.Error("uploading remaining files", zap.Error(err))
-		}
-		close(ch)
-	}()
-	return ch
-}
-
-func (a *MergeArchiver) writePartialFile() error {
-	filename := filepath.Join(a.workDir, fmt.Sprintf("archiver_%010d.partial", a.currentBlock))
+func (a *MergeArchiver) writePartialFile(lastBlock uint64) error {
+	filename := filepath.Join(a.workDir, fmt.Sprintf("archiver_%010d.partial", lastBlock))
 
 	f, err := os.Create(filename)
 	if err != nil {
@@ -192,64 +166,35 @@ func (a *MergeArchiver) writePartialFile() error {
 }
 
 func (a *MergeArchiver) StoreBlock(block *bstream.Block) error {
-	if a.buffer == nil {
-		if err := a.newBuffer(); err != nil {
-			return err
-		}
-	}
-
-	if block.Num() < a.currentBlock {
-		return fmt.Errorf("merge archiver does not support replaying forks (resending block %d which is less than current block %d", block.Num(), a.currentBlock)
-	}
-
-	if a.nextExclusiveHighestBlockLimit == 0 {
-		highestBlockLimit := ((block.Num() / 100) * 100) + 200 //skipping first bundle because it will be incomplete
-		a.skipBlockUpTo = highestBlockLimit - 100
-		if block.Num() == bstream.GetProtocolFirstStreamableBlock {
-			highestBlockLimit -= 100 //because this the first streamable block it is ok to produce and incomplete bundle.
-			a.skipBlockUpTo = bstream.GetProtocolFirstStreamableBlock
-		}
-		a.nextExclusiveHighestBlockLimit = highestBlockLimit
-	}
-
-	if block.Num() < a.skipBlockUpTo { //skipping block of the first incomplete bundle
-		return nil
-	}
-	a.currentBlock = block.Num()
-
-	if block.Num() >= a.nextExclusiveHighestBlockLimit {
-		baseNum := a.nextExclusiveHighestBlockLimit - 100
-		baseName := fmt.Sprintf("%010d", baseNum)
-		if baseNum%1000 == 0 {
-			a.logger.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
-		}
-
-		tempFile := filepath.Join(a.workDir, baseName+".merged.temp")
-		finalFile := filepath.Join(a.workDir, baseName+".merged")
-
-		file, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("open file: %w", err)
-		}
-
-		if _, err := a.buffer.WriteTo(file); err != nil {
-			return fmt.Errorf("writing to file %q: %w", tempFile, err)
-		}
-
-		if err := os.Rename(tempFile, finalFile); err != nil {
-			return fmt.Errorf("rename %q to %q: %w", tempFile, finalFile, err)
-		}
-
-		//resetting
-		a.nextExclusiveHighestBlockLimit += 100
-		if err := a.newBuffer(); err != nil {
-			return err
-		}
-	}
-
 	if err := a.blockWriter.Write(block); err != nil {
 		return fmt.Errorf("blockWriter.Write: %w", err)
 	}
 
+	return nil
+}
+
+func (a *MergeArchiver) Merge(baseNum uint64) error {
+	baseName := fmt.Sprintf("%010d", baseNum)
+	if baseNum%1000 == 0 {
+		a.logger.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
+	}
+
+	tempFile := filepath.Join(a.workDir, baseName+".merged.temp")
+	finalFile := filepath.Join(a.workDir, baseName+".merged")
+
+	file, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+
+	if _, err := a.buffer.WriteTo(file); err != nil {
+		return fmt.Errorf("writing to file %q: %w", tempFile, err)
+	}
+
+	if err := os.Rename(tempFile, finalFile); err != nil {
+		return fmt.Errorf("rename %q to %q: %w", tempFile, finalFile, err)
+	}
+
+	a.newBuffer()
 	return nil
 }

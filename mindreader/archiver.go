@@ -34,15 +34,6 @@ import (
 
 type BlockMarshaller func(block *bstream.Block) ([]byte, error)
 
-type Archiver interface {
-	Init() error
-	StoreBlock(block *bstream.Block) error
-	Start()
-	Shutdown(err error)
-	Terminated() <-chan struct{}
-	IsTerminating() bool
-}
-
 type OneBlockArchiver struct {
 	*shutter.Shutter
 	oneBlockStore      dstore.Store

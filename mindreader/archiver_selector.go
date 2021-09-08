@@ -28,10 +28,18 @@ import (
 	"go.uber.org/zap"
 )
 
+type Archiver interface {
+	Shutdown(error)              // shutter
+	Start()                      // shutter
+	Terminated() <-chan struct{} //shutter
+
+	StoreBlock(*bstream.Block) error
+}
+
 type ArchiverSelector struct {
 	*shutter.Shutter
-	oneblockArchiver Archiver
-	mergeArchiver    Archiver
+	oneblockArchiver *OneBlockArchiver
+	mergeArchiver    *MergeArchiver
 
 	blockReaderFactory bstream.BlockReaderFactory
 
@@ -51,8 +59,8 @@ type ArchiverSelector struct {
 }
 
 func NewArchiverSelector(
-	oneblockArchiver Archiver,
-	mergeArchiver Archiver,
+	oneblockArchiver *OneBlockArchiver,
+	mergeArchiver *MergeArchiver,
 	blockReaderFactory bstream.BlockReaderFactory,
 	batchMode bool,
 	tracker *bstream.Tracker,
@@ -149,9 +157,8 @@ func (s *ArchiverSelector) launchLastLIBUpdater() {
 	}()
 }
 
-func (s *ArchiverSelector) shouldSendToMergeArchiver(block *bstream.Block) bool {
+func (s *ArchiverSelector) mergeable(block *bstream.Block) bool {
 	if s.batchMode {
-		s.logger.Info("merging next blocks directly because we are in batch mode")
 		return true
 	}
 
@@ -160,16 +167,13 @@ func (s *ArchiverSelector) shouldSendToMergeArchiver(block *bstream.Block) bool 
 
 	blockAge := time.Since(block.Time())
 	if blockAge > s.mergeThresholdBlockAge {
-		s.logger.Info("merging next blocks directly because they are older than threshold", zap.Uint64("block_num", blockNum), zap.Duration("block_age", blockAge))
 		return true
 	}
 
 	if blockNum+100 <= lastSeenLIB {
-		s.logger.Info("merging next blocks directly because they are older than LIB", zap.Uint64("block_num", blockNum), zap.Uint64("lib", lastSeenLIB))
 		return true
 	}
 
-	s.logger.Info("producing one-block files...", zap.Uint64("block_num", blockNum))
 	return false
 }
 
@@ -234,84 +238,100 @@ func (s *ArchiverSelector) loadLastPartial(next uint64) []*bstream.Block {
 	return nil
 }
 
-func (s *ArchiverSelector) chooseArchiver(merging bool) Archiver {
-	if merging {
-		return s.mergeArchiver
+func (s *ArchiverSelector) atBoundary(block *bstream.Block) bool {
+	blockNum := block.Num()
+	if blockNum == bstream.GetProtocolFirstStreamableBlock {
+		return true
 	}
-	return s.oneblockArchiver
+
+	if blockNum%100 == 0 {
+		return true
+	}
+
+	if s.firstBoundaryPassed {
+		return false
+	}
+
+	if s.targetBoundary == 0 {
+		s.targetBoundary = ((blockNum / 100) * 100) + 100
+		return false
+	}
+
+	if blockNum >= s.targetBoundary {
+		s.targetBoundary = 0
+		return true
+	}
+
+	return false
 }
 
 func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
-	if s.firstBoundaryPassed && !s.currentlyMerging {
-		return s.oneblockArchiver.StoreBlock(block) // once we passed a boundary creating oneblocks, we never go back to merging, too risky
+
+	if !s.currentlyMerging && s.firstBoundaryPassed {
+		return s.oneblockArchiver.StoreBlock(block) // once we passed a boundary with oneblocks, we always send oneblocks
 	}
 
-	blockNum := block.Num()
+	isBoundaryBlock := s.atBoundary(block)
+	if isBoundaryBlock && !s.firstBoundaryPassed {
+		defer func() { s.firstBoundaryPassed = true }()
+	}
 
-	atBoundary := func() bool {
-		if blockNum%100 == 0 {
-			return true
-		}
-
-		if s.targetBoundary == 0 {
-			s.targetBoundary = ((blockNum / 100) * 100) + 100
-			return false
-		}
-
-		if blockNum >= s.targetBoundary {
-			return true
-		}
-
-		return false
-	}()
-
-	isBoundaryBlock := (atBoundary || blockNum == bstream.GetProtocolFirstStreamableBlock)
-
-	if !s.firstBlockPassed {
+	isFirstBlock := !s.firstBlockPassed
+	if isFirstBlock {
 		s.firstBlockPassed = true
-		s.currentlyMerging = s.shouldSendToMergeArchiver(block)
-
-		if isBoundaryBlock {
-			s.firstBoundaryPassed = true
-			return s.chooseArchiver(s.currentlyMerging).StoreBlock(block)
+		if s.mergeable(block) {
+			if isBoundaryBlock {
+				s.logger.Info("merging blocks on first boundary", zap.Stringer("block", block))
+				s.currentlyMerging = true
+				return s.mergeArchiver.StoreBlock(block)
+			}
+			if previousBlocks := s.loadLastPartial(block.Number); previousBlocks != nil {
+				s.logger.Info("merging on first block using loaded previous partial blocks", zap.Stringer("block", block))
+				s.currentlyMerging = true
+				for _, blk := range previousBlocks {
+					if err := s.mergeArchiver.StoreBlock(blk); err != nil {
+						return err
+					}
+				}
+				return s.mergeArchiver.StoreBlock(block)
+			}
+			s.logger.Info("cannot ensure complete merged block bundle, not merging until next boundary", zap.Stringer("block", block))
 		}
+	}
 
-		previousBlocks := s.loadLastPartial(blockNum)
-		if previousBlocks == nil {
-			s.currentlyMerging = false // we cannot merge blocks without the partial load
-		}
-
-		for _, blk := range previousBlocks {
-			if err := s.chooseArchiver(s.currentlyMerging).StoreBlock(blk); err != nil {
+	if isBoundaryBlock {
+		if s.currentlyMerging {
+			if err := s.mergeArchiver.Merge(block.Number/100*100 - 100); err != nil { // merge previous bundle
 				return err
 			}
+
+			if s.mergeable(block) {
+				return nil
+			}
+
+			s.logger.Info("switching to one-blocks", zap.Stringer("block", block))
+			s.currentlyMerging = false
+			return s.oneblockArchiver.StoreBlock(block)
 		}
-		return s.chooseArchiver(s.currentlyMerging).StoreBlock(block)
+
+		if s.mergeable(block) {
+			s.logger.Info("switching to merged-blocks (sending this block to both archivers)", zap.Stringer("block", block))
+			s.currentlyMerging = true
+			if err := s.oneblockArchiver.StoreBlock(block); err != nil {
+				return err
+			}
+			if err := s.mergeArchiver.StoreBlock(block); err != nil {
+				return err
+			}
+			return nil
+		}
+
 	}
 
-	if !isBoundaryBlock {
-		return s.chooseArchiver(s.currentlyMerging).StoreBlock(block) // don't change your operation mode between boundaries
-	}
-
-	s.firstBoundaryPassed = true
-	// WE ARE AT A BOUNDARY! YAY
-
-	previouslyMerging := s.currentlyMerging
-	s.currentlyMerging = s.shouldSendToMergeArchiver(block)
-
-	// when we are producing one-block files at startup, we may get to the first boundary and then decide to merge
-	//  ex:  blocks 195, 196, 197, 198, 199 [200 merge ...]
-	// the `merger` requires the upper bound block (200) to be able to merge
-	// to accomodate the behavior of the merger, we will send that block '200' to both archivers
-	sendToBoth := !previouslyMerging && s.currentlyMerging
-	if sendToBoth {
-		if err := s.oneblockArchiver.StoreBlock(block); err != nil {
-			return err
-		}
+	if s.currentlyMerging {
 		return s.mergeArchiver.StoreBlock(block)
 	}
-
-	return s.chooseArchiver(s.currentlyMerging).StoreBlock(block)
+	return s.oneblockArchiver.StoreBlock(block)
 }
 
 func (s *ArchiverSelector) Start() {
@@ -328,8 +348,50 @@ func (s *ArchiverSelector) Start() {
 }
 
 func (s *ArchiverSelector) Init() error {
-	if err := s.oneblockArchiver.Init(); err != nil {
-		return err
-	}
-	return s.mergeArchiver.Init()
+	return s.oneblockArchiver.Init()
 }
+
+/*
+	if a.buffer != nil {
+		err := a.writePartialFile(lastBlock)
+		if err != nil {
+			a.logger.Error("writing partial file", zap.Error(err))
+		}
+	}
+
+*/
+
+/*
+	if block.Num() < a.currentBlock {
+		return fmt.Errorf("merge archiver does not support replaying forks (resending block %d which is less than current block %d", block.Num(), a.currentBlock)
+	}
+
+	if a.nextExclusiveHighestBlockLimit == 0 {
+		highestBlockLimit := ((block.Num() / 100) * 100) + 200 //skipping first bundle because it will be incomplete
+		a.skipBlockUpTo = highestBlockLimit - 100
+		if block.Num() == bstream.GetProtocolFirstStreamableBlock {
+			highestBlockLimit -= 100 //because this the first streamable block it is ok to produce and incomplete bundle.
+			a.skipBlockUpTo = bstream.GetProtocolFirstStreamableBlock
+		}
+		a.nextExclusiveHighestBlockLimit = highestBlockLimit
+	}
+
+	if block.Num() < a.skipBlockUpTo { //skipping block of the first incomplete bundle
+		return nil
+	}
+	a.currentBlock = block.Num()
+
+	if block.Num() >= a.nextExclusiveHighestBlockLimit {
+
+		baseNum := a.nextExclusiveHighestBlockLimit - 100
+//MERGE(baseNum)
+
+		//resetting
+		a.nextExclusiveHighestBlockLimit += 100
+	}
+
+
+*/
+
+//nextExclusiveHighestBlockLimit uint64
+//skipBlockUpTo                  uint64

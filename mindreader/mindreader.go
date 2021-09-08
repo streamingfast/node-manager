@@ -117,7 +117,7 @@ func NewMindReaderPlugin(
 	if err != nil {
 		return nil, fmt.Errorf("setting up archive store: %w", err)
 	}
-	var oneBlockArchiver Archiver = NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
+	oneBlockArchiver := NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
 
 	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
 	if err != nil {
@@ -127,7 +127,7 @@ func NewMindReaderPlugin(
 		mergeArchiveStore.SetOverwrite(true)
 	}
 
-	var mergeArchiver Archiver = NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
+	mergeArchiver := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
 
 	archiverSelector := NewArchiverSelector(
 		oneBlockArchiver,
