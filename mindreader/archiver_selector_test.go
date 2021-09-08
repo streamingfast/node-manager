@@ -92,6 +92,20 @@ func TestArchiverSelector(t *testing.T) {
 			expectMergedBlocks: nil,
 			expectOneBlocks:    genBlocks(98, 99, 100, 101, 102),
 		},
+		{
+			name:               "holes in the stream",
+			input:              genBlocks(98, 99, 101, 102),
+			mergeTimeThreshold: time.Minute,
+			expectMergedBlocks: genBlocks(101, 102),
+			expectOneBlocks:    genBlocks(98, 99, 101),
+		},
+		{
+			name:               "from merged to live young blocks",
+			input:              genBlocks(98, 99, 101, 102, 199, 200, 201),
+			mergeTimeThreshold: (3600 - 199) * time.Second,
+			expectMergedBlocks: genBlocks(101, 102, 199, 200),
+			expectOneBlocks:    genBlocks(98, 99, 101, 200, 201),
+		},
 	}
 
 	for _, test := range tests {
@@ -112,7 +126,8 @@ func TestArchiverSelector(t *testing.T) {
 			s.Init()
 
 			for _, blk := range test.input {
-				require.NoError(t, s.StoreBlock(blk))
+				err := s.StoreBlock(blk)
+				require.NoError(t, err)
 			}
 
 			assert.Equal(t, test.expectOneBlocks, oa.blocks)

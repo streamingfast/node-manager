@@ -38,6 +38,7 @@ type ArchiverSelector struct {
 	firstBlockPassed    bool
 	firstBoundaryPassed bool
 	currentlyMerging    bool
+	targetBoundary      uint64
 
 	batchMode              bool // forces merging blocks without tracker or LIB checking
 	tracker                *bstream.Tracker
@@ -246,7 +247,25 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 	}
 
 	blockNum := block.Num()
-	isBoundaryBlock := (blockNum%100 == 0 || blockNum == bstream.GetProtocolFirstStreamableBlock)
+
+	atBoundary := func() bool {
+		if blockNum%100 == 0 {
+			return true
+		}
+
+		if s.targetBoundary == 0 {
+			s.targetBoundary = ((blockNum / 100) * 100) + 100
+			return false
+		}
+
+		if blockNum >= s.targetBoundary {
+			return true
+		}
+
+		return false
+	}()
+
+	isBoundaryBlock := (atBoundary || blockNum == bstream.GetProtocolFirstStreamableBlock)
 
 	if !s.firstBlockPassed {
 		s.firstBlockPassed = true

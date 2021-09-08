@@ -28,10 +28,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/streamingfast/shutter"
+	"github.com/klauspost/compress/zstd"
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
-	"github.com/klauspost/compress/zstd"
+	"github.com/streamingfast/shutter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -302,7 +302,6 @@ func createEmptyFile(filename string) error {
 	emptyFile.Close()
 	return nil
 }
-
 
 func toBlockNum(blockID string) uint64 {
 	if len(blockID) < 8 {

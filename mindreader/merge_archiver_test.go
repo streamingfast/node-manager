@@ -54,7 +54,7 @@ func TestMergeArchiver(t *testing.T) {
 	require.Equal(t, uint64(100), a.currentBlock)
 	prevSize := a.buffer.Len()
 
-	require.NoError(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
+	require.Error(t, a.StoreBlock(&bstream.Block{Number: 99, PayloadBuffer: []byte{0x01}}))
 	require.Equal(t, uint64(100), a.skipBlockUpTo)
 	require.Equal(t, uint64(100), a.currentBlock)
 

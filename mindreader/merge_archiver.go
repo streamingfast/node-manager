@@ -198,6 +198,10 @@ func (a *MergeArchiver) StoreBlock(block *bstream.Block) error {
 		}
 	}
 
+	if block.Num() < a.currentBlock {
+		return fmt.Errorf("merge archiver does not support replaying forks (resending block %d which is less than current block %d", block.Num(), a.currentBlock)
+	}
+
 	if a.nextExclusiveHighestBlockLimit == 0 {
 		highestBlockLimit := ((block.Num() / 100) * 100) + 200 //skipping first bundle because it will be incomplete
 		a.skipBlockUpTo = highestBlockLimit - 100
