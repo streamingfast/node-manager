@@ -15,15 +15,11 @@
 package mindreader
 
 import (
-	"os"
-
 	"go.uber.org/zap"
 )
 
 var testLogger = zap.NewNop()
 
 func init() {
-	if os.Getenv("DEBUG") != "" || os.Getenv("TRACE") == "true" {
-		testLogger, _ = zap.NewDevelopment()
-	}
+	testLogger, _ = zap.NewDevelopment()
 }

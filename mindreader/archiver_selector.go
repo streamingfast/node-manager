@@ -46,7 +46,7 @@ type ArchiverSelector struct {
 	firstBlockPassed    bool
 	firstBoundaryPassed bool
 	currentlyMerging    bool
-	targetBoundary      uint64
+	nextBoundary        uint64
 
 	batchMode              bool // forces merging blocks without tracker or LIB checking
 	tracker                *bstream.Tracker
@@ -240,25 +240,20 @@ func (s *ArchiverSelector) loadLastPartial(next uint64) []*bstream.Block {
 
 func (s *ArchiverSelector) atBoundary(block *bstream.Block) bool {
 	blockNum := block.Num()
-	if blockNum == bstream.GetProtocolFirstStreamableBlock {
-		return true
-	}
 
-	if blockNum%100 == 0 {
-		return true
-	}
-
-	if s.firstBoundaryPassed {
+	if s.nextBoundary == 0 { //first block
+		s.nextBoundary = ((blockNum / 100) * 100) + 100
+		if blockNum == bstream.GetProtocolFirstStreamableBlock {
+			return true
+		}
+		if blockNum%100 == 0 {
+			return true
+		}
 		return false
 	}
 
-	if s.targetBoundary == 0 {
-		s.targetBoundary = ((blockNum / 100) * 100) + 100
-		return false
-	}
-
-	if blockNum >= s.targetBoundary {
-		s.targetBoundary = 0
+	if blockNum >= s.nextBoundary {
+		s.nextBoundary += 100
 		return true
 	}
 
@@ -306,7 +301,7 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 			}
 
 			if s.mergeable(block) {
-				return nil
+				return s.mergeArchiver.StoreBlock(block)
 			}
 
 			s.logger.Info("switching to one-blocks", zap.Stringer("block", block))

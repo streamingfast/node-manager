@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +52,7 @@ func TestArchiverSelector(t *testing.T) {
 		name                       string
 		input                      []*bstream.Block
 		mergeTimeThreshold         time.Duration
-		expectUploadedMergedBlocks []uint64
+		expectUploadedMergedBlocks map[uint64][]uint64
 		expectBufferedMergedBlocks []uint64
 		expectOneBlocks            []string
 	}{
@@ -88,6 +90,27 @@ func TestArchiverSelector(t *testing.T) {
 			expectOneBlocks:            genOneBlockFiles(98, 99, 100),
 		},
 		{
+			name:               "multiple old blocks traverse multiple boundaries",
+			input:              genBlocks(98, 99, 101, 102, 203, 205, 301),
+			mergeTimeThreshold: time.Minute,
+			expectUploadedMergedBlocks: map[uint64][]uint64{
+				100: []uint64{101, 102},
+				200: []uint64{203, 205},
+			},
+			expectBufferedMergedBlocks: []uint64{301},
+			expectOneBlocks:            genOneBlockFiles(98, 99, 101),
+		},
+		{
+			name:               "multiple old blocks from boundary traverse boundary",
+			input:              genBlocks(100, 102, 203, 205),
+			mergeTimeThreshold: time.Minute,
+			expectUploadedMergedBlocks: map[uint64][]uint64{
+				100: []uint64{100, 102},
+			},
+			expectBufferedMergedBlocks: []uint64{203, 205},
+		},
+
+		{
 			name:               "multiple young blocks traverse boundary",
 			input:              genBlocks(98, 99, 100, 101, 102),
 			mergeTimeThreshold: 999 * time.Hour,
@@ -104,7 +127,7 @@ func TestArchiverSelector(t *testing.T) {
 			name:                       "from merged to live young blocks",
 			input:                      genBlocks(98, 99, 101, 102, 199, 200, 201),
 			mergeTimeThreshold:         (3600 - 199) * time.Second,
-			expectUploadedMergedBlocks: []uint64{101, 102, 199},
+			expectUploadedMergedBlocks: map[uint64][]uint64{100: []uint64{101, 102, 199}},
 			expectBufferedMergedBlocks: nil, // no more merged blocks
 			expectOneBlocks:            genOneBlockFiles(98, 99, 101, 200, 201),
 		},
@@ -130,6 +153,7 @@ func TestArchiverSelector(t *testing.T) {
 			assert.Equal(t, test.expectOneBlocks, oneBlocks)
 
 			uploadedMergedBlocks := readMergedFilesBlockNums(t, mergedFiles)
+			fmt.Println("hey got this", test.expectUploadedMergedBlocks, uploadedMergedBlocks)
 			assert.Equal(t, test.expectUploadedMergedBlocks, uploadedMergedBlocks, "uploaded merged blocks")
 
 			var bufferedMergedBlocks []uint64
@@ -160,12 +184,22 @@ func getProducedFiles(t *testing.T, workDir string) (oneBlocks, mergedFiles []st
 	return
 }
 
-func readMergedFilesBlockNums(t *testing.T, mergedFiles []string) []uint64 {
+func mergedFileBaseNum(filename string) (uint64, error) {
+	base := strings.TrimSuffix(path.Base(filename), ".merged")
+	return strconv.ParseUint(base, 10, 64)
+
+}
+
+func readMergedFilesBlockNums(t *testing.T, mergedFiles []string) map[uint64][]uint64 {
 	t.Helper()
-	var mergedBlocks []uint64
+	mergedBlocks := make(map[uint64][]uint64)
 	for _, mf := range mergedFiles {
 		f, err := os.Open(mf)
 		require.NoError(t, err)
+
+		mfNum, err := mergedFileBaseNum(mf)
+		require.NoError(t, err)
+
 		//cnt, err := io.ReadAll(f)
 		//require.NoError(t, err)
 		//fmt.Println(string(cnt))
@@ -173,10 +207,13 @@ func readMergedFilesBlockNums(t *testing.T, mergedFiles []string) []uint64 {
 		require.NoError(t, err)
 
 		mb := readMergedBytesBlockNums(t, data)
-		mergedBlocks = append(mergedBlocks, mb...)
+		mergedBlocks[mfNum] = mb
+	}
+	if len(mergedBlocks) > 0 {
+		return mergedBlocks
 	}
 
-	return mergedBlocks
+	return nil
 }
 
 func readMergedBytesBlockNums(t *testing.T, data []byte) (out []uint64) {
