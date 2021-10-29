@@ -35,7 +35,7 @@ var now = time.Now()
 
 func genBlocks(nums ...uint64) (out []*bstream.Block) {
 	for _, num := range nums {
-		out = append(out, &bstream.Block{Number: num, PayloadBuffer: []byte{0x01}, Timestamp: now.Add(-time.Hour).Add(time.Second * time.Duration(num))})
+		out = append(out, &bstream.Block{Number: num, Timestamp: now.Add(-time.Hour).Add(time.Second * time.Duration(num))})
 	}
 	return
 }

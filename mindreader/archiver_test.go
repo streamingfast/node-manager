@@ -87,7 +87,7 @@ func TestNewLocalStore(t *testing.T) {
 	data, err := ioutil.ReadAll(file)
 
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"PayloadBuffer":null}`, string(data))
+	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"Payload":null}`, string(data))
 }
 
 func testNewArchiverSelector(oba *OneBlockArchiver, ma *MergeArchiver) *ArchiverSelector {
