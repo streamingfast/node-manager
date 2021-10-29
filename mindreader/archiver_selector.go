@@ -238,26 +238,28 @@ func (s *ArchiverSelector) loadLastPartial(next uint64) []*bstream.Block {
 	return nil
 }
 
-func (s *ArchiverSelector) atBoundary(block *bstream.Block) bool {
+func (s *ArchiverSelector) passedBoundary(block *bstream.Block) (passed bool, skipped []uint64) {
 	blockNum := block.Num()
 
 	if s.nextBoundary == 0 { //first block
 		s.nextBoundary = ((blockNum / 100) * 100) + 100
 		if blockNum == bstream.GetProtocolFirstStreamableBlock {
-			return true
+			passed = true
 		}
 		if blockNum%100 == 0 {
-			return true
+			passed = true
 		}
-		return false
+		return
 	}
 
-	if blockNum >= s.nextBoundary {
+	for blockNum >= s.nextBoundary {
+		if blockNum >= s.nextBoundary+100 {
+			skipped = append(skipped, s.nextBoundary)
+		}
 		s.nextBoundary += 100
-		return true
+		passed = true
 	}
-
-	return false
+	return
 }
 
 func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
@@ -266,7 +268,7 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 		return s.oneblockArchiver.StoreBlock(block) // once we passed a boundary with oneblocks, we always send oneblocks
 	}
 
-	isBoundaryBlock := s.atBoundary(block)
+	isBoundaryBlock, skippedBundles := s.passedBoundary(block)
 	if isBoundaryBlock && !s.firstBoundaryPassed {
 		defer func() { s.firstBoundaryPassed = true }()
 	}
@@ -296,8 +298,11 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 
 	if isBoundaryBlock {
 		if s.currentlyMerging {
-			if err := s.mergeArchiver.Merge(block.Number/100*100 - 100); err != nil { // merge previous bundle
-				return err
+			boundaries := append(skippedBundles, block.Number/100*100)
+			for _, b := range boundaries {
+				if err := s.mergeArchiver.Merge(b - 100); err != nil { // merge previous bundle
+					return err
+				}
 			}
 
 			if s.mergeable(block) {

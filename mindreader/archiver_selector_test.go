@@ -54,6 +54,7 @@ func TestArchiverSelector(t *testing.T) {
 		mergeTimeThreshold         time.Duration
 		expectUploadedMergedBlocks map[uint64][]uint64
 		expectBufferedMergedBlocks []uint64
+		expectMergedFiles          []string
 		expectOneBlocks            []string
 	}{
 		{
@@ -94,10 +95,22 @@ func TestArchiverSelector(t *testing.T) {
 			input:              genBlocks(98, 99, 101, 102, 203, 205, 301),
 			mergeTimeThreshold: time.Minute,
 			expectUploadedMergedBlocks: map[uint64][]uint64{
-				100: []uint64{101, 102},
-				200: []uint64{203, 205},
+				100: {101, 102},
+				200: {203, 205},
 			},
 			expectBufferedMergedBlocks: []uint64{301},
+			expectOneBlocks:            genOneBlockFiles(98, 99, 101),
+		},
+		{
+			name:               "multiple old blocks traverse multiple boundaries at same time",
+			input:              genBlocks(98, 99, 101, 102, 301, 302, 400),
+			mergeTimeThreshold: time.Minute,
+			expectUploadedMergedBlocks: map[uint64][]uint64{
+				100: {101, 102},
+				200: nil,
+				300: {301, 302},
+			},
+			expectBufferedMergedBlocks: []uint64{400},
 			expectOneBlocks:            genOneBlockFiles(98, 99, 101),
 		},
 		{
@@ -105,7 +118,7 @@ func TestArchiverSelector(t *testing.T) {
 			input:              genBlocks(100, 102, 203, 205),
 			mergeTimeThreshold: time.Minute,
 			expectUploadedMergedBlocks: map[uint64][]uint64{
-				100: []uint64{100, 102},
+				100: {100, 102},
 			},
 			expectBufferedMergedBlocks: []uint64{203, 205},
 		},
@@ -127,7 +140,7 @@ func TestArchiverSelector(t *testing.T) {
 			name:                       "from merged to live young blocks",
 			input:                      genBlocks(98, 99, 101, 102, 199, 200, 201),
 			mergeTimeThreshold:         (3600 - 199) * time.Second,
-			expectUploadedMergedBlocks: map[uint64][]uint64{100: []uint64{101, 102, 199}},
+			expectUploadedMergedBlocks: map[uint64][]uint64{100: {101, 102, 199}},
 			expectBufferedMergedBlocks: nil, // no more merged blocks
 			expectOneBlocks:            genOneBlockFiles(98, 99, 101, 200, 201),
 		},
@@ -154,7 +167,9 @@ func TestArchiverSelector(t *testing.T) {
 
 			uploadedMergedBlocks := readMergedFilesBlockNums(t, mergedFiles)
 			fmt.Println("hey got this", test.expectUploadedMergedBlocks, uploadedMergedBlocks)
-			assert.Equal(t, test.expectUploadedMergedBlocks, uploadedMergedBlocks, "uploaded merged blocks")
+			if !assert.Equal(t, test.expectUploadedMergedBlocks, uploadedMergedBlocks, "uploaded merged blocks") {
+				fmt.Println("got these", uploadedMergedBlocks)
+			}
 
 			var bufferedMergedBlocks []uint64
 			data, err := io.ReadAll(mergeArchiver.buffer)
@@ -179,7 +194,7 @@ func getProducedFiles(t *testing.T, workDir string) (oneBlocks, mergedFiles []st
 		} else {
 			oneBlocks = append(oneBlocks, name)
 		}
-		return nil
+		return err
 	})
 	return
 }
