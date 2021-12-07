@@ -19,8 +19,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/streamingfast/derr"
 	"github.com/gorilla/mux"
+	"github.com/streamingfast/derr"
 	"go.uber.org/zap"
 )
 

@@ -15,59 +15,11 @@
 package mindreader
 
 import (
-	"os"
-	"testing"
-	"time"
-
-	"github.com/streamingfast/shutter"
-
-	"github.com/streamingfast/bstream"
 	"go.uber.org/zap"
 )
 
 var testLogger = zap.NewNop()
 
 func init() {
-	if os.Getenv("DEBUG") != "" || os.Getenv("TRACE") == "true" {
-		testLogger, _ = zap.NewDevelopment()
-	}
-}
-
-type TestStore struct {
-	*shutter.Shutter
-	blocks        []*bstream.Block
-	receivedBlock chan *bstream.Block
-}
-
-func NewTestStore() *TestStore {
-	return &TestStore{
-		blocks:        []*bstream.Block{},
-		receivedBlock: make(chan *bstream.Block),
-	}
-}
-
-func (s *TestStore) Init() error {
-	return nil
-}
-
-func (s *TestStore) StoreBlock(block *bstream.Block) error {
-	s.blocks = append(s.blocks, block)
-	s.receivedBlock <- block
-	return nil
-}
-
-func (s *TestStore) consumeBlockFromChannel(t *testing.T, timeout time.Duration) *bstream.Block {
-	t.Helper()
-
-	select {
-	case blk := <-s.receivedBlock:
-		return blk
-	case <-time.After(timeout):
-		t.Errorf("should have read a block after %s", timeout)
-	}
-
-	return nil
-}
-
-func (s *TestStore) Start() {
+	testLogger, _ = zap.NewDevelopment()
 }

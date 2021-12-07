@@ -24,98 +24,47 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/streamingfast/shutter"
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
-	"github.com/klauspost/compress/zstd"
+	"github.com/streamingfast/shutter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
-func TestMindReaderPlugin_ReadFlow(t *testing.T) {
-	s := NewTestStore()
+func newLocalTestStore(t *testing.T) dstore.Store {
+	t.Helper()
 
-	mindReader, err := testNewMindReaderPlugin(s, 0, 0)
-	mindReader.OnTerminating(func(err error) {
-		t.Error("should not be called", err)
-	})
+	dir, err := ioutil.TempDir("/tmp", "mrtest")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	store, err := dstore.NewDBinStore(dir)
 	require.NoError(t, err)
 
-	mindReader.Launch()
-
-	mindReader.LogLine(`DMLOG {"id":"0000004ez"}`)
-
-	s.consumeBlockFromChannel(t, 5*time.Millisecond)
-
-	assert.Equal(t, 1, len(s.blocks))
-	assert.Equal(t, "0000004ez", s.blocks[0].ID())
+	return store
 }
 
-func TestMindReaderPlugin_GatePassed(t *testing.T) {
-	s := NewTestStore()
-
-	mindReader, err := testNewMindReaderPlugin(s, 2, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
-	})
+func newWorkDir(t *testing.T) string {
+	workDir, err := ioutil.TempDir("/tmp", "mrtest")
 	require.NoError(t, err)
-
-	mindReader.Launch()
-
-	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
-	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
-
-	s.consumeBlockFromChannel(t, 5*time.Millisecond)
-
-	assert.Equal(t, 1, len(s.blocks))
-	assert.Equal(t, "00000002a", s.blocks[0].ID())
-}
-
-func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
-	t.Skip()
-	s := NewTestStore()
-
-	done := make(chan interface{})
-	mindReader, err := testNewMindReaderPlugin(s, 0, 1)
-	mindReader.OnTerminating(func(err error) {
-		if err == nil {
-			close(done)
-		} else {
-			t.Error("should not be called")
-		}
-	})
-	require.NoError(t, err)
-
-	mindReader.Launch()
-
-	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
-	s.consumeBlockFromChannel(t, 5*time.Millisecond)
-
-	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
-
-	select {
-	case <-done:
-	case <-time.After(10 * time.Millisecond):
-		t.Error("should have call onComplete at this point")
-	}
-
-	// Validate actually read block
-	assert.True(t, len(s.blocks) >= 1) // moderate requirement, race condition can make it pass more blocks
-	assert.Equal(t, "00000001a", s.blocks[0].ID())
+	t.Cleanup(func() { os.RemoveAll(workDir) })
+	return workDir
 }
 
 func TestNewLocalStore(t *testing.T) {
-	localArchiveStore, err := dstore.NewDBinStore("/tmp/mr_dest")
-	require.NoError(t, err)
-	archiver := testNewArchiver("/tmp/mr_test", localArchiveStore)
-	err = archiver.Init()
-	require.NoError(t, err)
 
-	mindReader, err := testNewMindReaderPlugin(archiver, 0, 0)
+	store := newLocalTestStore(t)
+	workDir := newWorkDir(t)
+	archiver := testNewArchiver(workDir, store)
+	mergeArchiver := testNewMergeArchiver(workDir, store)
+	archiverSelector := testNewArchiverSelector(archiver, mergeArchiver)
+
+	// FIXME this test should not require using a mindreader, just the archiver
+	mindReader, err := testNewMindReaderPlugin(archiverSelector, 0, 0)
 	mindReader.OnTerminating(func(e error) {
 		t.Errorf("should not be called: %s", e)
 	})
@@ -125,49 +74,45 @@ func TestNewLocalStore(t *testing.T) {
 
 	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
 
-	time.Sleep(1 * time.Second) //todo: this suck!
+	time.Sleep(1 * time.Second) //FIXME: this suck!
 
-	file, err := os.OpenFile(filepath.Join("/tmp/mr_dest/", "0000000004-00010101T000000.0-0000004a-.dbin.zst"), os.O_RDONLY, 0644)
-	require.NoError(t, err)
-
-	gzw, err := zstd.NewReader(file)
-	require.NoError(t, err)
-	data, err := ioutil.ReadAll(gzw)
-
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"PayloadBuffer":null}`, string(data))
-}
-
-func TestNewGSStore(t *testing.T) {
-	t.Skip()
-
-	path := "gs://example/dev"
-	//path := "gs://charlestest1/dev"
-
-	archiveStore, err := dstore.NewDBinStore(path)
-	archiver := testNewArchiver("/tmp/mr_test/", archiveStore)
-	err = archiver.Init()
-	require.NoError(t, err)
-
-	mindReader, err := testNewMindReaderPlugin(archiver, 1, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
-	})
-	require.NoError(t, err)
-
-	mindReader.Launch()
-
-	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
-
-	time.Sleep(2 * time.Second) //todo: this suck!
-
-	exists, err := archiveStore.FileExists(context.Background(), "0000000004-00010101T000000.0-0000004a-")
+	ctx := context.Background()
+	expectFileName := blockFileNameFromArgs(4, time.Time{}, "0000004a", "", 0, "default")
+	exists, err := store.FileExists(ctx, expectFileName)
 	require.NoError(t, err)
 	require.True(t, exists)
+
+	file, err := store.OpenObject(ctx, expectFileName)
+	require.NoError(t, err)
+	data, err := ioutil.ReadAll(file)
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"Payload":null}`, string(data))
+}
+
+func testNewArchiverSelector(oba *OneBlockArchiver, ma *MergeArchiver) *ArchiverSelector {
+	return &ArchiverSelector{
+		Shutter:          shutter.New(),
+		oneblockArchiver: oba,
+		mergeArchiver:    ma,
+		logger:           testLogger,
+		lastSeenLIB:      atomic.NewUint64(0),
+	}
 }
 
 func testNewArchiver(path string, store dstore.Store) *OneBlockArchiver {
 	return NewOneBlockArchiver(store, testBlockWriteFactory, path, "", testLogger)
+}
+func testNewMergeArchiver(path string, store dstore.Store) *MergeArchiver {
+	a := &MergeArchiver{
+		workDir:            path,
+		Shutter:            shutter.New(),
+		store:              store,
+		blockWriterFactory: testBlockWriteFactory,
+		logger:             testLogger,
+	}
+	a.newBuffer()
+	return a
 }
 
 func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
@@ -184,18 +129,35 @@ func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*
 }
 
 var testBlockWriteFactory = bstream.BlockWriterFactoryFunc(newTestBlockWriter)
+var testBlockReadFactory = bstream.BlockReaderFactoryFunc(newTestBlockReader)
+
+func newTestBlockReader(reader io.Reader) (bstream.BlockReader, error) {
+	return &testBlockReader{
+		reader: reader,
+	}, nil
+}
+
+type testBlockReader struct {
+	reader io.Reader
+}
+
+func (r *testBlockReader) Read() (*bstream.Block, error) {
+	out := &bstream.Block{}
+
+	b, err := io.ReadAll(r.reader)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(b, out)
+	return out, err
+}
 
 func newTestBlockWriter(writer io.Writer) (bstream.BlockWriter, error) {
 	return &testBlockWriter{
 		writer: writer,
 	}, nil
 }
-
-type testContinuityChecker struct{}
-
-func (t *testContinuityChecker) IsLocked() bool                      { return false }
-func (t *testContinuityChecker) Reset()                              {}
-func (t *testContinuityChecker) Write(lastSeenBlockNum uint64) error { return nil }
 
 type testBlockWriter struct {
 	writer io.Writer
@@ -302,7 +264,6 @@ func createEmptyFile(filename string) error {
 	emptyFile.Close()
 	return nil
 }
-
 
 func toBlockNum(blockID string) uint64 {
 	if len(blockID) < 8 {
