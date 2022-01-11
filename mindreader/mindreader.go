@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/streamingfast/bstream"
@@ -26,6 +27,10 @@ import (
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
+)
+
+var (
+	oneblockSuffixRegexp = regexp.MustCompile(`^[\w\-]+$`)
 )
 
 type ConsolerReader interface {
@@ -106,6 +111,11 @@ func NewMindReaderPlugin(
 		zap.Bool("fail_on_non_continuous_blocks", failOnNonContinuousBlocks),
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
+
+	// Other components may have issues finding the one block files if suffix is invalid
+	if oneblockSuffix != "" && !oneblockSuffixRegexp.MatchString(oneblockSuffix) {
+		return nil, fmt.Errorf("oneblock_suffix contains invalid characters: %q", oneblockSuffix)
+	}
 
 	// Create directory and its parent(s), it's a no-op if everything already exists
 	err := os.MkdirAll(workingDirectory, os.ModePerm)

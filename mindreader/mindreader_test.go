@@ -1,6 +1,7 @@
 package mindreader
 
 import (
+	"io"
 	"testing"
 	"time"
 
@@ -78,6 +79,26 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	// Validate actually read block
 	assert.True(t, len(a.blocks) >= 1) // moderate requirement, race condition can make it pass more blocks
 	assert.Equal(t, "00000001a", a.blocks[0].ID())
+}
+
+func TestMindReaderPlugin_OneBlockSuffixFormat(t *testing.T) {
+	workDir := newWorkDir(t)
+	shutdown := func(error) {}
+	tracker := bstream.NewTracker(0)
+	bstream.GetBlockWriterFactory = bstream.BlockWriterFactoryFunc(func(writer io.Writer) (bstream.BlockWriter, error) {
+		return newTestBlockWriter(writer)
+	})
+
+	initMindreader := func(suffix string) error {
+		_, err := NewMindReaderPlugin("tmp/mindreader/one_block", "tmp/mindreader/merged_block", false, time.Second, workDir, testConsoleReaderFactory, testConsoleReaderBlockTransformer, tracker, 0, 0, 1, nil, shutdown, false, time.Second, suffix, nil, testLogger)
+		return err
+	}
+
+	assert.NoError(t, initMindreader(""))
+	assert.NoError(t, initMindreader("example"))
+	assert.NoError(t, initMindreader("example-hostname-123"))
+	assert.NoError(t, initMindreader("example_hostname_123"))
+	assert.Equal(t, `oneblock_suffix contains invalid characters: "example.lan"`, initMindreader("example.lan").Error())
 }
 
 type TestArchiver struct {
