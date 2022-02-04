@@ -46,6 +46,8 @@ type MergeArchiver struct {
 	running      bool
 }
 
+//bundler
+//merger.IOInterface
 func NewMergeArchiver(
 	store dstore.Store,
 	blockWriterFactory bstream.BlockWriterFactory,
@@ -152,18 +154,18 @@ func (a *MergeArchiver) newBuffer() {
 	a.blockWriter = blockWriter
 }
 
-func (a *MergeArchiver) writePartialFile(lastBlock uint64) error {
-	filename := filepath.Join(a.workDir, fmt.Sprintf("archiver_%010d.partial", lastBlock))
-
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = a.buffer.WriteTo(f)
-	return err
-}
+//func (a *MergeArchiver) writePartialFile(lastBlock uint64) error {
+//	filename := filepath.Join(a.workDir, fmt.Sprintf("archiver_%010d.partial", lastBlock))
+//
+//	f, err := os.Create(filename)
+//	if err != nil {
+//		return err
+//	}
+//	defer f.Close()
+//
+//	_, err = a.buffer.WriteTo(f)
+//	return err
+//}
 
 func (a *MergeArchiver) StoreBlock(block *bstream.Block) error {
 	if err := a.blockWriter.Write(block); err != nil {

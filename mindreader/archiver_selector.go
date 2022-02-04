@@ -268,34 +268,49 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 		return s.oneblockArchiver.StoreBlock(block) // once we passed a boundary with oneblocks, we always send oneblocks
 	}
 
-	isBoundaryBlock, skippedBundles := s.passedBoundary(block)
-	if isBoundaryBlock && !s.firstBoundaryPassed {
-		defer func() { s.firstBoundaryPassed = true }()
-	}
+	//isBoundaryBlock, skippedBundles := s.passedBoundary(block)
+	//if isBoundaryBlock && !s.firstBoundaryPassed {
+	//	defer func() { s.firstBoundaryPassed = true }()
+	//}
 
 	isFirstBlock := !s.firstBlockPassed
 	if isFirstBlock {
 		s.firstBlockPassed = true
 		if s.mergeable(block) {
-			if isBoundaryBlock {
-				s.logger.Info("merging blocks on first boundary", zap.Stringer("block", block))
-				s.currentlyMerging = true
-				return s.mergeArchiver.StoreBlock(block)
-			}
+
+			//current block = 1010
+			//last seen lib = 2010
+			//next bundle = 1100
+			///func NewBundler(100, firstExclusiveHighestBlockLimit uint64) *Bundler
+			/// == func NewBundler(100, 1200) *Bundler
+			/// bundle file = 400 = the smallest block inside a bundle (inclusive)
+
+			/// can we get rid of this?
+			//if isBoundaryBlock {
+			//	s.logger.Info("merging blocks on first boundary", zap.Stringer("block", block))
+			//	s.currentlyMerging = true
+			//	return s.mergeArchiver.StoreBlock(block)
+			//}
+
 			if previousBlocks := s.loadLastPartial(block.Number); previousBlocks != nil {
 				s.logger.Info("merging on first block using loaded previous partial blocks", zap.Stringer("block", block))
 				s.currentlyMerging = true
+				//// ??? do we consider the first block as LIB?
+				//if yes, we need to tell the bundler to start at this lib.
 				for _, blk := range previousBlocks {
+					//todo:  bundler.AddOneBlockFile()
 					if err := s.mergeArchiver.StoreBlock(blk); err != nil {
 						return err
 					}
 				}
+				//todo:  bundler.AddOneBlockFile()
 				return s.mergeArchiver.StoreBlock(block)
 			}
 			s.logger.Info("cannot ensure complete merged block bundle, not merging until next boundary", zap.Stringer("block", block))
 		}
 	}
 
+	//todo: replace isBoundaryBlock with bundle.BundleCompleted()
 	if isBoundaryBlock {
 		if s.currentlyMerging {
 			boundaries := append(skippedBundles, block.Number/100*100)
@@ -306,6 +321,7 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 			}
 
 			if s.mergeable(block) {
+				//todo: bundler.AddOneBlockFile
 				return s.mergeArchiver.StoreBlock(block)
 			}
 
@@ -345,6 +361,8 @@ func (s *ArchiverSelector) Start() {
 	s.logger.Info("starting merged blocks(s) uploads")
 	go s.mergeArchiver.Start()
 
+	/// new bundler here.
+	// bootstrap it!
 }
 
 func (s *ArchiverSelector) Init() error {
