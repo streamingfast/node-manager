@@ -16,6 +16,7 @@ package mindreader
 
 import (
 	"context"
+	"github.com/streamingfast/merger/bundle"
 	"io"
 	"os"
 	"path/filepath"
@@ -43,10 +44,10 @@ type ArchiverSelector struct {
 
 	blockReaderFactory bstream.BlockReaderFactory
 
-	firstBlockPassed    bool
-	firstBoundaryPassed bool
-	currentlyMerging    bool
-	nextBoundary        uint64
+	//firstBlockPassed bool
+	//firstBoundaryPassed bool
+	currentlyMerging bool
+	//nextBoundary        uint64
 
 	batchMode              bool // forces merging blocks without tracker or LIB checking
 	tracker                *bstream.Tracker
@@ -56,6 +57,8 @@ type ArchiverSelector struct {
 	workDir string
 	logger  *zap.Logger
 	running bool
+
+	bundler *bundle.Bundler
 }
 
 func NewArchiverSelector(
@@ -79,6 +82,7 @@ func NewArchiverSelector(
 		lastSeenLIB:            atomic.NewUint64(0),
 		workDir:                workDir,
 		logger:                 logger,
+		currentlyMerging:       true,
 	}
 	if !batchMode {
 		a.launchLastLIBUpdater()
@@ -128,7 +132,7 @@ func (s *ArchiverSelector) launchLastLIBUpdater() {
 		for {
 			time.Sleep(sleepTime)
 
-			if s.firstBoundaryPassed {
+			if s.firstBoundaryPassed { //todo: change condition to use currentlyMerging
 				if !s.currentlyMerging { // we will never 'go back' to merging
 					if !fetchedOnce {
 						s.logger.Warn("could not get LIB from blockmeta after a few attempts. Not merging blocks", zap.Error(err))
@@ -155,6 +159,31 @@ func (s *ArchiverSelector) launchLastLIBUpdater() {
 			}
 		}
 	}()
+}
+
+func (s *ArchiverSelector) shouldMerge(block *bstream.Block) bool {
+	if s.batchMode {
+		return true
+	}
+
+	//Be default currently merging is set to true
+	if !s.currentlyMerging {
+		return false
+	}
+
+	blockAge := time.Since(block.Time())
+	if blockAge > s.mergeThresholdBlockAge {
+		//todo: what about the partial bundle (the bundle we are currently handling)
+		return true
+	}
+
+	lastSeenLIB := s.lastSeenLIB.Load()
+	if block.Number+100 <= lastSeenLIB {
+		//todo: what about the partial bundle (the bundle we are currently handling)
+		return true
+	}
+
+	return false
 }
 
 func (s *ArchiverSelector) mergeable(block *bstream.Block) bool {
@@ -238,64 +267,111 @@ func (s *ArchiverSelector) loadLastPartial(next uint64) []*bstream.Block {
 	return nil
 }
 
-func (s *ArchiverSelector) passedBoundary(block *bstream.Block) (passed bool, skipped []uint64) {
-	blockNum := block.Num()
-
-	if s.nextBoundary == 0 { //first block
-		s.nextBoundary = ((blockNum / 100) * 100) + 100
-		if blockNum == bstream.GetProtocolFirstStreamableBlock {
-			passed = true
-		}
-		if blockNum%100 == 0 {
-			passed = true
-		}
-		return
-	}
-
-	for blockNum >= s.nextBoundary {
-		if blockNum >= s.nextBoundary+100 {
-			skipped = append(skipped, s.nextBoundary)
-		}
-		s.nextBoundary += 100
-		passed = true
-	}
-	return
-}
+//func (s *ArchiverSelector) passedBoundary(block *bstream.Block) (passed bool, skipped []uint64) {
+//	blockNum := block.Num()
+//
+//	if s.nextBoundary == 0 { //first block
+//		s.nextBoundary = ((blockNum / 100) * 100) + 100
+//		if blockNum == bstream.GetProtocolFirstStreamableBlock {
+//			passed = true
+//		}
+//		if blockNum%100 == 0 {
+//			passed = true
+//		}
+//		return
+//	}
+//
+//	for blockNum >= s.nextBoundary {
+//		if blockNum >= s.nextBoundary+100 {
+//			skipped = append(skipped, s.nextBoundary)
+//		}
+//		s.nextBoundary += 100
+//		passed = true
+//	}
+//	return
+//}
 
 func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
+	merging := s.shouldMerge(block) //todo: fix shouldMerge to return true until the current bundle is completed
 
-	if !s.currentlyMerging && s.firstBoundaryPassed {
+	if !merging {
 		return s.oneblockArchiver.StoreBlock(block) // once we passed a boundary with oneblocks, we always send oneblocks
 	}
 
-	isBoundaryBlock, skippedBundles := s.passedBoundary(block)
-	if isBoundaryBlock && !s.firstBoundaryPassed {
-		defer func() { s.firstBoundaryPassed = true }()
+	if s.bundler == nil {
+		exclusiveHighestBlockLimit := ((block.Number / 100) * 100) + 100
+
+		//todo: one block files that were not merge from the execution
+		s.bundler = bundle.NewBundler(100, exclusiveHighestBlockLimit)
 	}
 
-	isFirstBlock := !s.firstBlockPassed
-	if isFirstBlock {
-		s.firstBlockPassed = true
-		if s.mergeable(block) {
-			if isBoundaryBlock {
-				s.logger.Info("merging blocks on first boundary", zap.Stringer("block", block))
-				s.currentlyMerging = true
-				return s.mergeArchiver.StoreBlock(block)
+	fileName := bundle.BlockFileName(block)
+	oneBlockFile := bundle.MustNewOneBlockFile(fileName)
+	s.bundler.AddOneBlockFile(oneBlockFile)
+
+	if block.Number < s.bundler.BundleInclusiveLowerBlock() {
+		oneBlockFile.Merged = true
+		//at this point it is certain that the bundle can not be completed
+		return nil
+	}
+
+	//todo: save one block file to disk
+
+	bundleCompleted, highestBlockLimit := s.bundler.BundleCompleted()
+	if bundleCompleted {
+
+		oneBlockFiles := s.bundler.ToBundle(highestBlockLimit)
+		for _, oneBlockFile := range oneBlockFiles {
+			//todo: load block from one block file
+			block := &bstream.Block{}
+
+			if err := s.mergeArchiver.StoreBlock(block); err != nil {
+				return err
 			}
-			if previousBlocks := s.loadLastPartial(block.Number); previousBlocks != nil {
-				s.logger.Info("merging on first block using loaded previous partial blocks", zap.Stringer("block", block))
-				s.currentlyMerging = true
-				for _, blk := range previousBlocks {
-					if err := s.mergeArchiver.StoreBlock(blk); err != nil {
-						return err
-					}
-				}
-				return s.mergeArchiver.StoreBlock(block)
-			}
-			s.logger.Info("cannot ensure complete merged block bundle, not merging until next boundary", zap.Stringer("block", block))
+		}
+
+		s.mergeArchiver.Merge(s.bundler.BundleInclusiveLowerBlock())
+		s.bundler.Commit(highestBlockLimit)
+		s.bundler.Purge(func(oneBlockFilesToDelete []*bundle.OneBlockFile) {
+			//todo: delete one block file from disk
+		})
+
+		if !s.shouldMerge(block) { //this could change once a bundle is completed
+			s.currentlyMerging = false
+			return s.oneblockArchiver.StoreBlock(block)
 		}
 	}
 
+	return nil
+
+	//isBoundaryBlock, skippedBundles := s.passedBoundary(block)
+	//if isBoundaryBlock && !s.firstBoundaryPassed {
+	//	defer func() { s.firstBoundaryPassed = true }()
+	//}
+	//
+	//isFirstBlock := !s.firstBlockPassed
+	//if isFirstBlock {
+	//	s.firstBlockPassed = true
+	//	if s.mergeable(block) {
+	//		if isBoundaryBlock {
+	//			s.logger.Info("merging blocks on first boundary", zap.Stringer("block", block))
+	//			s.currentlyMerging = true
+	//			return s.mergeArchiver.StoreBlock(block)
+	//		}
+	//		if previousBlocks := s.loadLastPartial(block.Number); previousBlocks != nil {
+	//			s.logger.Info("merging on first block using loaded previous partial blocks", zap.Stringer("block", block))
+	//			s.currentlyMerging = true
+	//			for _, blk := range previousBlocks {
+	//				if err := s.mergeArchiver.StoreBlock(blk); err != nil {
+	//					return err
+	//				}
+	//			}
+	//			return s.mergeArchiver.StoreBlock(block)
+	//		}
+	//		s.logger.Info("cannot ensure complete merged block bundle, not merging until next boundary", zap.Stringer("block", block))
+	//	}
+	//}
+	//
 	if isBoundaryBlock {
 		if s.currentlyMerging {
 			boundaries := append(skippedBundles, block.Number/100*100)
