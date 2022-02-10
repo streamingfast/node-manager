@@ -152,19 +152,6 @@ func (a *MergeArchiver) newBuffer() {
 	a.blockWriter = blockWriter
 }
 
-func (a *MergeArchiver) writePartialFile(lastBlock uint64) error {
-	filename := filepath.Join(a.workDir, fmt.Sprintf("archiver_%010d.partial", lastBlock))
-
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = a.buffer.WriteTo(f)
-	return err
-}
-
 func (a *MergeArchiver) StoreBlock(block *bstream.Block) error {
 	if err := a.blockWriter.Write(block); err != nil {
 		return fmt.Errorf("blockWriter.Write: %w", err)
@@ -179,6 +166,7 @@ func (a *MergeArchiver) Merge(baseNum uint64) error {
 		a.logger.Info("writing merged blocks log (%1000)", zap.String("base_name", baseName))
 	}
 
+	//write to tempfile first to prevent upload of an incomplete merged file
 	tempFile := filepath.Join(a.workDir, baseName+".merged.temp")
 	finalFile := filepath.Join(a.workDir, baseName+".merged")
 
@@ -195,6 +183,7 @@ func (a *MergeArchiver) Merge(baseNum uint64) error {
 		return fmt.Errorf("rename %q to %q: %w", tempFile, finalFile, err)
 	}
 
+	//reset buffer
 	a.newBuffer()
 	return nil
 }

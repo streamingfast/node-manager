@@ -34,8 +34,14 @@ import (
 var now = time.Now()
 
 func genBlocks(nums ...uint64) (out []*bstream.Block) {
+	prevId := ""
 	for _, num := range nums {
-		out = append(out, &bstream.Block{Number: num, Timestamp: now.Add(-time.Hour).Add(time.Second * time.Duration(num))})
+		if prevId == "" {
+			prevId = fmt.Sprintf("%d", num-1)
+		}
+		blockId := fmt.Sprintf("%d", num)
+		out = append(out, &bstream.Block{Id: blockId, PreviousId: prevId, Number: num, Timestamp: now.Add(-time.Hour).Add(time.Second * time.Duration(num))})
+		prevId = blockId
 	}
 	return
 }
@@ -151,7 +157,7 @@ func TestArchiverSelector(t *testing.T) {
 			workDir := newWorkDir(t)
 			archiver := testNewArchiver(workDir, nil)
 			mergeArchiver := testNewMergeArchiver(workDir, nil)
-			archiverSelector := testNewArchiverSelector(archiver, mergeArchiver)
+			archiverSelector := testNewArchiverSelector(t, archiver, mergeArchiver)
 			archiverSelector.mergeThresholdBlockAge = test.mergeTimeThreshold
 
 			archiverSelector.Init()

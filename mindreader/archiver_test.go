@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/streamingfast/merger/bundle"
 	"io"
 	"io/ioutil"
 	"os"
@@ -55,13 +56,63 @@ func newWorkDir(t *testing.T) string {
 	return workDir
 }
 
-func TestNewLocalStore(t *testing.T) {
+type TestArchiverIO struct {
+	MergeAndSaveFunc             func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error)
+	FetchMergedOneBlockFilesFunc func(lowBlockNum uint64) ([]*bundle.OneBlockFile, error)
+	FetchOneBlockFilesFunc       func(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error)
+	DownloadOneBlockFileFunc     func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error)
 
+	SaveOneBlockFileFunc    func(ctx context.Context, fileName string, block *bstream.Block) error
+	DeleteOneBlockFilesFunc func(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error
+	WalkOneBlockFilesFunc   func(ctx context.Context) []*bundle.OneBlockFile
+}
+
+func (io *TestArchiverIO) MergeAndSave(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	return io.MergeAndSaveFunc(inclusiveLowerBlock, oneBlockFiles)
+}
+
+func (io *TestArchiverIO) FetchMergedOneBlockFiles(lowBlockNum uint64) ([]*bundle.OneBlockFile, error) {
+	return io.FetchMergedOneBlockFilesFunc(lowBlockNum)
+}
+
+func (io *TestArchiverIO) FetchOneBlockFiles(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error) {
+	return io.FetchOneBlockFilesFunc(ctx)
+}
+
+func (io *TestArchiverIO) DownloadOneBlockFile(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+	return io.DownloadOneBlockFileFunc(ctx, oneBlockFile)
+}
+
+func (io *TestArchiverIO) SaveOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error {
+	return io.SaveOneBlockFileFunc(ctx, fileName, block)
+}
+
+func (io *TestArchiverIO) DeleteOneBlockFiles(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error {
+	return io.DeleteOneBlockFilesFunc(ctx, oneBlockFiles)
+}
+
+func (io *TestArchiverIO) WalkOneBlockFiles(ctx context.Context) []*bundle.OneBlockFile {
+	return io.WalkOneBlockFilesFunc(ctx)
+}
+
+func NewDefaultTestArchiverIO(t *testing.T) ArchiverIO {
+	return NewArchiverDStoreIO(
+		testBlockWriteFactory,
+		testBlockReadFactory,
+		newLocalTestStore(t),
+		newLocalTestStore(t),
+		250,
+		1,
+		250*time.Millisecond,
+	)
+}
+
+func TestNewLocalStore(t *testing.T) {
 	store := newLocalTestStore(t)
 	workDir := newWorkDir(t)
 	archiver := testNewArchiver(workDir, store)
 	mergeArchiver := testNewMergeArchiver(workDir, store)
-	archiverSelector := testNewArchiverSelector(archiver, mergeArchiver)
+	archiverSelector := testNewArchiverSelector(t, archiver, mergeArchiver)
 
 	// FIXME this test should not require using a mindreader, just the archiver
 	mindReader, err := testNewMindReaderPlugin(archiverSelector, 0, 0)
@@ -90,9 +141,11 @@ func TestNewLocalStore(t *testing.T) {
 	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"Payload":null}`, string(data))
 }
 
-func testNewArchiverSelector(oba *OneBlockArchiver, ma *MergeArchiver) *ArchiverSelector {
+func testNewArchiverSelector(t *testing.T, oba *OneBlockArchiver, ma *MergeArchiver) *ArchiverSelector {
 	return &ArchiverSelector{
 		Shutter:          shutter.New(),
+		io:               NewDefaultTestArchiverIO(t),
+		currentlyMerging: true,
 		oneblockArchiver: oba,
 		mergeArchiver:    ma,
 		logger:           testLogger,

@@ -17,10 +17,8 @@ package mindreader
 import (
 	"context"
 	"github.com/streamingfast/merger/bundle"
-	"io"
-	"os"
-	"path/filepath"
-	"strconv"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/streamingfast/bstream"
@@ -42,12 +40,9 @@ type ArchiverSelector struct {
 	oneblockArchiver *OneBlockArchiver
 	mergeArchiver    *MergeArchiver
 
-	blockReaderFactory bstream.BlockReaderFactory
+	io ArchiverIO
 
-	//firstBlockPassed bool
-	//firstBoundaryPassed bool
 	currentlyMerging bool
-	//nextBoundary        uint64
 
 	batchMode              bool // forces merging blocks without tracker or LIB checking
 	tracker                *bstream.Tracker
@@ -64,7 +59,7 @@ type ArchiverSelector struct {
 func NewArchiverSelector(
 	oneblockArchiver *OneBlockArchiver,
 	mergeArchiver *MergeArchiver,
-	blockReaderFactory bstream.BlockReaderFactory,
+	io ArchiverIO,
 	batchMode bool,
 	tracker *bstream.Tracker,
 	mergeThresholdBlockAge time.Duration,
@@ -75,7 +70,7 @@ func NewArchiverSelector(
 		Shutter:                shutter.New(),
 		oneblockArchiver:       oneblockArchiver,
 		mergeArchiver:          mergeArchiver,
-		blockReaderFactory:     blockReaderFactory,
+		io:                     io,
 		batchMode:              batchMode,
 		tracker:                tracker,
 		mergeThresholdBlockAge: mergeThresholdBlockAge,
@@ -84,8 +79,10 @@ func NewArchiverSelector(
 		logger:                 logger,
 		currentlyMerging:       true,
 	}
+
+	libUpdaterCtx, libUpdaterCancel := context.WithCancel(context.Background())
 	if !batchMode {
-		a.launchLastLIBUpdater()
+		a.launchLastLIBUpdater(libUpdaterCtx)
 	}
 
 	a.OnTerminating(func(err error) {
@@ -96,6 +93,7 @@ func NewArchiverSelector(
 		if !a.oneblockArchiver.IsTerminating() {
 			a.oneblockArchiver.Shutdown(err)
 		}
+		libUpdaterCancel()
 	})
 
 	a.OnTerminated(func(err error) {
@@ -105,8 +103,8 @@ func NewArchiverSelector(
 	return a
 }
 
-func (s *ArchiverSelector) updateLastLIB() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func (s *ArchiverSelector) updateLastLIB(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	ref, err := s.tracker.Get(ctx, bstream.NetworkLIBTarget)
 	if err != nil {
@@ -116,47 +114,29 @@ func (s *ArchiverSelector) updateLastLIB() error {
 	return nil
 }
 
-func (s *ArchiverSelector) launchLastLIBUpdater() {
-	var fetchedOnce bool
-	var warned bool
+func (s *ArchiverSelector) launchLastLIBUpdater(ctx context.Context) {
 	var err error
 	sleepTime := 200 * time.Millisecond
 
-	err = s.updateLastLIB()
+	err = s.updateLastLIB(ctx)
 	if err == nil { // don't warn on first error, maybe blockmeta is booting with us
-		fetchedOnce = true
 		sleepTime = 30 * time.Second
 	}
 
 	go func() {
 		for {
-			time.Sleep(sleepTime)
-
-			if s.firstBoundaryPassed { //todo: change condition to use currentlyMerging
-				if !s.currentlyMerging { // we will never 'go back' to merging
-					if !fetchedOnce {
-						s.logger.Warn("could not get LIB from blockmeta after a few attempts. Not merging blocks", zap.Error(err))
-					}
-					return
-				}
-				sleepTime = 30 * time.Second
-
-				if !fetchedOnce && !warned {
-					s.logger.Warn("cannot get LIB from blockmeta, merging blocks based on their blocktime only (will retry)", zap.Duration("merge_threshold_block_age", s.mergeThresholdBlockAge))
-					warned = true
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(sleepTime):
+				//
 			}
 
-			err = s.updateLastLIB()
-			if err == nil {
-				if !fetchedOnce {
-					fetchedOnce = true
-					sleepTime = 30 * time.Second
-					if warned {
-						s.logger.Warn("success connecting to blockmeta after previous failures")
-					}
-				}
+			err = s.updateLastLIB(ctx)
+			if err != nil {
+				s.logger.Warn("failed getting last lib from blockmeta", zap.Error(err))
 			}
+			sleepTime = 30 * time.Second
 		}
 	}()
 }
@@ -173,136 +153,84 @@ func (s *ArchiverSelector) shouldMerge(block *bstream.Block) bool {
 
 	blockAge := time.Since(block.Time())
 	if blockAge > s.mergeThresholdBlockAge {
-		//todo: what about the partial bundle (the bundle we are currently handling)
 		return true
 	}
 
 	lastSeenLIB := s.lastSeenLIB.Load()
 	if block.Number+100 <= lastSeenLIB {
-		//todo: what about the partial bundle (the bundle we are currently handling)
 		return true
 	}
 
 	return false
 }
 
-func (s *ArchiverSelector) mergeable(block *bstream.Block) bool {
-	if s.batchMode {
-		return true
+func (s *ArchiverSelector) loadLastPartial(block *bstream.Block) {
+	oneBlockFiles := s.io.WalkOneBlockFiles(context.TODO())
+
+	var highestOneBlockFile *bundle.OneBlockFile
+	for _, oneBlockFile := range oneBlockFiles {
+		if highestOneBlockFile == nil {
+			highestOneBlockFile = oneBlockFile
+		}
+		if oneBlockFile.Num > highestOneBlockFile.Num {
+			highestOneBlockFile = oneBlockFile
+		}
 	}
 
-	blockNum := block.Num()
-	lastSeenLIB := s.lastSeenLIB.Load()
-
-	blockAge := time.Since(block.Time())
-	if blockAge > s.mergeThresholdBlockAge {
-		return true
+	if highestOneBlockFile == nil {
+		return
 	}
 
-	if blockNum+100 <= lastSeenLIB {
-		return true
+	if !strings.HasSuffix(block.PreviousID(), highestOneBlockFile.ID) {
+		s.logger.Info(
+			"last partial block does not connect to the current block",
+			zap.String("block_previous_id", block.PreviousID()),
+			zap.String("last_partial_block_id", highestOneBlockFile.ID),
+		)
+		return
 	}
 
-	return false
+	// load files into current bundle
+	for _, oneBlockFile := range oneBlockFiles {
+		s.bundler.AddOneBlockFile(oneBlockFile)
+	}
 }
-
-func (s *ArchiverSelector) loadLastPartial(next uint64) []*bstream.Block {
-	matches, err := filepath.Glob(filepath.Join(s.workDir, "archiver_*.partial"))
-	if err != nil {
-		s.logger.Warn("trying to find glob for partial archive", zap.Error(err))
-		return nil
-	}
-	for _, match := range matches {
-		saved := filepath.Base(match)
-		if len(saved) != 27 {
-			s.logger.Error("trying to restore partial archive but got invalid filename", zap.String("saved", saved), zap.Int("length", len(saved)))
-			continue
-		}
-		savedNum, err := strconv.ParseUint(saved[9:19], 10, 64)
-		if err != nil {
-			s.logger.Error("trying to restore partial archive but got invalid number from filename", zap.String("saved", saved[9:19]), zap.Error(err))
-			continue
-		}
-		if savedNum != next {
-			s.logger.Info("last partial block file does not match saved, deleting file", zap.Uint64("next", next), zap.Uint64("saved_partial", savedNum))
-			os.Remove(match)
-			continue
-		}
-
-		f, err := os.Open(match)
-		if err != nil {
-			s.logger.Error("trying to restore partial archive but got cannot open file. deleting it", zap.String("filename", match), zap.Error(err))
-			os.Remove(match)
-			continue
-		}
-
-		blockReader, err := s.blockReaderFactory.New(f)
-		if err != nil {
-			s.logger.Error("trying to generate blockreader with file on restore", zap.Error(err))
-			f.Close()
-			return nil
-		}
-
-		var blocks []*bstream.Block
-		for {
-			blk, err := blockReader.Read()
-			if blk != nil {
-				blocks = append(blocks, blk)
-			}
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				s.logger.Error("trying to read block on partial archive restore caused an error. deleting file", zap.Error(err))
-				os.Remove(match)
-				f.Close()
-				return nil
-			}
-		}
-		f.Close()
-		os.Remove(match)
-		return blocks
-	}
-
-	return nil
-}
-
-//func (s *ArchiverSelector) passedBoundary(block *bstream.Block) (passed bool, skipped []uint64) {
-//	blockNum := block.Num()
-//
-//	if s.nextBoundary == 0 { //first block
-//		s.nextBoundary = ((blockNum / 100) * 100) + 100
-//		if blockNum == bstream.GetProtocolFirstStreamableBlock {
-//			passed = true
-//		}
-//		if blockNum%100 == 0 {
-//			passed = true
-//		}
-//		return
-//	}
-//
-//	for blockNum >= s.nextBoundary {
-//		if blockNum >= s.nextBoundary+100 {
-//			skipped = append(skipped, s.nextBoundary)
-//		}
-//		s.nextBoundary += 100
-//		passed = true
-//	}
-//	return
-//}
 
 func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
-	merging := s.shouldMerge(block) //todo: fix shouldMerge to return true until the current bundle is completed
+	ctx := context.Background() //
 
+	merging := s.shouldMerge(block)
 	if !merging {
+		if s.bundler != nil {
+			// download all the one block files in the current incomplete bundle and store them
+			// in the oneblockArchiver
+			oneblocks := s.bundler.ToBundle(math.MaxUint64)
+			for _, oneblock := range oneblocks {
+				oneBlockBytes, err := s.io.DownloadOneBlockFile(context.TODO(), oneblock)
+				if err != nil {
+					return err
+				}
+
+				blk, err := bstream.NewBlockFromBytes(oneBlockBytes)
+				if err != nil {
+					return err
+				}
+
+				err = s.oneblockArchiver.StoreBlock(blk)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		s.bundler = nil
+
 		return s.oneblockArchiver.StoreBlock(block) // once we passed a boundary with oneblocks, we always send oneblocks
 	}
 
 	if s.bundler == nil {
 		exclusiveHighestBlockLimit := ((block.Number / 100) * 100) + 100
-
-		//todo: one block files that were not merge from the execution
 		s.bundler = bundle.NewBundler(100, exclusiveHighestBlockLimit)
+		s.loadLastPartial(block)
 	}
 
 	fileName := bundle.BlockFileName(block)
@@ -315,25 +243,38 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 		return nil
 	}
 
-	//todo: save one block file to disk
+	err := s.io.SaveOneBlockFile(ctx, fileName, block)
+	if err != nil {
+		return err
+	}
 
 	bundleCompleted, highestBlockLimit := s.bundler.BundleCompleted()
 	if bundleCompleted {
-
 		oneBlockFiles := s.bundler.ToBundle(highestBlockLimit)
 		for _, oneBlockFile := range oneBlockFiles {
-			//todo: load block from one block file
-			block := &bstream.Block{}
+			data, err := s.io.DownloadOneBlockFile(ctx, oneBlockFile)
+			if err != nil {
+				return err
+			}
+
+			block, err := bstream.NewBlockFromBytes(data)
+			if err != nil {
+				return err
+			}
 
 			if err := s.mergeArchiver.StoreBlock(block); err != nil {
 				return err
 			}
 		}
 
-		s.mergeArchiver.Merge(s.bundler.BundleInclusiveLowerBlock())
+		err := s.mergeArchiver.Merge(s.bundler.BundleInclusiveLowerBlock())
+		if err != nil {
+			return err
+		}
+
 		s.bundler.Commit(highestBlockLimit)
 		s.bundler.Purge(func(oneBlockFilesToDelete []*bundle.OneBlockFile) {
-			//todo: delete one block file from disk
+			_ = s.io.DeleteOneBlockFiles(context.Background(), oneBlockFiles)
 		})
 
 		if !s.shouldMerge(block) { //this could change once a bundle is completed
@@ -343,71 +284,6 @@ func (s *ArchiverSelector) StoreBlock(block *bstream.Block) error {
 	}
 
 	return nil
-
-	//isBoundaryBlock, skippedBundles := s.passedBoundary(block)
-	//if isBoundaryBlock && !s.firstBoundaryPassed {
-	//	defer func() { s.firstBoundaryPassed = true }()
-	//}
-	//
-	//isFirstBlock := !s.firstBlockPassed
-	//if isFirstBlock {
-	//	s.firstBlockPassed = true
-	//	if s.mergeable(block) {
-	//		if isBoundaryBlock {
-	//			s.logger.Info("merging blocks on first boundary", zap.Stringer("block", block))
-	//			s.currentlyMerging = true
-	//			return s.mergeArchiver.StoreBlock(block)
-	//		}
-	//		if previousBlocks := s.loadLastPartial(block.Number); previousBlocks != nil {
-	//			s.logger.Info("merging on first block using loaded previous partial blocks", zap.Stringer("block", block))
-	//			s.currentlyMerging = true
-	//			for _, blk := range previousBlocks {
-	//				if err := s.mergeArchiver.StoreBlock(blk); err != nil {
-	//					return err
-	//				}
-	//			}
-	//			return s.mergeArchiver.StoreBlock(block)
-	//		}
-	//		s.logger.Info("cannot ensure complete merged block bundle, not merging until next boundary", zap.Stringer("block", block))
-	//	}
-	//}
-	//
-	if isBoundaryBlock {
-		if s.currentlyMerging {
-			boundaries := append(skippedBundles, block.Number/100*100)
-			for _, b := range boundaries {
-				if err := s.mergeArchiver.Merge(b - 100); err != nil { // merge previous bundle
-					return err
-				}
-			}
-
-			if s.mergeable(block) {
-				return s.mergeArchiver.StoreBlock(block)
-			}
-
-			s.logger.Info("switching to one-blocks", zap.Stringer("block", block))
-			s.currentlyMerging = false
-			return s.oneblockArchiver.StoreBlock(block)
-		}
-
-		if s.mergeable(block) {
-			s.logger.Info("switching to merged-blocks (sending this block to both archivers)", zap.Stringer("block", block))
-			s.currentlyMerging = true
-			if err := s.oneblockArchiver.StoreBlock(block); err != nil {
-				return err
-			}
-			if err := s.mergeArchiver.StoreBlock(block); err != nil {
-				return err
-			}
-			return nil
-		}
-
-	}
-
-	if s.currentlyMerging {
-		return s.mergeArchiver.StoreBlock(block)
-	}
-	return s.oneblockArchiver.StoreBlock(block)
 }
 
 func (s *ArchiverSelector) Start() {
@@ -426,48 +302,3 @@ func (s *ArchiverSelector) Start() {
 func (s *ArchiverSelector) Init() error {
 	return s.oneblockArchiver.Init()
 }
-
-/*
-	if a.buffer != nil {
-		err := a.writePartialFile(lastBlock)
-		if err != nil {
-			a.logger.Error("writing partial file", zap.Error(err))
-		}
-	}
-
-*/
-
-/*
-	if block.Num() < a.currentBlock {
-		return fmt.Errorf("merge archiver does not support replaying forks (resending block %d which is less than current block %d", block.Num(), a.currentBlock)
-	}
-
-	if a.nextExclusiveHighestBlockLimit == 0 {
-		highestBlockLimit := ((block.Num() / 100) * 100) + 200 //skipping first bundle because it will be incomplete
-		a.skipBlockUpTo = highestBlockLimit - 100
-		if block.Num() == bstream.GetProtocolFirstStreamableBlock {
-			highestBlockLimit -= 100 //because this the first streamable block it is ok to produce and incomplete bundle.
-			a.skipBlockUpTo = bstream.GetProtocolFirstStreamableBlock
-		}
-		a.nextExclusiveHighestBlockLimit = highestBlockLimit
-	}
-
-	if block.Num() < a.skipBlockUpTo { //skipping block of the first incomplete bundle
-		return nil
-	}
-	a.currentBlock = block.Num()
-
-	if block.Num() >= a.nextExclusiveHighestBlockLimit {
-
-		baseNum := a.nextExclusiveHighestBlockLimit - 100
-//MERGE(baseNum)
-
-		//resetting
-		a.nextExclusiveHighestBlockLimit += 100
-	}
-
-
-*/
-
-//nextExclusiveHighestBlockLimit uint64
-//skipBlockUpTo                  uint64

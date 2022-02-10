@@ -17,6 +17,7 @@ package mindreader
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
 	"time"
@@ -137,12 +138,32 @@ func NewMindReaderPlugin(
 		mergeArchiveStore.SetOverwrite(true)
 	}
 
-	mergeArchiver := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
+	oneBlockLocalStore, err := dstore.NewLocalStore(&url.URL{Scheme: "", Path: workingDirectory}, "", "", false)
+	if err != nil {
+		return nil, fmt.Errorf("setting up oneblock local store: %w", err)
+	}
+
+	archiverIO := NewArchiverDStoreIO(
+		bstream.GetBlockWriterFactory,
+		bstream.GetBlockReaderFactory,
+		oneBlockLocalStore,
+		mergeArchiveStore,
+		250,
+		5,
+		500*time.Millisecond,
+	)
+
+	mergeArchiver := NewMergeArchiver(
+		mergeArchiveStore,
+		bstream.GetBlockWriterFactory,
+		workingDirectory,
+		zlogger,
+	)
 
 	archiverSelector := NewArchiverSelector(
 		oneBlockArchiver,
 		mergeArchiver,
-		bstream.GetBlockReaderFactory,
+		archiverIO,
 		batchMode, tracker,
 		mergeThresholdBlockAge,
 		workingDirectory,
