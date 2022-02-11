@@ -14,13 +14,16 @@ import (
 
 type ArchiverIO interface {
 	merger.IOInterface
+	merger.OneBlockFilesDeleter
 	StoreMergeableOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
 	StoreOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
-	DeleteOneBlockFiles(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error
 	WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error)
 }
 
 type ArchiverDStoreIO struct {
+	*merger.DStoreIO
+	merger.OneBlockFilesDeleter
+
 	blockWriterFactory bstream.BlockWriterFactory
 	blockReaderFactory bstream.BlockReaderFactory
 
@@ -30,8 +33,6 @@ type ArchiverDStoreIO struct {
 	localMergedBlocksStore dstore.Store
 	mergedBlocksStore      dstore.Store
 
-	oneBlockDeleter             merger.OneBlockFilesDeleter
-	mergerIO                    merger.IOInterface
 	uploadableOneBlockStore     dstore.Store
 	uploadableMergedBlocksStore dstore.Store
 }
@@ -56,25 +57,9 @@ func NewArchiverDStoreIO(
 		uploadableMergedBlocksStore: uploadableMergedBlocksStore,
 		oneBlockStore:               oneBlocksStore,
 		mergedBlocksStore:           mergedBlocksStore,
-		oneBlockDeleter:             merger.NewOneBlockFilesDeleter(mergeableOneBlockStore),
-		mergerIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, maxOneBlockOperationsBatchSize, retryAttempts, retryCooldown),
+		OneBlockFilesDeleter:        merger.NewOneBlockFilesDeleter(mergeableOneBlockStore),
+		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, maxOneBlockOperationsBatchSize, retryAttempts, retryCooldown),
 	}
-}
-
-func (m *ArchiverDStoreIO) MergeAndStore(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
-	return m.mergerIO.MergeAndStore(inclusiveLowerBlock, oneBlockFiles)
-}
-
-func (m *ArchiverDStoreIO) FetchMergedOneBlockFiles(lowBlockNum uint64) ([]*bundle.OneBlockFile, error) {
-	return m.mergerIO.FetchMergedOneBlockFiles(lowBlockNum)
-}
-
-func (m *ArchiverDStoreIO) FetchOneBlockFiles(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error) {
-	return m.mergerIO.FetchOneBlockFiles(ctx)
-}
-
-func (m *ArchiverDStoreIO) DownloadOneBlockFile(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
-	return m.mergerIO.DownloadOneBlockFile(ctx, oneBlockFile)
 }
 
 func (m *ArchiverDStoreIO) StoreOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error {
@@ -99,10 +84,9 @@ func (m *ArchiverDStoreIO) storeOneBlockFile(ctx context.Context, fileName strin
 	return store.WriteObject(ctx, fileName, buffer)
 }
 
-func (m *ArchiverDStoreIO) DeleteOneBlockFiles(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error {
-	m.oneBlockDeleter.Delete(oneBlockFiles)
-	return nil
-}
+//func (m *ArchiverDStoreIO) DeleteOneBlockFiles(oneBlockFiles []*bundle.OneBlockFile) {
+//	m.Delete(oneBlockFiles)
+//}
 
 func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error) {
 	err = m.mergeableOneBlockStore.Walk(ctx, "", "", func(filename string) (err error) {
@@ -117,6 +101,26 @@ func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out 
 			Num:           blockNum,
 			PreviousID:    prevId,
 		}
+
+		if obf.InnerLibNum == nil {
+			data, err := obf.Data(ctx, m.DownloadOneBlockFile)
+			if err != nil {
+				return fmt.Errorf("getting one block file data %q: %w", filename, err)
+			}
+
+			blockReader, err := m.blockReaderFactory.New(bytes.NewReader(data))
+			if err != nil {
+				return fmt.Errorf("unable to read one block %q: %w", filename, err)
+			}
+
+			block, err := blockReader.Read()
+			if block == nil {
+				return err
+			}
+
+			obf.InnerLibNum = &block.LibNum
+		}
+
 		out = append(out, obf)
 
 		return nil

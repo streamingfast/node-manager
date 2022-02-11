@@ -146,8 +146,8 @@ func (s *Archiver) shouldMerge(block *bstream.Block) bool {
 	return false
 }
 
-func (s *Archiver) loadLastPartial(block *bstream.Block) error {
-	oneBlockFiles, err := s.io.WalkMergeableOneBlockFiles(context.TODO())
+func (s *Archiver) loadLastPartial(ctx context.Context, block *bstream.Block) error {
+	oneBlockFiles, err := s.io.WalkMergeableOneBlockFiles(ctx)
 	if err != nil {
 		return fmt.Errorf("walking mergeable one block files: %w", err)
 	}
@@ -213,7 +213,7 @@ func (s *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 	if s.bundler == nil {
 		exclusiveHighestBlockLimit := ((block.Number / s.bundleSize) * s.bundleSize) + s.bundleSize
 		s.bundler = bundle.NewBundler(s.bundleSize, exclusiveHighestBlockLimit)
-		if err := s.loadLastPartial(block); err != nil {
+		if err := s.loadLastPartial(ctx, block); err != nil {
 			return fmt.Errorf("loading partial: %w", err)
 		}
 	}
@@ -242,7 +242,7 @@ func (s *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 
 		s.bundler.Commit(highestBlockLimit)
 		s.bundler.Purge(func(oneBlockFilesToDelete []*bundle.OneBlockFile) {
-			_ = s.io.DeleteOneBlockFiles(context.Background(), oneBlockFiles)
+			s.io.Delete(oneBlockFiles)
 		})
 
 		if !s.shouldMerge(block) { //this could change once a bundle is completed
