@@ -69,9 +69,8 @@ func NewArchiver(
 	return a
 }
 
-func (a *Archiver) Start() {
-
-	libUpdaterCtx, libUpdaterCancel := context.WithCancel(context.Background())
+func (a *Archiver) Start(ctx context.Context) {
+	libUpdaterCtx, libUpdaterCancel := context.WithCancel(ctx)
 	if !a.batchMode {
 		a.launchLastLIBUpdater(libUpdaterCtx)
 	}

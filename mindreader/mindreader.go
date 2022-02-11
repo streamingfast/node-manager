@@ -62,7 +62,9 @@ type MindReaderPlugin struct {
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
 	channelCapacity int                           // transformed blocks are buffered in a channel
 
-	archiver *Archiver // transformed blocks are sent to Archiver
+	archiver                 *Archiver // transformed blocks are sent to Archiver
+	oneBlockFileUploader     *FileUploader
+	mergedBlocksFileUploader *FileUploader
 
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
@@ -186,8 +188,13 @@ func NewMindReaderPlugin(
 		zlogger,
 	)
 
+	oneBlockFileUploader := NewFileUploader(uploadableOneBlocksStore, oneBlocksStore, zlogger)
+	mergedBlocksFileUploader := NewFileUploader(uploadableMergedBlocksStore, mergedBlocksStore, zlogger)
+
 	mindReaderPlugin, err := newMindReaderPlugin(
 		archiver,
+		oneBlockFileUploader,
+		mergedBlocksFileUploader,
 		consoleReaderFactory,
 		consoleReaderTransformer,
 		startBlockNum,
@@ -207,6 +214,8 @@ func NewMindReaderPlugin(
 
 func newMindReaderPlugin(
 	archiver *Archiver,
+	oneBlockFileUploader *FileUploader,
+	mergedBlocksFileUploader *FileUploader,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	startBlock uint64,
@@ -218,16 +227,18 @@ func newMindReaderPlugin(
 ) (*MindReaderPlugin, error) {
 	zlogger.Info("creating new mindreader plugin")
 	return &MindReaderPlugin{
-		Shutter:              shutter.New(),
-		consoleReaderFactory: consoleReaderFactory,
-		transformer:          consoleReaderTransformer,
-		archiver:             archiver,
-		startGate:            NewBlockNumberGate(startBlock),
-		stopBlock:            stopBlock,
-		channelCapacity:      channelCapacity,
-		headBlockUpdateFunc:  headBlockUpdateFunc,
-		zlogger:              zlogger,
-		blockStreamServer:    blockStreamServer,
+		Shutter:                  shutter.New(),
+		consoleReaderFactory:     consoleReaderFactory,
+		transformer:              consoleReaderTransformer,
+		archiver:                 archiver,
+		oneBlockFileUploader:     oneBlockFileUploader,
+		mergedBlocksFileUploader: mergedBlocksFileUploader,
+		startGate:                NewBlockNumberGate(startBlock),
+		stopBlock:                stopBlock,
+		channelCapacity:          channelCapacity,
+		headBlockUpdateFunc:      headBlockUpdateFunc,
+		zlogger:                  zlogger,
+		blockStreamServer:        blockStreamServer,
 	}, nil
 }
 
@@ -236,6 +247,11 @@ func (p *MindReaderPlugin) Name() string {
 }
 
 func (p *MindReaderPlugin) Launch() {
+	ctx, cancel := context.WithCancel(context.Background())
+	p.OnTerminating(func(err error) {
+		cancel()
+	})
+
 	p.zlogger.Info("starting mindreader")
 
 	p.consumeReadFlowDone = make(chan interface{})
@@ -252,8 +268,9 @@ func (p *MindReaderPlugin) Launch() {
 
 	go p.consumeReadFlow(blocks)
 
-	p.archiver.Start()
-	//todo: start uploader
+	p.archiver.Start(ctx)
+	p.oneBlockFileUploader.Start(ctx)
+	p.mergedBlocksFileUploader.Start(ctx)
 
 	go func() {
 		for {
