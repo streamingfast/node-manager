@@ -16,315 +16,385 @@ package mindreader
 
 import (
 	"context"
-	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"github.com/streamingfast/merger/bundle"
-	"io"
-	"io/ioutil"
-	"os"
-	"path"
 	"testing"
 	"time"
 
-	"github.com/streamingfast/bstream"
-	"github.com/streamingfast/dstore"
-	"github.com/streamingfast/shutter"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
+
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/merger/bundle"
 )
 
-func newLocalTestStore(t *testing.T) dstore.Store {
-	t.Helper()
+func TestArchiver_StoreBlock(t *testing.T) {
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, false, nil, time.Hour, testLogger)
 
-	dir, err := ioutil.TempDir("/tmp", "mrtest")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	}
 
-	store, err := dstore.NewDBinStore(dir)
-	require.NoError(t, err)
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		fmt.Println("StoreMergeableOneBlockFileFunc:", fileName)
+		return nil
+	}
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		fmt.Println("merging bundle:", inclusiveLowerBlock)
+		return nil
+	}
+	//	mergerIO.FetchOneBlockFilesFunc = func(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error) {
+	//		return srcOneBlockFiles, nil
+	//	}
+	//
+	//	var mergedFiles []*bundle.OneBlockFile
+	//	mergerIO.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	//		defer merger.Shutdown(nil)
+	//		mergedFiles = oneBlockFiles
+	//		return nil
+	//	}
+	//
+	//	var deletedFiles []*bundle.OneBlockFile
+	//	merger.deleteFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	//		deletedFiles = append(deletedFiles, oneBlockFiles...)
+	//	}
+	//
+	//	go func() {
+	//		select {
+	//		case <-time.After(time.Second):
+	//			panic("too long")
+	//		case <-merger.Terminated():
+	//		}
+	//	}()
+	//
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFile2Block(oneBlockFile))
+		require.NoError(t, err)
+	}
 
-	return store
+	//	require.NoError(t, err)
+	//
+	//	assert.Len(t, deletedFiles, 4)
+	//	assert.Equal(t, bundle.ToSortedIDs(srcOneBlockFiles[0:4]), bundle.ToSortedIDs(deletedFiles))
+	//	assert.Len(t, mergedFiles, 4)
+	//	assert.Equal(t, srcOneBlockFiles[0:4], mergedFiles)
+	//
 }
 
-func newWorkDir(t *testing.T) string {
-	workDir, err := ioutil.TempDir("/tmp", "mrtest")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(workDir) })
-	return workDir
+func oneBlockFile2Block(oneBlockFile *bundle.OneBlockFile) *bstream.Block {
+	return &bstream.Block{
+		Id:             oneBlockFile.ID,
+		Number:         oneBlockFile.Num,
+		PreviousId:     oneBlockFile.PreviousID,
+		Timestamp:      oneBlockFile.BlockTime,
+		LibNum:         oneBlockFile.LibNum(),
+		PayloadKind:    0,
+		PayloadVersion: 0,
+		Payload:        nil,
+	}
 }
 
 type TestArchiverIO struct {
-	MergeAndSaveFunc             func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error)
+	MergeAndStoreFunc            func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error)
 	FetchMergedOneBlockFilesFunc func(lowBlockNum uint64) ([]*bundle.OneBlockFile, error)
 	FetchOneBlockFilesFunc       func(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error)
 	DownloadOneBlockFileFunc     func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error)
 
-	SaveOneBlockFileFunc    func(ctx context.Context, fileName string, block *bstream.Block) error
-	DeleteOneBlockFilesFunc func(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error
-	WalkOneBlockFilesFunc   func(ctx context.Context) []*bundle.OneBlockFile
+	StoreOneBlockFileFunc          func(ctx context.Context, fileName string, block *bstream.Block) error
+	StoreMergeableOneBlockFileFunc func(ctx context.Context, fileName string, block *bstream.Block) error
+	DeleteOneBlockFilesFunc        func(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error
+	WalkMergeableOneBlockFilesFunc func(ctx context.Context) []*bundle.OneBlockFile
 }
 
-func (io *TestArchiverIO) MergeAndSave(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
-	return io.MergeAndSaveFunc(inclusiveLowerBlock, oneBlockFiles)
+func (io *TestArchiverIO) MergeAndStore(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	if io.MergeAndStoreFunc == nil {
+		return nil
+	}
+	return io.MergeAndStoreFunc(inclusiveLowerBlock, oneBlockFiles)
 }
 
 func (io *TestArchiverIO) FetchMergedOneBlockFiles(lowBlockNum uint64) ([]*bundle.OneBlockFile, error) {
+	if io.FetchMergedOneBlockFilesFunc == nil {
+		return nil, nil
+	}
 	return io.FetchMergedOneBlockFilesFunc(lowBlockNum)
 }
 
 func (io *TestArchiverIO) FetchOneBlockFiles(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error) {
+	if io.FetchOneBlockFilesFunc == nil {
+		return nil, nil
+	}
 	return io.FetchOneBlockFilesFunc(ctx)
 }
 
 func (io *TestArchiverIO) DownloadOneBlockFile(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+	if io.DownloadOneBlockFileFunc == nil {
+		return nil, nil
+	}
 	return io.DownloadOneBlockFileFunc(ctx, oneBlockFile)
 }
 
-func (io *TestArchiverIO) SaveOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error {
-	return io.SaveOneBlockFileFunc(ctx, fileName, block)
+func (io *TestArchiverIO) StoreOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error {
+	if io.StoreOneBlockFileFunc == nil {
+		return nil
+	}
+	return io.StoreOneBlockFileFunc(ctx, fileName, block)
+}
+func (io *TestArchiverIO) StoreMergeableOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error {
+	if io.StoreMergeableOneBlockFileFunc == nil {
+		return nil
+	}
+	return io.StoreMergeableOneBlockFileFunc(ctx, fileName, block)
 }
 
 func (io *TestArchiverIO) DeleteOneBlockFiles(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error {
+	if io.DeleteOneBlockFilesFunc == nil {
+		return nil
+	}
 	return io.DeleteOneBlockFilesFunc(ctx, oneBlockFiles)
 }
 
-func (io *TestArchiverIO) WalkOneBlockFiles(ctx context.Context) []*bundle.OneBlockFile {
-	return io.WalkOneBlockFilesFunc(ctx)
-}
-
-func NewDefaultTestArchiverIO(t *testing.T) ArchiverIO {
-	return NewArchiverDStoreIO(
-		testBlockWriteFactory,
-		testBlockReadFactory,
-		newLocalTestStore(t),
-		newLocalTestStore(t),
-		250,
-		1,
-		250*time.Millisecond,
-	)
-}
-
-func TestNewLocalStore(t *testing.T) {
-	store := newLocalTestStore(t)
-	workDir := newWorkDir(t)
-	archiver := testNewArchiver(workDir, store)
-	mergeArchiver := testNewMergeArchiver(workDir, store)
-	archiverSelector := testNewArchiverSelector(t, archiver, mergeArchiver)
-
-	// FIXME this test should not require using a mindreader, just the archiver
-	mindReader, err := testNewMindReaderPlugin(archiverSelector, 0, 0)
-	mindReader.OnTerminating(func(e error) {
-		t.Errorf("should not be called: %s", e)
-	})
-	require.NoError(t, err)
-
-	mindReader.Launch()
-
-	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
-
-	time.Sleep(1 * time.Second) //FIXME: this suck!
-
-	ctx := context.Background()
-	expectFileName := blockFileNameFromArgs(4, time.Time{}, "0000004a", "", 0, "default")
-	exists, err := store.FileExists(ctx, expectFileName)
-	require.NoError(t, err)
-	require.True(t, exists)
-
-	file, err := store.OpenObject(ctx, expectFileName)
-	require.NoError(t, err)
-	data, err := ioutil.ReadAll(file)
-
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"Payload":null}`, string(data))
-}
-
-func testNewArchiverSelector(t *testing.T, oba *OneBlockArchiver, ma *MergeArchiver) *ArchiverSelector {
-	return &ArchiverSelector{
-		Shutter:          shutter.New(),
-		io:               NewDefaultTestArchiverIO(t),
-		currentlyMerging: true,
-		oneblockArchiver: oba,
-		mergeArchiver:    ma,
-		logger:           testLogger,
-		lastSeenLIB:      atomic.NewUint64(0),
-	}
-}
-
-func testNewArchiver(path string, store dstore.Store) *OneBlockArchiver {
-	return NewOneBlockArchiver(store, testBlockWriteFactory, path, "", testLogger)
-}
-func testNewMergeArchiver(path string, store dstore.Store) *MergeArchiver {
-	a := &MergeArchiver{
-		workDir:            path,
-		Shutter:            shutter.New(),
-		store:              store,
-		blockWriterFactory: testBlockWriteFactory,
-		logger:             testLogger,
-	}
-	a.newBuffer()
-	return a
-}
-
-func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
-	return newMindReaderPlugin(archiver,
-		testConsoleReaderFactory,
-		testConsoleReaderBlockTransformer,
-		startBlock,
-		stopBlock,
-		10,
-		nil,
-		nil,
-		testLogger,
-	)
-}
-
-var testBlockWriteFactory = bstream.BlockWriterFactoryFunc(newTestBlockWriter)
-var testBlockReadFactory = bstream.BlockReaderFactoryFunc(newTestBlockReader)
-
-func newTestBlockReader(reader io.Reader) (bstream.BlockReader, error) {
-	return &testBlockReader{
-		reader: reader,
-	}, nil
-}
-
-type testBlockReader struct {
-	reader io.Reader
-}
-
-func (r *testBlockReader) Read() (*bstream.Block, error) {
-	out := &bstream.Block{}
-
-	b, err := io.ReadAll(r.reader)
-	if err != nil {
-		return nil, err
+func (io *TestArchiverIO) WalkMergeableOneBlockFiles(ctx context.Context) ([]*bundle.OneBlockFile, error) {
+	if io.WalkMergeableOneBlockFilesFunc == nil {
+		return nil, nil
 	}
 
-	err = json.Unmarshal(b, out)
-	return out, err
+	return io.WalkMergeableOneBlockFilesFunc(ctx), nil
 }
 
-func newTestBlockWriter(writer io.Writer) (bstream.BlockWriter, error) {
-	return &testBlockWriter{
-		writer: writer,
-	}, nil
-}
-
-type testBlockWriter struct {
-	writer io.Writer
-}
-
-func (w *testBlockWriter) Write(block *bstream.Block) error {
-	bytes, err := json.Marshal(block)
-	if err != nil {
-		return nil
-	}
-
-	_, err = w.writer.Write(bytes)
-	return err
-}
-
-func testConsoleReaderFactory(lines chan string) (ConsolerReader, error) {
-	return newTestConsolerReader(lines), nil
-}
-
-type testConsolerReader struct {
-	lines chan string
-	done  chan interface{}
-}
-
-func newTestConsolerReader(lines chan string) *testConsolerReader {
-	return &testConsolerReader{
-		lines: lines,
-	}
-}
-
-func (c *testConsolerReader) Done() <-chan interface{} {
-	return c.done
-}
-
-func (c *testConsolerReader) Read() (obj interface{}, err error) {
-	line, _ := <-c.lines
-	obj = line[6:]
-	return
-}
-
-func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
-	content, ok := obj.(string)
-	if !ok {
-		return nil, fmt.Errorf("expecting type string, got %T", obj)
-	}
-
-	type block struct {
-		ID string `json:"id"`
-	}
-
-	data := new(block)
-	err := json.Unmarshal([]byte(content), data)
-	if err != nil {
-		return nil, fmt.Errorf("marshalling error on '%s': %w", content, err)
-	}
-
-	return &bstream.Block{
-		Id:     data.ID,
-		Number: toBlockNum(data.ID),
-	}, nil
-}
-
-type testArchiver struct {
-	*shutter.Shutter
-	blocks []*bstream.Block
-}
-
-func (a *testArchiver) Init() error {
-	return nil
-}
-
-func (a *testArchiver) Start() {
-}
-
-func (a *testArchiver) StoreBlock(block *bstream.Block) error {
-	a.blocks = append(a.blocks, block)
-	return nil
-}
-
-func TestFindFilesToUpload(t *testing.T) {
-	tmp, err := ioutil.TempDir(os.TempDir(), "archivertest")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmp)
-	for _, f := range []string{"alpha", "charlie", "bravo", "foxtrot", "echo"} {
-		require.NoError(t, createEmptyFile(path.Join(tmp, fmt.Sprintf("%s.merged", f))))
-	}
-	files, err := findFilesToUpload(tmp, nil, "merged")
-	require.NoError(t, err)
-
-	expectedShort := []string{"alpha", "bravo", "charlie", "echo", "foxtrot"}
-	var expectedLong []string
-	for _, s := range expectedShort {
-		expectedLong = append(expectedLong, tmp+"/"+s+".merged")
-	}
-	assert.Equal(t, files, expectedLong)
-
-}
-
-func createEmptyFile(filename string) error {
-	emptyFile, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	emptyFile.Close()
-	return nil
-}
-
-func toBlockNum(blockID string) uint64 {
-	if len(blockID) < 8 {
-		return 0
-	}
-	bin, err := hex.DecodeString(blockID[:8])
-	if err != nil {
-		return 0
-	}
-	return uint64(binary.BigEndian.Uint32(bin))
-}
+//var now = time.Now()
+//
+//func genBlocks(nums ...uint64) (out []*bstream.Block) {
+//	prevId := ""
+//	for _, num := range nums {
+//		if prevId == "" {
+//			prevId = fmt.Sprintf("%d", num-1)
+//		}
+//		blockId := fmt.Sprintf("%d", num)
+//		out = append(out, &bstream.Block{Id: blockId, PreviousId: prevId, Number: num, Timestamp: now.Add(-time.Hour).Add(time.Second * time.Duration(num))})
+//		prevId = blockId
+//	}
+//	return
+//}
+//func genOneBlockFiles(nums ...uint64) (out []string) {
+//	blks := genBlocks(nums...)
+//	for _, blk := range blks {
+//		out = append(out, blockFileNameFromArgs(blk.Number, blk.Timestamp, blk.Id, blk.PreviousId, blk.LibNum, "default.dat"))
+//	}
+//	return
+//}
+//
+//func TestArchiverSelector(t *testing.T) {
+//	t.Skip()
+//	//tests := []struct {
+//	//	name                       string
+//	//	input                      []*bstream.Block
+//	//	mergeTimeThreshold         time.Duration
+//	//	expectUploadedMergedBlocks map[uint64][]uint64
+//	//	expectBufferedMergedBlocks []uint64
+//	//	expectMergedFiles          []string
+//	//	expectOneBlocks            []string
+//	//}{
+//	//	{
+//	//		name:               "one block",
+//	//		input:              genBlocks(99),
+//	//		mergeTimeThreshold: 999 * time.Hour,
+//	//		expectOneBlocks:    genOneBlockFiles(99),
+//	//	},
+//	//	{
+//	//		name:               "one old block",
+//	//		input:              genBlocks(99),
+//	//		mergeTimeThreshold: time.Minute,
+//	//		expectOneBlocks:    genOneBlockFiles(99),
+//	//	},
+//	//	{
+//	//		name:                       "one boundary old block",
+//	//		input:                      genBlocks(100),
+//	//		mergeTimeThreshold:         time.Minute,
+//	//		expectBufferedMergedBlocks: []uint64{100},
+//	//		expectOneBlocks:            nil,
+//	//	},
+//	//	{
+//	//		name:                       "multiple old blocks starting on boundary",
+//	//		input:                      genBlocks(100, 101, 102, 103),
+//	//		mergeTimeThreshold:         time.Minute,
+//	//		expectBufferedMergedBlocks: []uint64{100, 101, 102, 103},
+//	//		expectOneBlocks:            nil,
+//	//	},
+//	//	{
+//	//		name:                       "multiple old blocks traverse boundary",
+//	//		input:                      genBlocks(98, 99, 100, 101, 102),
+//	//		mergeTimeThreshold:         time.Minute,
+//	//		expectBufferedMergedBlocks: []uint64{100, 101, 102},
+//	//		expectOneBlocks:            genOneBlockFiles(98, 99, 100),
+//	//	},
+//	//	{
+//	//		name:               "multiple old blocks traverse multiple boundaries",
+//	//		input:              genBlocks(98, 99, 101, 102, 203, 205, 301),
+//	//		mergeTimeThreshold: time.Minute,
+//	//		expectUploadedMergedBlocks: map[uint64][]uint64{
+//	//			100: {101, 102},
+//	//			200: {203, 205},
+//	//		},
+//	//		expectBufferedMergedBlocks: []uint64{301},
+//	//		expectOneBlocks:            genOneBlockFiles(98, 99, 101),
+//	//	},
+//	//	{
+//	//		name:               "multiple old blocks traverse multiple boundaries at same time",
+//	//		input:              genBlocks(98, 99, 101, 102, 301, 302, 400),
+//	//		mergeTimeThreshold: time.Minute,
+//	//		expectUploadedMergedBlocks: map[uint64][]uint64{
+//	//			100: {101, 102},
+//	//			200: nil,
+//	//			300: {301, 302},
+//	//		},
+//	//		expectBufferedMergedBlocks: []uint64{400},
+//	//		expectOneBlocks:            genOneBlockFiles(98, 99, 101),
+//	//	},
+//	//	{
+//	//		name:               "multiple old blocks from boundary traverse boundary",
+//	//		input:              genBlocks(100, 102, 203, 205),
+//	//		mergeTimeThreshold: time.Minute,
+//	//		expectUploadedMergedBlocks: map[uint64][]uint64{
+//	//			100: {100, 102},
+//	//		},
+//	//		expectBufferedMergedBlocks: []uint64{203, 205},
+//	//	},
+//	//
+//	//	{
+//	//		name:               "multiple young blocks traverse boundary",
+//	//		input:              genBlocks(98, 99, 100, 101, 102),
+//	//		mergeTimeThreshold: 999 * time.Hour,
+//	//		expectOneBlocks:    genOneBlockFiles(98, 99, 100, 101, 102),
+//	//	},
+//	//	{
+//	//		name:                       "holes in the stream",
+//	//		input:                      genBlocks(98, 99, 101, 102),
+//	//		mergeTimeThreshold:         time.Minute,
+//	//		expectBufferedMergedBlocks: []uint64{101, 102},
+//	//		expectOneBlocks:            genOneBlockFiles(98, 99, 101),
+//	//	},
+//	//	{
+//	//		name:                       "from merged to live young blocks",
+//	//		input:                      genBlocks(98, 99, 101, 102, 199, 200, 201),
+//	//		mergeTimeThreshold:         (3600 - 199) * time.Second,
+//	//		expectUploadedMergedBlocks: map[uint64][]uint64{100: {101, 102, 199}},
+//	//		expectBufferedMergedBlocks: nil, // no more merged blocks
+//	//		expectOneBlocks:            genOneBlockFiles(98, 99, 101, 200, 201),
+//	//	},
+//	//}
+//	//
+//	//for _, test := range tests {
+//	//	t.Run(test.name, func(t *testing.T) {
+//	//		workDir := newWorkDir(t)
+//	//		archiver := testNewArchiver(workDir, nil)
+//	//		archiverSelector := testNewArchiverSelector(t, archiver)
+//	//		archiverSelector.mergeThresholdBlockAge = test.mergeTimeThreshold
+//	//
+//	//		archiverSelector.Init()
+//	//
+//	//		for _, blk := range test.input {
+//	//			err := archiverSelector.StoreBlock(blk)
+//	//			require.NoError(t, err)
+//	//		}
+//	//
+//	//		oneBlocks, mergedFiles, err := getProducedFiles(t, workDir)
+//	//		require.NoError(t, err)
+//	//		assert.Equal(t, test.expectOneBlocks, oneBlocks)
+//	//
+//	//		uploadedMergedBlocks := readMergedFilesBlockNums(t, mergedFiles)
+//	//		fmt.Println("hey got this", test.expectUploadedMergedBlocks, uploadedMergedBlocks)
+//	//		if !assert.Equal(t, test.expectUploadedMergedBlocks, uploadedMergedBlocks, "uploaded merged blocks") {
+//	//			fmt.Println("got these", uploadedMergedBlocks)
+//	//		}
+//	//
+//	//		var bufferedMergedBlocks []uint64
+//	//		data, err := io.ReadAll(mergeArchiver.buffer)
+//	//		require.NoError(t, err)
+//	//		if data != nil {
+//	//			bufferedMergedBlocks = readMergedBytesBlockNums(t, data)
+//	//		}
+//	//		assert.Equal(t, test.expectBufferedMergedBlocks, bufferedMergedBlocks, "buffered merged blocks")
+//	//
+//	//	})
+//	//}
+//}
+//
+//func getProducedFiles(t *testing.T, workDir string) (oneBlocks, mergedFiles []string, err error) {
+//	err = filepath.Walk(workDir, func(path string, info os.FileInfo, err error) error {
+//		if info.IsDir() {
+//			return nil
+//		}
+//		name := info.Name()
+//		if strings.HasSuffix(name, "merged") {
+//			mergedFiles = append(mergedFiles, path)
+//		} else {
+//			oneBlocks = append(oneBlocks, name)
+//		}
+//		return err
+//	})
+//	return
+//}
+//
+//func mergedFileBaseNum(filename string) (uint64, error) {
+//	base := strings.TrimSuffix(path.Base(filename), ".merged")
+//	return strconv.ParseUint(base, 10, 64)
+//
+//}
+//
+//func readMergedFilesBlockNums(t *testing.T, mergedFiles []string) map[uint64][]uint64 {
+//	t.Helper()
+//	mergedBlocks := make(map[uint64][]uint64)
+//	for _, mf := range mergedFiles {
+//		f, err := os.Open(mf)
+//		require.NoError(t, err)
+//
+//		mfNum, err := mergedFileBaseNum(mf)
+//		require.NoError(t, err)
+//
+//		//cnt, err := io.ReadAll(f)
+//		//require.NoError(t, err)
+//		//fmt.Println(string(cnt))
+//		data, err := io.ReadAll(f)
+//		require.NoError(t, err)
+//
+//		mb := readMergedBytesBlockNums(t, data)
+//		mergedBlocks[mfNum] = mb
+//	}
+//	if len(mergedBlocks) > 0 {
+//		return mergedBlocks
+//	}
+//
+//	return nil
+//}
+//
+//func readMergedBytesBlockNums(t *testing.T, data []byte) (out []uint64) {
+//	t.Helper()
+//	blocks := bytes.Split(data, []byte("}{"))
+//	for _, blk := range blocks {
+//		if len(blk) == 0 {
+//			continue
+//		}
+//		if blk[0] != byte('{') {
+//			blk = append([]byte("{"), blk...)
+//		}
+//		if blk[len(blk)-1] != byte('}') {
+//			blk = append(blk, byte('}'))
+//		}
+//
+//		br, err := testBlockReadFactory(bytes.NewReader(blk))
+//		require.NoError(t, err)
+//		b, err := br.Read()
+//		if err != nil {
+//			fmt.Println("got error", err)
+//			break
+//		}
+//		out = append(out, b.Number)
+//	}
+//
+//	return
+//}

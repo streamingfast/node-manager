@@ -8,7 +8,6 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/gorilla/mux v1.8.0
 	github.com/streamingfast/bstream v0.0.2-0.20220301162141-6630bbe5996c
-	github.com/streamingfast/dbin v0.0.0-20210809205249-73d5eca35dc5
 	github.com/streamingfast/derr v0.0.0-20220301163149-de09cb18fc70
 	github.com/streamingfast/dgrpc v0.0.0-20220301153539-536adf71b594
 	github.com/streamingfast/dmetrics v0.0.0-20210811180524-8494aeb34447

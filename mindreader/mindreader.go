@@ -15,10 +15,11 @@
 package mindreader
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"time"
 
@@ -61,7 +62,7 @@ type MindReaderPlugin struct {
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
 	channelCapacity int                           // transformed blocks are buffered in a channel
 
-	archiver Archiver // transformed blocks are sent to Archiver
+	archiver *Archiver // transformed blocks are sent to Archiver
 
 	consumeReadFlowDone chan interface{}
 	continuityChecker   ContinuityChecker
@@ -124,57 +125,69 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
 
-	oneblockArchiveStore, err := dstore.NewDBinStore(archiveStoreURL) // never overwrites
+	mergeableOneBlockDir := path.Join(workingDirectory, "mergeable")
 	if err != nil {
-		return nil, fmt.Errorf("setting up archive store: %w", err)
+		return nil, fmt.Errorf("unable to create mergeableOneBlockDir directory %q: %w", mergeableOneBlockDir, err)
 	}
-	oneBlockArchiver := NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
+	uploadableOneBlocksDir := path.Join(workingDirectory, "uploadable-oneblock")
+	if err != nil {
+		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableOneBlocksDir, err)
+	}
+	uploadableMergedBlocksDir := path.Join(workingDirectory, "uploadable-merged")
+	if err != nil {
+		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableMergedBlocksDir, err)
+	}
 
-	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	oneBlocksStore, err := dstore.NewDBinStore(archiveStoreURL)
 	if err != nil {
-		return nil, fmt.Errorf("setting up merge archive store: %w", err)
+		return nil, fmt.Errorf("new one block store: %w", err)
 	}
+	mergedBlocksStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	if err != nil {
+		return nil, fmt.Errorf("new merge blocks store: %w", err)
+	}
+
+	mergeableOneBlocksStore, err := dstore.NewDBinStore(mergeableOneBlockDir)
+	if err != nil {
+		return nil, fmt.Errorf("new mergeableOneBlocksStore: %w", err)
+	}
+	uploadableMergedBlocksStore, err := dstore.NewDBinStore(uploadableMergedBlocksDir)
+	if err != nil {
+		return nil, fmt.Errorf("new uploadableMergedBlocksStore: %w", err)
+	}
+	uploadableOneBlocksStore, err := dstore.NewDBinStore(uploadableOneBlocksDir)
+	if err != nil {
+		return nil, fmt.Errorf("new uploadableOneBlocksStore: %w", err)
+	}
+
 	if batchMode {
-		mergeArchiveStore.SetOverwrite(true)
-	}
-
-	oneBlockLocalStore, err := dstore.NewLocalStore(&url.URL{Scheme: "", Path: workingDirectory}, "", "", false)
-	if err != nil {
-		return nil, fmt.Errorf("setting up oneblock local store: %w", err)
+		mergedBlocksStore.SetOverwrite(true)
 	}
 
 	archiverIO := NewArchiverDStoreIO(
 		bstream.GetBlockWriterFactory,
 		bstream.GetBlockReaderFactory,
-		oneBlockLocalStore,
-		mergeArchiveStore,
+		oneBlocksStore,
+		uploadableOneBlocksStore,
+		mergeableOneBlocksStore,
+		uploadableMergedBlocksStore,
+		mergedBlocksStore,
 		250,
 		5,
 		500*time.Millisecond,
 	)
 
-	mergeArchiver := NewMergeArchiver(
-		mergeArchiveStore,
-		bstream.GetBlockWriterFactory,
-		workingDirectory,
-		zlogger,
-	)
-
-	archiverSelector := NewArchiverSelector(
-		oneBlockArchiver,
-		mergeArchiver,
+	archiver := NewArchiver(
+		100, //todo: replace this with parameter
 		archiverIO,
-		batchMode, tracker,
+		batchMode,
+		tracker,
 		mergeThresholdBlockAge,
-		workingDirectory,
 		zlogger,
 	)
-	if err := archiverSelector.Init(); err != nil {
-		return nil, fmt.Errorf("failed to init archiver: %w", err)
-	}
 
 	mindReaderPlugin, err := newMindReaderPlugin(
-		archiverSelector,
+		archiver,
 		consoleReaderFactory,
 		consoleReaderTransformer,
 		startBlockNum,
@@ -193,7 +206,7 @@ func NewMindReaderPlugin(
 }
 
 func newMindReaderPlugin(
-	archiver Archiver,
+	archiver *Archiver,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	startBlock uint64,
@@ -238,7 +251,9 @@ func (p *MindReaderPlugin) Launch() {
 	p.consoleReader = consoleReader
 
 	go p.consumeReadFlow(blocks)
-	go p.archiver.Start()
+
+	p.archiver.Start()
+	//todo: start uploader
 
 	go func() {
 		for {
@@ -282,7 +297,7 @@ func (p *MindReaderPlugin) waitForReadFlowToComplete() {
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	p.zlogger.Info("starting consume flow")
 	defer close(p.consumeReadFlowDone)
-
+	ctx := context.Background()
 	for {
 		p.zlogger.Debug("waiting to consume next block.")
 		block, ok := <-blocks
@@ -301,7 +316,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 		p.zlogger.Debug("got one block", zap.Uint64("block_num", block.Number))
 
-		err := p.archiver.StoreBlock(block)
+		err := p.archiver.StoreBlock(ctx, block)
 		if err != nil {
 			p.zlogger.Error("failed storing block in archiver, shutting down. You will need to reprocess over this range to get this block.", zap.Error(err), zap.Stringer("block", block))
 			if !p.IsTerminating() {
