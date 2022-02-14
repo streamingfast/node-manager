@@ -41,8 +41,9 @@ type Archiver struct {
 	mergeThresholdBlockAge time.Duration
 	lastSeenLIB            *atomic.Uint64
 
-	logger     *zap.Logger
-	bundleSize uint64
+	logger         *zap.Logger
+	bundleSize     uint64
+	oneblockSuffix string
 }
 
 func NewArchiver(
@@ -50,6 +51,7 @@ func NewArchiver(
 	io ArchiverIO,
 	batchMode bool,
 	tracker *bstream.Tracker,
+	oneblockSuffix string,
 	mergeThresholdBlockAge time.Duration,
 	logger *zap.Logger,
 ) *Archiver {
@@ -59,6 +61,7 @@ func NewArchiver(
 		io:                     io,
 		batchMode:              batchMode,
 		tracker:                tracker,
+		oneblockSuffix:         oneblockSuffix,
 		mergeThresholdBlockAge: mergeThresholdBlockAge,
 		lastSeenLIB:            atomic.NewUint64(0),
 		logger:                 logger,
@@ -198,7 +201,7 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 					return fmt.Errorf("new block from bytes: %w", err)
 				}
 
-				err = a.io.StoreOneBlockFile(ctx, oneBlockFile.CanonicalName, blk)
+				err = a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(blk), blk)
 				if err != nil {
 					return fmt.Errorf("storing one block file: %w", err)
 				}
@@ -206,7 +209,7 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 		}
 		a.bundler = nil
 
-		return a.io.StoreOneBlockFile(ctx, oneBlockFile.CanonicalName, block)
+		return a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(block), block)
 	}
 
 	if a.bundler == nil {
@@ -249,7 +252,7 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 
 }
 func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
-	oneBlockFileName := bundle.BlockFileName(block)
+	oneBlockFileName := bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix)
 
 	return a.storeBlock(ctx, bundle.MustNewOneBlockFile(oneBlockFileName), block)
 }

@@ -67,7 +67,6 @@ type MindReaderPlugin struct {
 	mergedBlocksFileUploader *FileUploader
 
 	consumeReadFlowDone chan interface{}
-	continuityChecker   ContinuityChecker
 
 	blockStreamServer    *blockstream.Server
 	headBlockUpdateFunc  nodeManager.HeadBlockUpdater
@@ -116,13 +115,13 @@ func NewMindReaderPlugin(
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
 
-	// Other components may have issues finding the one block files if suffix is invalid
-	if oneblockSuffix != "" && !oneblockSuffixRegexp.MatchString(oneblockSuffix) {
-		return nil, fmt.Errorf("oneblock_suffix contains invalid characters: %q", oneblockSuffix)
+	err := validateOneBlockSuffix(oneblockSuffix)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create directory and its parent(s), it's a no-op if everything already exists
-	err := os.MkdirAll(workingDirectory, os.ModePerm)
+	err = os.MkdirAll(workingDirectory, os.ModePerm)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
@@ -184,6 +183,7 @@ func NewMindReaderPlugin(
 		archiverIO,
 		batchMode,
 		tracker,
+		oneblockSuffix,
 		mergeThresholdBlockAge,
 		zlogger,
 	)
@@ -211,6 +211,15 @@ func NewMindReaderPlugin(
 
 	return mindReaderPlugin, nil
 }
+
+func validateOneBlockSuffix(suffix string) error {
+	if suffix != "" && !oneblockSuffixRegexp.MatchString(suffix) {
+		return fmt.Errorf("oneblock_suffix contains invalid characters: %q", suffix)
+	}
+	return nil
+}
+
+// Other components may have issues finding the one block files if suffix is invalid
 
 func newMindReaderPlugin(
 	archiver *Archiver,
@@ -255,7 +264,6 @@ func (p *MindReaderPlugin) Launch() {
 	p.zlogger.Info("starting mindreader")
 
 	p.consumeReadFlowDone = make(chan interface{})
-	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	lines := make(chan string, 10000) //need a config here?
 	p.lines = lines
@@ -266,11 +274,16 @@ func (p *MindReaderPlugin) Launch() {
 	}
 	p.consoleReader = consoleReader
 
-	go p.consumeReadFlow(blocks)
-
 	p.archiver.Start(ctx)
 	p.oneBlockFileUploader.Start(ctx)
 	p.mergedBlocksFileUploader.Start(ctx)
+
+	p.launch()
+
+}
+func (p *MindReaderPlugin) launch() {
+	blocks := make(chan *bstream.Block, p.channelCapacity)
+	go p.consumeReadFlow(blocks)
 
 	go func() {
 		for {
@@ -353,17 +366,6 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			}
 		}
 
-		if p.continuityChecker != nil {
-			err = p.continuityChecker.Write(block.Num())
-			if err != nil {
-				p.zlogger.Error("failed continuity check", zap.Error(err))
-
-				if !p.IsTerminating() {
-					go p.Shutdown(fmt.Errorf("continuity check failed: %w", err))
-				}
-				continue
-			}
-		}
 	}
 }
 
@@ -402,14 +404,4 @@ func (p *MindReaderPlugin) LogLine(in string) {
 		return
 	}
 	p.lines <- in
-}
-
-func (p *MindReaderPlugin) HasContinuityChecker() bool {
-	return p.continuityChecker != nil
-}
-
-func (p *MindReaderPlugin) ResetContinuityChecker() {
-	if p.continuityChecker != nil {
-		p.continuityChecker.Reset()
-	}
 }

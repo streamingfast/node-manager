@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/streamingfast/dgrpc"
 	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
@@ -97,14 +96,6 @@ func (a *App) Run() error {
 			return fmt.Errorf("unable to start mindreader: %w", err)
 		}
 
-		if a.modules.MindreaderPlugin.HasContinuityChecker() {
-			httpOptions = append(httpOptions, func(r *mux.Router) {
-				r.HandleFunc("/v1/reset_cc", func(w http.ResponseWriter, _ *http.Request) {
-					a.modules.MindreaderPlugin.ResetContinuityChecker()
-					w.Write([]byte("ok"))
-				})
-			})
-		}
 	}
 
 	a.zlogger.Info("launching operator")

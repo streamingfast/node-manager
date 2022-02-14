@@ -2,9 +2,11 @@ package mindreader
 
 import (
 	"context"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestFileUploader(t *testing.T) {
@@ -17,14 +19,24 @@ func TestFileUploader(t *testing.T) {
 		return nil
 	}
 	destinationStore := &TestStore{}
-	destinationTestFiles := []string{}
+	var destinationTestFiles []string
+	done := make(chan interface{})
 	destinationStore.PushLocalFileFunc = func(ctx context.Context, localFile, toBaseName string) (err error) {
 		destinationTestFiles = append(destinationTestFiles, localFile)
+		if len(destinationTestFiles) == 3 {
+			close(done)
+		}
 		return nil
 	}
 
 	uploader := NewFileUploader(localStore, destinationStore, zap.NewNop())
-	uploader.uploadFiles(context.Background())
+	err := uploader.uploadFiles(context.Background())
+	require.NoError(t, err)
 
-	assert.Equal(t, 3, len(destinationTestFiles))
+	select {
+	case <-done:
+		{
+			assert.Equal(t, 3, len(destinationTestFiles))
+		}
+	}
 }
