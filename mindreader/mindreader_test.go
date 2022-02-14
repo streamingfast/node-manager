@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,8 +17,9 @@ import (
 )
 
 func TestMindReaderPlugin_ReadFlow(t *testing.T) {
-	lines := make(chan string, 1)
-	blocks := make(chan *bstream.Block, 1)
+	numOfLines := 1
+	lines := make(chan string, numOfLines)
+	blocks := make(chan *bstream.Block, numOfLines)
 
 	mindReader := &MindReaderPlugin{
 		Shutter:       shutter.New(),
@@ -27,27 +29,31 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 		startGate:     NewBlockNumberGate(1),
 	}
 
+	wg := sync.WaitGroup{}
+	wg.Add(numOfLines)
+
+	var readMessageError error
 	go func() {
-		err := mindReader.readOneMessage(blocks)
-		require.NoError(t, err)
+		defer wg.Done()
+		readMessageError = mindReader.readOneMessage(blocks)
 	}()
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
 	select {
 	case b := <-blocks:
-		{
-			require.Equal(t, uint64(01), b.Number)
-		}
+		require.Equal(t, uint64(01), b.Number)
 	case <-time.After(time.Second):
-		{
-			t.Error("too long")
-		}
+		t.Error("too long")
 	}
+
+	wg.Wait()
+	require.NoError(t, readMessageError)
 }
 
 func TestMindReaderPlugin_GatePassed(t *testing.T) {
-	lines := make(chan string, 2)
-	blocks := make(chan *bstream.Block, 2)
+	numOfLines := 2
+	lines := make(chan string, numOfLines)
+	blocks := make(chan *bstream.Block, numOfLines)
 
 	mindReader := &MindReaderPlugin{
 		Shutter:       shutter.New(),
@@ -57,30 +63,38 @@ func TestMindReaderPlugin_GatePassed(t *testing.T) {
 		startGate:     NewBlockNumberGate(2),
 	}
 
+	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
+	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
+
+	wg := sync.WaitGroup{}
+	wg.Add(numOfLines)
+
+	readErrors := []error{}
 	go func() {
-		for {
+		for i := 0; i < numOfLines; i++ {
 			err := mindReader.readOneMessage(blocks)
-			require.NoError(t, err)
+			readErrors = append(readErrors, err)
+			wg.Done()
 		}
 	}()
 
-	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
-	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
 	select {
 	case b := <-blocks:
-		{
-			require.Equal(t, uint64(02), b.Number)
-		}
+		require.Equal(t, uint64(02), b.Number)
 	case <-time.After(time.Second):
-		{
-			t.Error("too long")
-		}
+		t.Error("too long")
+	}
+
+	wg.Wait()
+	for _, err := range readErrors {
+		require.NoError(t, err)
 	}
 }
 
 func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
-	lines := make(chan string, 2)
-	blocks := make(chan *bstream.Block, 2)
+	numOfLines := 2
+	lines := make(chan string, numOfLines)
+	blocks := make(chan *bstream.Block, numOfLines)
 	done := make(chan interface{})
 
 	mindReader := &MindReaderPlugin{
@@ -100,23 +114,34 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 		}
 	})
 
+	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
+	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
+
+	wg := sync.WaitGroup{}
+	wg.Add(numOfLines)
+
+	readErrors := []error{}
 	go func() {
-		for {
+		for i := 0; i < numOfLines; i++ {
 			err := mindReader.readOneMessage(blocks)
-			require.NoError(t, err)
+			readErrors = append(readErrors, err)
+			wg.Done()
 		}
 	}()
 
-	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
-	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
 	select {
 	case <-done:
 	case <-time.After(1 * time.Millisecond):
 		t.Error("too long")
 	}
 
+	wg.Wait()
+	for _, err := range readErrors {
+		require.NoError(t, err)
+	}
+
 	// Validate actually read block
-	assert.Equal(t, 2, len(blocks)) // moderate requirement, race condition can make it pass more blocks
+	assert.Equal(t, numOfLines, len(blocks)) // moderate requirement, race condition can make it pass more blocks
 }
 
 func TestMindReaderPlugin_OneBlockSuffixFormat(t *testing.T) {
