@@ -12,6 +12,8 @@ import (
 	"github.com/streamingfast/merger/bundle"
 )
 
+var _ ArchiverIO = (*ArchiverDStoreIO)(nil) //compile-time check
+
 type ArchiverIO interface {
 	merger.IOInterface
 	merger.OneBlockFilesDeleter
