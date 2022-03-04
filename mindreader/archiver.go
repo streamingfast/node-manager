@@ -211,7 +211,6 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 
 		return a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(block), block)
 	}
-
 	if a.bundler == nil {
 		exclusiveHighestBlockLimit := ((block.Number / a.bundleSize) * a.bundleSize) + a.bundleSize
 		a.bundler = bundle.NewBundler(a.bundleSize, exclusiveHighestBlockLimit)
@@ -219,7 +218,6 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 			return fmt.Errorf("loading partial: %w", err)
 		}
 	}
-
 	a.bundler.AddOneBlockFile(oneBlockFile)
 
 	if block.Number < a.bundler.BundleInclusiveLowerBlock() {
@@ -235,6 +233,7 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 
 	bundleCompleted, highestBlockLimit := a.bundler.BundleCompleted()
 	if bundleCompleted {
+		a.logger.Info("bundle completed, will merge and store it", zap.String("details", a.bundler.String()))
 		oneBlockFiles := a.bundler.ToBundle(highestBlockLimit)
 
 		err := a.io.MergeAndStore(a.bundler.BundleInclusiveLowerBlock(), oneBlockFiles)

@@ -274,15 +274,19 @@ func (p *MindReaderPlugin) Launch() {
 	}
 	p.consoleReader = consoleReader
 
+	p.zlogger.Debug("starting archiver")
 	p.archiver.Start(ctx)
-	p.oneBlockFileUploader.Start(ctx)
-	p.mergedBlocksFileUploader.Start(ctx)
+	p.zlogger.Debug("starting one block uploader")
+	go p.oneBlockFileUploader.Start(ctx)
+	p.zlogger.Debug("starting file uploader")
+	go p.mergedBlocksFileUploader.Start(ctx)
 
 	p.launch()
 
 }
 func (p *MindReaderPlugin) launch() {
 	blocks := make(chan *bstream.Block, p.channelCapacity)
+	p.zlogger.Debug("launching consume read flow", zap.Int("capacity", p.channelCapacity))
 	go p.consumeReadFlow(blocks)
 
 	go func() {

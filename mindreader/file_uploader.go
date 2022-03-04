@@ -65,8 +65,8 @@ func (fu *FileUploader) uploadFiles(ctx context.Context) error {
 			if traceEnabled {
 				fu.logger.Debug("uploading file to storage", zap.String("local_file", filename))
 			}
-
-			if err = fu.destinationStore.PushLocalFile(ctx, filename, filename); err != nil {
+			
+			if err = fu.destinationStore.PushLocalFile(ctx, fu.localStore.ObjectPath(filename), filename); err != nil {
 				return fmt.Errorf("moving file %q to storage: %w", filename, err)
 			}
 			return nil
