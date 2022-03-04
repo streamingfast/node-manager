@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type BackupModuleConfig map[string]string
@@ -142,4 +144,69 @@ func NewBackupSchedule(freqBlocks, freqTime, requiredHostname, backuperName stri
 	default:
 		return nil, fmt.Errorf("schedule created without any frequency value")
 	}
+}
+
+func ParseBackupConfigs(
+	logger *zap.Logger,
+	backupConfigs []string,
+	backupModuleFactories map[string]BackupModuleFactory,
+) (
+	mods map[string]BackupModule,
+	scheds []*BackupSchedule,
+	err error,
+) {
+	logger.Info("parsing backup configs", zap.Strings("configs", backupConfigs), zap.Int("factory_count", len(backupModuleFactories)))
+	for key := range backupModuleFactories {
+		logger.Info("parsing backup known factory", zap.String("name", key))
+	}
+
+	mods = make(map[string]BackupModule)
+	for _, confStr := range backupConfigs {
+		conf, err := parseKVConfigString(confStr)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		t := conf["type"]
+		factory, found := backupModuleFactories[t]
+		if !found {
+			return nil, nil, fmt.Errorf("unknown backup module type %q", t)
+		}
+
+		mods[t], err = factory(conf)
+		if err != nil {
+			return nil, nil, fmt.Errorf("backup module %q factory: %w", t, err)
+		}
+
+		if conf["freq-blocks"] != "" || conf["freq-time"] != "" {
+			newSched, err := NewBackupSchedule(conf["freq-blocks"], conf["freq-time"], conf["required-hostname"], t)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error setting up backup schedule for %q: %w", t, err)
+			}
+
+			scheds = append(scheds, newSched)
+		}
+	}
+
+	return
+}
+
+// parseKVConfigString is used for flags that generate key/value data, like
+// `--backup="type=something freq_blocks=1000 prefix=v1"`.
+func parseKVConfigString(in string) (map[string]string, error) {
+	fields := strings.Fields(in)
+	kvs := map[string]string{}
+	for _, field := range fields {
+		kv := strings.Split(field, "=")
+		if len(kv) != 2 {
+			return nil, fmt.Errorf("invalid key=value in kv config string: %s", field)
+		}
+		kvs[kv[0]] = kv[1]
+	}
+	typ, ok := kvs["type"]
+	if !ok || typ == "" {
+		return nil, fmt.Errorf("no type defined in kv config string (type field mandatory)")
+	}
+
+	return kvs, nil
 }
