@@ -15,9 +15,11 @@
 package mindreader
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"regexp"
 	"time"
 
@@ -60,10 +62,11 @@ type MindReaderPlugin struct {
 	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
 	channelCapacity int                           // transformed blocks are buffered in a channel
 
-	archiver Archiver // transformed blocks are sent to Archiver
+	archiver                 *Archiver // transformed blocks are sent to Archiver
+	oneBlockFileUploader     *FileUploader
+	mergedBlocksFileUploader *FileUploader
 
 	consumeReadFlowDone chan interface{}
-	continuityChecker   ContinuityChecker
 
 	blockStreamServer    *blockstream.Server
 	headBlockUpdateFunc  nodeManager.HeadBlockUpdater
@@ -112,48 +115,86 @@ func NewMindReaderPlugin(
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
 
-	// Other components may have issues finding the one block files if suffix is invalid
-	if oneblockSuffix != "" && !oneblockSuffixRegexp.MatchString(oneblockSuffix) {
-		return nil, fmt.Errorf("oneblock_suffix contains invalid characters: %q", oneblockSuffix)
+	err := validateOneBlockSuffix(oneblockSuffix)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create directory and its parent(s), it's a no-op if everything already exists
-	err := os.MkdirAll(workingDirectory, os.ModePerm)
+	err = os.MkdirAll(workingDirectory, os.ModePerm)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
 	}
 
-	oneblockArchiveStore, err := dstore.NewDBinStore(archiveStoreURL) // never overwrites
+	mergeableOneBlockDir := path.Join(workingDirectory, "mergeable")
 	if err != nil {
-		return nil, fmt.Errorf("setting up archive store: %w", err)
+		return nil, fmt.Errorf("unable to create mergeableOneBlockDir directory %q: %w", mergeableOneBlockDir, err)
 	}
-	oneBlockArchiver := NewOneBlockArchiver(oneblockArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, oneblockSuffix, zlogger)
+	uploadableOneBlocksDir := path.Join(workingDirectory, "uploadable-oneblock")
+	if err != nil {
+		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableOneBlocksDir, err)
+	}
+	uploadableMergedBlocksDir := path.Join(workingDirectory, "uploadable-merged")
+	if err != nil {
+		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableMergedBlocksDir, err)
+	}
 
-	mergeArchiveStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	oneBlocksStore, err := dstore.NewDBinStore(archiveStoreURL)
 	if err != nil {
-		return nil, fmt.Errorf("setting up merge archive store: %w", err)
+		return nil, fmt.Errorf("new one block store: %w", err)
 	}
+	mergedBlocksStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	if err != nil {
+		return nil, fmt.Errorf("new merge blocks store: %w", err)
+	}
+
+	mergeableOneBlocksStore, err := dstore.NewDBinStore(mergeableOneBlockDir)
+	if err != nil {
+		return nil, fmt.Errorf("new mergeableOneBlocksStore: %w", err)
+	}
+	uploadableMergedBlocksStore, err := dstore.NewDBinStore(uploadableMergedBlocksDir)
+	if err != nil {
+		return nil, fmt.Errorf("new uploadableMergedBlocksStore: %w", err)
+	}
+	uploadableOneBlocksStore, err := dstore.NewDBinStore(uploadableOneBlocksDir)
+	if err != nil {
+		return nil, fmt.Errorf("new uploadableOneBlocksStore: %w", err)
+	}
+
 	if batchMode {
-		mergeArchiveStore.SetOverwrite(true)
+		mergedBlocksStore.SetOverwrite(true)
 	}
 
-	mergeArchiver := NewMergeArchiver(mergeArchiveStore, bstream.GetBlockWriterFactory, workingDirectory, zlogger)
-
-	archiverSelector := NewArchiverSelector(
-		oneBlockArchiver,
-		mergeArchiver,
+	archiverIO := NewArchiverDStoreIO(
+		bstream.GetBlockWriterFactory,
 		bstream.GetBlockReaderFactory,
-		batchMode, tracker,
+		oneBlocksStore,
+		uploadableOneBlocksStore,
+		mergeableOneBlocksStore,
+		uploadableMergedBlocksStore,
+		mergedBlocksStore,
+		250,
+		5,
+		500*time.Millisecond,
+	)
+
+	archiver := NewArchiver(
+		100, //todo: replace this with parameter
+		archiverIO,
+		batchMode,
+		tracker,
+		oneblockSuffix,
 		mergeThresholdBlockAge,
-		workingDirectory,
 		zlogger,
 	)
-	if err := archiverSelector.Init(); err != nil {
-		return nil, fmt.Errorf("failed to init archiver: %w", err)
-	}
+
+	oneBlockFileUploader := NewFileUploader(uploadableOneBlocksStore, oneBlocksStore, zlogger)
+	mergedBlocksFileUploader := NewFileUploader(uploadableMergedBlocksStore, mergedBlocksStore, zlogger)
 
 	mindReaderPlugin, err := newMindReaderPlugin(
-		archiverSelector,
+		archiver,
+		oneBlockFileUploader,
+		mergedBlocksFileUploader,
 		consoleReaderFactory,
 		consoleReaderTransformer,
 		startBlockNum,
@@ -171,8 +212,19 @@ func NewMindReaderPlugin(
 	return mindReaderPlugin, nil
 }
 
+func validateOneBlockSuffix(suffix string) error {
+	if suffix != "" && !oneblockSuffixRegexp.MatchString(suffix) {
+		return fmt.Errorf("oneblock_suffix contains invalid characters: %q", suffix)
+	}
+	return nil
+}
+
+// Other components may have issues finding the one block files if suffix is invalid
+
 func newMindReaderPlugin(
-	archiver Archiver,
+	archiver *Archiver,
+	oneBlockFileUploader *FileUploader,
+	mergedBlocksFileUploader *FileUploader,
 	consoleReaderFactory ConsolerReaderFactory,
 	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	startBlock uint64,
@@ -184,16 +236,18 @@ func newMindReaderPlugin(
 ) (*MindReaderPlugin, error) {
 	zlogger.Info("creating new mindreader plugin")
 	return &MindReaderPlugin{
-		Shutter:              shutter.New(),
-		consoleReaderFactory: consoleReaderFactory,
-		transformer:          consoleReaderTransformer,
-		archiver:             archiver,
-		startGate:            NewBlockNumberGate(startBlock),
-		stopBlock:            stopBlock,
-		channelCapacity:      channelCapacity,
-		headBlockUpdateFunc:  headBlockUpdateFunc,
-		zlogger:              zlogger,
-		blockStreamServer:    blockStreamServer,
+		Shutter:                  shutter.New(),
+		consoleReaderFactory:     consoleReaderFactory,
+		transformer:              consoleReaderTransformer,
+		archiver:                 archiver,
+		oneBlockFileUploader:     oneBlockFileUploader,
+		mergedBlocksFileUploader: mergedBlocksFileUploader,
+		startGate:                NewBlockNumberGate(startBlock),
+		stopBlock:                stopBlock,
+		channelCapacity:          channelCapacity,
+		headBlockUpdateFunc:      headBlockUpdateFunc,
+		zlogger:                  zlogger,
+		blockStreamServer:        blockStreamServer,
 	}, nil
 }
 
@@ -202,10 +256,14 @@ func (p *MindReaderPlugin) Name() string {
 }
 
 func (p *MindReaderPlugin) Launch() {
+	ctx, cancel := context.WithCancel(context.Background())
+	p.OnTerminating(func(err error) {
+		cancel()
+	})
+
 	p.zlogger.Info("starting mindreader")
 
 	p.consumeReadFlowDone = make(chan interface{})
-	blocks := make(chan *bstream.Block, p.channelCapacity)
 
 	lines := make(chan string, 10000) //need a config here?
 	p.lines = lines
@@ -216,8 +274,20 @@ func (p *MindReaderPlugin) Launch() {
 	}
 	p.consoleReader = consoleReader
 
+	p.zlogger.Debug("starting archiver")
+	p.archiver.Start(ctx)
+	p.zlogger.Debug("starting one block uploader")
+	go p.oneBlockFileUploader.Start(ctx)
+	p.zlogger.Debug("starting file uploader")
+	go p.mergedBlocksFileUploader.Start(ctx)
+
+	p.launch()
+
+}
+func (p *MindReaderPlugin) launch() {
+	blocks := make(chan *bstream.Block, p.channelCapacity)
+	p.zlogger.Debug("launching consume read flow", zap.Int("capacity", p.channelCapacity))
 	go p.consumeReadFlow(blocks)
-	go p.archiver.Start()
 
 	go func() {
 		for {
@@ -261,7 +331,7 @@ func (p *MindReaderPlugin) waitForReadFlowToComplete() {
 func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	p.zlogger.Info("starting consume flow")
 	defer close(p.consumeReadFlowDone)
-
+	ctx := context.Background()
 	for {
 		p.zlogger.Debug("waiting to consume next block.")
 		block, ok := <-blocks
@@ -280,7 +350,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 		p.zlogger.Debug("got one block", zap.Uint64("block_num", block.Number))
 
-		err := p.archiver.StoreBlock(block)
+		err := p.archiver.StoreBlock(ctx, block)
 		if err != nil {
 			p.zlogger.Error("failed storing block in archiver, shutting down. You will need to reprocess over this range to get this block.", zap.Error(err), zap.Stringer("block", block))
 			if !p.IsTerminating() {
@@ -300,17 +370,6 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			}
 		}
 
-		if p.continuityChecker != nil {
-			err = p.continuityChecker.Write(block.Num())
-			if err != nil {
-				p.zlogger.Error("failed continuity check", zap.Error(err))
-
-				if !p.IsTerminating() {
-					go p.Shutdown(fmt.Errorf("continuity check failed: %w", err))
-				}
-				continue
-			}
-		}
 	}
 }
 
@@ -349,14 +408,4 @@ func (p *MindReaderPlugin) LogLine(in string) {
 		return
 	}
 	p.lines <- in
-}
-
-func (p *MindReaderPlugin) HasContinuityChecker() bool {
-	return p.continuityChecker != nil
-}
-
-func (p *MindReaderPlugin) ResetContinuityChecker() {
-	if p.continuityChecker != nil {
-		p.continuityChecker.Reset()
-	}
 }

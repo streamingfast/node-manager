@@ -17,234 +17,241 @@ package mindreader
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"sort"
+	"math"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/abourget/llerrgroup"
 	"github.com/streamingfast/bstream"
-	"github.com/streamingfast/dstore"
+	"github.com/streamingfast/merger/bundle"
 	"github.com/streamingfast/shutter"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
 
-type BlockMarshaller func(block *bstream.Block) ([]byte, error)
-
-type OneBlockArchiver struct {
+type Archiver struct {
 	*shutter.Shutter
-	oneBlockStore      dstore.Store
-	blockWriterFactory bstream.BlockWriterFactory
-	suffix             string
 
-	uploadMutex sync.Mutex
-	workDir     string
-	logger      *zap.Logger
-	running     bool
+	bundler *bundle.Bundler
+	io      ArchiverIO
+
+	currentlyMerging bool
+
+	batchMode              bool // forces merging blocks without tracker or LIB checking
+	tracker                *bstream.Tracker
+	mergeThresholdBlockAge time.Duration
+	lastSeenLIB            *atomic.Uint64
+
+	logger         *zap.Logger
+	bundleSize     uint64
+	oneblockSuffix string
 }
 
-func NewOneBlockArchiver(
-	oneBlockStore dstore.Store,
-	blockWriterFactory bstream.BlockWriterFactory,
-	workDir string,
-	suffix string,
+func NewArchiver(
+	bundleSize uint64,
+	io ArchiverIO,
+	batchMode bool,
+	tracker *bstream.Tracker,
+	oneblockSuffix string,
+	mergeThresholdBlockAge time.Duration,
 	logger *zap.Logger,
-) *OneBlockArchiver {
-	a := &OneBlockArchiver{
-		Shutter:            shutter.New(),
-		oneBlockStore:      oneBlockStore,
-		blockWriterFactory: blockWriterFactory,
-		suffix:             suffix,
-		workDir:            workDir,
-		logger:             logger,
+) *Archiver {
+	a := &Archiver{
+		Shutter:                shutter.New(),
+		bundleSize:             bundleSize,
+		io:                     io,
+		batchMode:              batchMode,
+		tracker:                tracker,
+		oneblockSuffix:         oneblockSuffix,
+		mergeThresholdBlockAge: mergeThresholdBlockAge,
+		lastSeenLIB:            atomic.NewUint64(0),
+		logger:                 logger,
+		currentlyMerging:       true,
 	}
-
-	a.OnTerminating(func(err error) {
-		a.logger.Info("one block archiver is terminating", zap.Error(err))
-		e := a.uploadFiles()
-		if e != nil {
-			logger.Error("terminating: uploading file", zap.Error(e))
-		}
-	})
-
-	a.OnTerminated(func(err error) {
-		a.logger.Info("one block archiver is terminated", zap.Error(err))
-	})
 
 	return a
 }
 
-func (s *OneBlockArchiver) StoreBlock(block *bstream.Block) error {
-	fileName := blockFileName(block, s.suffix)
-
-	// Store the actual file using multiple folders instead of a single one.
-	// We assume 10 digits block number at start of file name. We take the first 7
-	// ones and used them as the sub folder for the file.
-	subDirectory := fileName[0:7]
-
-	targetDir := filepath.Join(s.workDir, subDirectory)
-	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-		err := os.MkdirAll(targetDir, 0755)
-		if err != nil {
-			return fmt.Errorf("mkdir all: %w", err)
-		}
+func (a *Archiver) Start(ctx context.Context) {
+	libUpdaterCtx, libUpdaterCancel := context.WithCancel(ctx)
+	if !a.batchMode {
+		a.launchLastLIBUpdater(libUpdaterCtx)
 	}
 
-	tempFile := filepath.Join(targetDir, fileName+".dat.temp")
-	finalFile := filepath.Join(targetDir, fileName+".dat")
-
-	file, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("open file: %w", err)
-	}
-
-	blockWriter, err := s.blockWriterFactory.New(file)
-	if err != nil {
-		file.Close()
-		return fmt.Errorf("write block factory: %w", err)
-	}
-
-	if err := blockWriter.Write(block); err != nil {
-		file.Close()
-		return fmt.Errorf("write block: %w", err)
-	}
-
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close file: %w", err)
-	}
-
-	if err := os.Rename(tempFile, finalFile); err != nil {
-		return fmt.Errorf("rename %q to %q: %w", tempFile, finalFile, err)
-	}
-
-	return nil
-}
-
-func (a *OneBlockArchiver) Start() {
-	if a.running {
-		return
-	}
-	a.running = true
-	lastUploadFailed := false
-	for {
-		err := a.uploadFiles()
-		if err != nil {
-			a.logger.Warn("temporary failure trying to upload mindreader block files, will retry", zap.Error(err))
-			lastUploadFailed = true
-		} else {
-			if lastUploadFailed {
-				a.logger.Warn("success uploading previously failed mindreader block files")
-				lastUploadFailed = false
-			}
-		}
-
-		select {
-		case <-a.Terminating():
-			a.logger.Info("terminating upload loop")
-			return
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-}
-
-func (s *OneBlockArchiver) uploadFiles() error {
-	s.uploadMutex.Lock()
-	defer s.uploadMutex.Unlock()
-	filesToUpload, err := findFilesToUpload(s.workDir, s.logger, ".dat")
-	if err != nil {
-		return fmt.Errorf("unable to find files to upload: %w", err)
-	}
-
-	if len(filesToUpload) == 0 {
-		return nil
-	}
-
-	eg := llerrgroup.New(20)
-	for _, file := range filesToUpload {
-		if eg.Stop() {
-			break
-		}
-
-		file := file
-		toBaseName := strings.TrimSuffix(filepath.Base(file), ".dat")
-
-		eg.Go(func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-
-			if traceEnabled {
-				s.logger.Debug("uploading file to storage", zap.String("local_file", file), zap.String("remove_base", toBaseName))
-			}
-
-			if err = s.oneBlockStore.PushLocalFile(ctx, file, toBaseName); err != nil {
-				return fmt.Errorf("moving file %q to storage: %w", file, err)
-			}
-			return nil
-		})
-	}
-
-	return eg.Wait()
-}
-
-func (s *OneBlockArchiver) Init() error {
-	if err := os.MkdirAll(s.workDir, 0755); err != nil {
-		return fmt.Errorf("mkdir work folder: %w", err)
-	}
-
-	return nil
-}
-
-func findFilesToUpload(workingDirectory string, logger *zap.Logger, suffix string) (filesToUpload []string, err error) {
-	err = filepath.Walk(workingDirectory, func(path string, info os.FileInfo, err error) error {
-		if os.IsNotExist(err) {
-			logger.Debug("skipping file that disappeared", zap.Error(err))
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		// clean up empty folders
-		if info.IsDir() {
-			if path == workingDirectory {
-				return nil
-			}
-			// Prevents deleting folder that JUST got created and causing error on os.Open
-			if isDirEmpty(path) && time.Since(info.ModTime()) > 60*time.Second {
-				err := os.Remove(path)
-				if err != nil {
-					logger.Warn("cannot delete empty directory", zap.String("filename", path), zap.Error(err))
-				}
-			}
-			return nil
-		}
-
-		if !strings.HasSuffix(path, suffix) {
-			return nil
-		}
-		filesToUpload = append(filesToUpload, path)
-
-		return nil
+	a.OnTerminating(func(err error) {
+		a.logger.Info("archiver selector is terminating", zap.Error(err))
+		libUpdaterCancel()
 	})
 
-	sort.Slice(filesToUpload, func(i, j int) bool { return filesToUpload[i] < filesToUpload[j] })
-	return
+	a.OnTerminated(func(err error) {
+		a.logger.Info("archiver selector is terminated", zap.Error(err))
+	})
 }
 
-func isDirEmpty(name string) bool {
-	f, err := os.Open(name)
+func (a *Archiver) updateLastLIB(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	ref, err := a.tracker.Get(ctx, bstream.NetworkLIBTarget)
 	if err != nil {
+		return err
+	}
+	a.lastSeenLIB.Store(ref.Num())
+	return nil
+}
+
+func (a *Archiver) launchLastLIBUpdater(ctx context.Context) {
+	var err error
+	sleepTime := 200 * time.Millisecond
+
+	err = a.updateLastLIB(ctx)
+	if err == nil { // don't warn on first error, maybe blockmeta is booting with us
+		sleepTime = 30 * time.Second
+	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(sleepTime):
+				//
+			}
+
+			err = a.updateLastLIB(ctx)
+			if err != nil {
+				a.logger.Warn("failed getting last lib from blockmeta", zap.Error(err))
+			}
+			sleepTime = 30 * time.Second
+		}
+	}()
+}
+
+func (a *Archiver) shouldMerge(block *bstream.Block) bool {
+	if a.batchMode {
+		return true
+	}
+
+	//Be default currently merging is set to true
+	if !a.currentlyMerging {
 		return false
 	}
 
-	defer f.Close()
-	_, err = f.Readdir(1)
-	if err == io.EOF {
+	blockAge := time.Since(block.Time())
+	if blockAge > a.mergeThresholdBlockAge {
+		return true
+	}
+
+	lastSeenLIB := a.lastSeenLIB.Load()
+	if block.Number+a.bundleSize <= lastSeenLIB {
 		return true
 	}
 
 	return false
+}
+
+func (a *Archiver) loadLastPartial(ctx context.Context, block *bstream.Block) error {
+	oneBlockFiles, err := a.io.WalkMergeableOneBlockFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("walking mergeable one block files: %w", err)
+	}
+	var highestOneBlockFile *bundle.OneBlockFile
+	for _, oneBlockFile := range oneBlockFiles {
+		if highestOneBlockFile == nil {
+			highestOneBlockFile = oneBlockFile
+		}
+		if oneBlockFile.Num > highestOneBlockFile.Num {
+			highestOneBlockFile = oneBlockFile
+		}
+	}
+
+	if highestOneBlockFile == nil {
+		return nil
+	}
+
+	if !strings.HasSuffix(block.PreviousID(), highestOneBlockFile.ID) {
+		a.logger.Info(
+			"last partial block does not connect to the current block",
+			zap.String("block_previous_id", block.PreviousID()),
+			zap.String("last_partial_block_id", highestOneBlockFile.ID),
+		)
+		return nil
+	}
+
+	// load files into current bundle
+	for _, oneBlockFile := range oneBlockFiles {
+		a.bundler.AddOneBlockFile(oneBlockFile)
+	}
+
+	return nil
+}
+func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlockFile, block *bstream.Block) error {
+	merging := a.shouldMerge(block)
+	if !merging {
+		if a.bundler != nil {
+			// download all the one block files in the current incomplete bundle and store them
+			// in the oneblockArchiver
+			oneBlockFiles := a.bundler.ToBundle(math.MaxUint64)
+			for _, oneBlockFile := range oneBlockFiles {
+				oneBlockBytes, err := a.io.DownloadOneBlockFile(context.TODO(), oneBlockFile)
+				if err != nil {
+					return fmt.Errorf("downloading one block file: %w", err)
+				}
+
+				blk, err := bstream.NewBlockFromBytes(oneBlockBytes)
+				if err != nil {
+					return fmt.Errorf("new block from bytes: %w", err)
+				}
+
+				err = a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(blk), blk)
+				if err != nil {
+					return fmt.Errorf("storing one block file: %w", err)
+				}
+			}
+		}
+		a.bundler = nil
+
+		return a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(block), block)
+	}
+	if a.bundler == nil {
+		exclusiveHighestBlockLimit := ((block.Number / a.bundleSize) * a.bundleSize) + a.bundleSize
+		a.bundler = bundle.NewBundler(a.bundleSize, exclusiveHighestBlockLimit)
+		if err := a.loadLastPartial(ctx, block); err != nil {
+			return fmt.Errorf("loading partial: %w", err)
+		}
+	}
+	a.bundler.AddOneBlockFile(oneBlockFile)
+
+	if block.Number < a.bundler.BundleInclusiveLowerBlock() {
+		oneBlockFile.Merged = true
+		//at this point it is certain that the bundle can not be completed
+		return nil
+	}
+
+	err := a.io.StoreMergeableOneBlockFile(ctx, oneBlockFile.CanonicalName, block)
+	if err != nil {
+		return fmt.Errorf("storing one block to be merged: %w", err)
+	}
+
+	bundleCompleted, highestBlockLimit := a.bundler.BundleCompleted()
+	if bundleCompleted {
+		a.logger.Info("bundle completed, will merge and store it", zap.String("details", a.bundler.String()))
+		oneBlockFiles := a.bundler.ToBundle(highestBlockLimit)
+
+		err := a.io.MergeAndStore(a.bundler.BundleInclusiveLowerBlock(), oneBlockFiles)
+		if err != nil {
+			return fmt.Errorf("merging and saving merged block: %w", err)
+		}
+
+		a.bundler.Commit(highestBlockLimit)
+		a.bundler.Purge(func(oneBlockFilesToDelete []*bundle.OneBlockFile) {
+			a.io.Delete(oneBlockFiles)
+		})
+	}
+
+	return nil
+
+}
+func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
+	oneBlockFileName := bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix)
+
+	return a.storeBlock(ctx, bundle.MustNewOneBlockFile(oneBlockFileName), block)
 }

@@ -16,262 +16,520 @@ package mindreader
 
 import (
 	"context"
-	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"os"
-	"path"
+	"math"
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/streamingfast/bstream"
-	"github.com/streamingfast/dstore"
-	"github.com/streamingfast/shutter"
+	"github.com/streamingfast/merger/bundle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 )
 
-func newLocalTestStore(t *testing.T) dstore.Store {
-	t.Helper()
+func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
+	io := &TestArchiverIO{}
+	superLongTimeAgo := time.Since(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC))
+	archiver := NewArchiver(5, io, false, nil, "suffix", superLongTimeAgo, testLogger)
 
-	dir, err := ioutil.TempDir("/tmp", "mrtest")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
-
-	store, err := dstore.NewDBinStore(dir)
-	require.NoError(t, err)
-
-	return store
-}
-
-func newWorkDir(t *testing.T) string {
-	workDir, err := ioutil.TempDir("/tmp", "mrtest")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(workDir) })
-	return workDir
-}
-
-func TestNewLocalStore(t *testing.T) {
-
-	store := newLocalTestStore(t)
-	workDir := newWorkDir(t)
-	archiver := testNewArchiver(workDir, store)
-	mergeArchiver := testNewMergeArchiver(workDir, store)
-	archiverSelector := testNewArchiverSelector(archiver, mergeArchiver)
-
-	// FIXME this test should not require using a mindreader, just the archiver
-	mindReader, err := testNewMindReaderPlugin(archiverSelector, 0, 0)
-	mindReader.OnTerminating(func(e error) {
-		t.Errorf("should not be called: %s", e)
-	})
-	require.NoError(t, err)
-
-	mindReader.Launch()
-
-	mindReader.LogLine(`DMLOG {"id":"00000004a"}`)
-
-	time.Sleep(1 * time.Second) //FIXME: this suck!
-
-	ctx := context.Background()
-	expectFileName := blockFileNameFromArgs(4, time.Time{}, "0000004a", "", 0, "default")
-	exists, err := store.FileExists(ctx, expectFileName)
-	require.NoError(t, err)
-	require.True(t, exists)
-
-	file, err := store.OpenObject(ctx, expectFileName)
-	require.NoError(t, err)
-	data, err := ioutil.ReadAll(file)
-
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"Id":"00000004a","Number":4,"PreviousId":"","Timestamp":"0001-01-01T00:00:00Z","LibNum":0,"PayloadKind":0,"PayloadVersion":0,"Payload":null}`, string(data))
-}
-
-func testNewArchiverSelector(oba *OneBlockArchiver, ma *MergeArchiver) *ArchiverSelector {
-	return &ArchiverSelector{
-		Shutter:          shutter.New(),
-		oneblockArchiver: oba,
-		mergeArchiver:    ma,
-		logger:           testLogger,
-		lastSeenLIB:      atomic.NewUint64(0),
-	}
-}
-
-func testNewArchiver(path string, store dstore.Store) *OneBlockArchiver {
-	return NewOneBlockArchiver(store, testBlockWriteFactory, path, "", testLogger)
-}
-func testNewMergeArchiver(path string, store dstore.Store) *MergeArchiver {
-	a := &MergeArchiver{
-		workDir:            path,
-		Shutter:            shutter.New(),
-		store:              store,
-		blockWriterFactory: testBlockWriteFactory,
-		logger:             testLogger,
-	}
-	a.newBuffer()
-	return a
-}
-
-func testNewMindReaderPlugin(archiver Archiver, startBlock, stopBlock uint64) (*MindReaderPlugin, error) {
-	return newMindReaderPlugin(archiver,
-		testConsoleReaderFactory,
-		testConsoleReaderBlockTransformer,
-		startBlock,
-		stopBlock,
-		10,
-		nil,
-		nil,
-		testLogger,
-	)
-}
-
-var testBlockWriteFactory = bstream.BlockWriterFactoryFunc(newTestBlockWriter)
-var testBlockReadFactory = bstream.BlockReaderFactoryFunc(newTestBlockReader)
-
-func newTestBlockReader(reader io.Reader) (bstream.BlockReader, error) {
-	return &testBlockReader{
-		reader: reader,
-	}, nil
-}
-
-type testBlockReader struct {
-	reader io.Reader
-}
-
-func (r *testBlockReader) Read() (*bstream.Block, error) {
-	out := &bstream.Block{}
-
-	b, err := io.ReadAll(r.reader)
-	if err != nil {
-		return nil, err
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
 	}
 
-	err = json.Unmarshal(b, out)
-	return out, err
-}
-
-func newTestBlockWriter(writer io.Writer) (bstream.BlockWriter, error) {
-	return &testBlockWriter{
-		writer: writer,
-	}, nil
-}
-
-type testBlockWriter struct {
-	writer io.Writer
-}
-
-func (w *testBlockWriter) Write(block *bstream.Block) error {
-	bytes, err := json.Marshal(block)
-	if err != nil {
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
 		return nil
 	}
 
-	_, err = w.writer.Write(bytes)
-	return err
-}
-
-func testConsoleReaderFactory(lines chan string) (ConsolerReader, error) {
-	return newTestConsolerReader(lines), nil
-}
-
-type testConsolerReader struct {
-	lines chan string
-	done  chan interface{}
-}
-
-func newTestConsolerReader(lines chan string) *testConsolerReader {
-	return &testConsolerReader{
-		lines: lines,
-	}
-}
-
-func (c *testConsolerReader) Done() <-chan interface{} {
-	return c.done
-}
-
-func (c *testConsolerReader) Read() (obj interface{}, err error) {
-	line, _ := <-c.lines
-	obj = line[6:]
-	return
-}
-
-func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
-	content, ok := obj.(string)
-	if !ok {
-		return nil, fmt.Errorf("expecting type string, got %T", obj)
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
 	}
 
-	type block struct {
-		ID string `json:"id"`
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
 	}
 
-	data := new(block)
-	err := json.Unmarshal([]byte(content), data)
-	if err != nil {
-		return nil, fmt.Errorf("marshalling error on '%s': %w", content, err)
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
 	}
 
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 0, storedMergedFiles)
+	assert.Equal(t, 0, deletedFiles)
+	assert.Equal(t, 0, storedMergableOneBlockFiles)
+	assert.Equal(t, 5, storedUploadableOneBlockfiles)
+}
+
+func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
+	setter := bstream.GetBlockPayloadSetter
+	bstream.GetBlockPayloadSetter = bstream.MemoryBlockPayloadSetter
+	defer func() {
+		bstream.GetBlockPayloadSetter = setter
+	}()
+
+	io := &TestArchiverIO{}
+	superLongTimeAgo := time.Since(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC))
+	archiver := NewArchiver(5, io, false, nil, "suffix", superLongTimeAgo, testLogger)
+
+	bundlerOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+	}
+
+	bundler := bundle.NewBundler(5, math.MaxUint64)
+	for _, obf := range bundlerOneBlockFiles {
+		bundler.AddOneBlockFile(obf)
+	}
+	archiver.bundler = bundler
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	}
+
+	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+		blk := oneBlockFileToBlock(oneBlockFile)
+		blk, err = bstream.MemoryBlockPayloadSetter(blk, []byte(oneBlockFile.CanonicalName))
+		if err != nil {
+			return nil, err
+		}
+
+		pblk, err := blk.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(pblk)
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 0, storedMergedFiles)
+	assert.Equal(t, 0, deletedFiles)
+	assert.Equal(t, 0, storedMergableOneBlockFiles)
+	assert.Equal(t, 5, storedUploadableOneBlockfiles)
+}
+
+func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 1, storedMergedFiles)
+	assert.Equal(t, 4, deletedFiles)
+	assert.Equal(t, 5, storedMergableOneBlockFiles)
+	assert.Equal(t, 0, storedUploadableOneBlockfiles)
+}
+
+func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
+
+		bundle.MustNewOneBlockFile("00000000005-20210728T105015.00-0000000005a-000000004a-01-suffix"),
+
+		bundle.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
+		bundle.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
+		bundle.MustNewOneBlockFile("00000000014-20210728T105016.06-000000014a-000000013a-12-suffix"),
+		bundle.MustNewOneBlockFile("00000000016-20210728T105016.08-000000016a-000000014a-12-suffix"),
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 1, storedMergedFiles)
+	assert.Equal(t, 4, deletedFiles)
+	assert.Equal(t, 5, storedMergableOneBlockFiles)
+	assert.Equal(t, 0, storedUploadableOneBlockfiles)
+}
+
+func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
+	bstream.GetBlockPayloadSetter = bstream.MemoryBlockPayloadSetter
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
+		bundle.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
+		bundle.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
+		bundle.MustNewOneBlockFile("00000000014-20210728T105016.06-000000014a-000000013a-12-suffix"),
+		bundle.MustNewOneBlockFile("00000000016-20210728T105016.08-000000016a-000000014a-12-suffix"),
+		bundle.MustNewOneBlockFile("00000000017-20210728T105016.08-000000017a-000000016a-12-suffix"),
+	}
+	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+		block := oneBlockFileToBlock(oneBlockFile)
+		block, err = bstream.MemoryBlockPayloadSetter(block, []byte(oneBlockFile.CanonicalName))
+		if err != nil {
+			return nil, err
+		}
+
+		pbBlock, err := block.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(pbBlock)
+
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockFiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockFiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for i, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		if i == 4 {
+			archiver.currentlyMerging = false //force the end off merging state.
+		}
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 1, storedMergedFiles)
+	assert.Equal(t, 4, deletedFiles)
+	assert.Equal(t, 5, storedMergableOneBlockFiles)
+	assert.Equal(t, 2, storedUploadableOneBlockFiles)
+}
+
+func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
+
+	srcExistingMergeableOneBlockFiles := []string{
+		"0000000001-20210728T105016.01-00000001a-00000000a-0-suffix",
+		"0000000002-20210728T105016.02-00000002a-00000001a-1-suffix",
+	}
+
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
+		result := []*bundle.OneBlockFile{}
+		for _, filename := range srcExistingMergeableOneBlockFiles {
+			obf := bundle.MustNewOneBlockFile(filename)
+			_, _, _, _, libNumPtr, _, _ := bundle.ParseFilename(filename)
+			obf.InnerLibNum = libNumPtr
+			result = append(result, obf)
+		}
+		return result, nil
+	}
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockFiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockFiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 1, storedMergedFiles)
+	assert.Equal(t, 4, deletedFiles)
+	assert.Equal(t, 3, storedMergableOneBlockFiles)
+	assert.Equal(t, 0, storedUploadableOneBlockFiles)
+}
+
+func TestArchiver_StoreBlock_NewBlocksBatchModeNonConnectedPartial_MultipleBoundaries(t *testing.T) {
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
+
+	srcExistingMergeableOneBlockFiles := []string{
+		"0000000001-20210728T105016.01-00000001a-00000000a-0-suffix",
+		"0000000002-20210728T105016.02-00000002a-00000001a-1-suffix",
+	}
+
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
+		result := []*bundle.OneBlockFile{}
+		for _, filename := range srcExistingMergeableOneBlockFiles {
+			obf := bundle.MustNewOneBlockFile(filename)
+			_, _, _, _, libNumPtr, _, _ := bundle.ParseFilename(filename)
+			obf.InnerLibNum = libNumPtr
+			result = append(result, obf)
+		}
+		return result, nil
+	}
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		//bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-1-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-4-suffix"),
+		bundle.MustNewOneBlockFile("0000000007-20210728T105016.09-00000007a-00000006a-4-suffix"),
+		bundle.MustNewOneBlockFile("0000000009-20210728T105016.09-00000009a-00000007a-6-suffix"),
+		bundle.MustNewOneBlockFile("0000000010-20210728T105016.09-00000010a-00000009a-6-suffix"),
+		bundle.MustNewOneBlockFile("0000000011-20210728T105016.09-00000011a-00000010a-9-suffix"),
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 2, storedMergedFiles)
+	assert.Equal(t, 4, deletedFiles)
+	assert.Equal(t, 6, storedMergableOneBlockFiles)
+	assert.Equal(t, 0, storedUploadableOneBlockfiles)
+}
+
+func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
+	setter := bstream.GetBlockPayloadSetter
+	bstream.GetBlockPayloadSetter = bstream.MemoryBlockPayloadSetter
+	defer func() {
+		bstream.GetBlockPayloadSetter = setter
+	}()
+
+	io := &TestArchiverIO{}
+	archiver := NewArchiver(5, io, false, nil, "suffix", 24*time.Hour, testLogger)
+
+	time.Now().Year()
+	yearstr := fmt.Sprintf("%0*d", 4, time.Now().Year())
+	monthstr := fmt.Sprintf("%0*d", 2, time.Now().Month())
+	daystr := fmt.Sprintf("%0*d", 2, time.Now().Day())
+	hourstr := fmt.Sprintf("%0*d", 2, time.Now().Hour())
+	minutestr := fmt.Sprintf("%0*d", 2, time.Now().Minute())
+	secondstr := fmt.Sprintf("%0*d", 2, time.Now().Second())
+	nowstr := fmt.Sprintf("%s%s%sT%s%s%s", yearstr, monthstr, daystr, hourstr, minutestr, secondstr)
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000001-20000728T105016.01-00000001a-00000000a-0-suffix"), //old block
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000002-%s.02-00000002a-00000001a-1-suffix", nowstr)),
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000003-%s.03-00000003a-00000002a-1-suffix", nowstr)),
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000004-%s.06-00000004a-00000003a-2-suffix", nowstr)),
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.08-00000006a-00000004a-2-suffix", nowstr)),
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.09-00000007a-00000006a-2-suffix", nowstr)),
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.10-00000008a-00000007a-2-suffix", nowstr)),
+		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.11-00000009a-00000008a-2-suffix", nowstr)),
+	}
+
+	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+		blk := oneBlockFileToBlock(oneBlockFile)
+		blk, err = bstream.MemoryBlockPayloadSetter(blk, []byte(oneBlockFile.CanonicalName))
+		if err != nil {
+			return nil, err
+		}
+
+		pblk, err := blk.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(pblk)
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 0, storedMergedFiles)
+	assert.Equal(t, 0, deletedFiles)
+	assert.Equal(t, 1, storedMergableOneBlockFiles)
+	assert.Equal(t, 8, storedUploadableOneBlockfiles)
+}
+
+func oneBlockFileToBlock(oneBlockFile *bundle.OneBlockFile) *bstream.Block {
 	return &bstream.Block{
-		Id:     data.ID,
-		Number: toBlockNum(data.ID),
-	}, nil
-}
-
-type testArchiver struct {
-	*shutter.Shutter
-	blocks []*bstream.Block
-}
-
-func (a *testArchiver) Init() error {
-	return nil
-}
-
-func (a *testArchiver) Start() {
-}
-
-func (a *testArchiver) StoreBlock(block *bstream.Block) error {
-	a.blocks = append(a.blocks, block)
-	return nil
-}
-
-func TestFindFilesToUpload(t *testing.T) {
-	tmp, err := ioutil.TempDir(os.TempDir(), "archivertest")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmp)
-	for _, f := range []string{"alpha", "charlie", "bravo", "foxtrot", "echo"} {
-		require.NoError(t, createEmptyFile(path.Join(tmp, fmt.Sprintf("%s.merged", f))))
+		Id:             oneBlockFile.ID,
+		Number:         oneBlockFile.Num,
+		PreviousId:     oneBlockFile.PreviousID,
+		Timestamp:      oneBlockFile.BlockTime,
+		LibNum:         oneBlockFile.LibNum(),
+		PayloadKind:    0,
+		PayloadVersion: 0,
+		Payload:        nil,
 	}
-	files, err := findFilesToUpload(tmp, nil, "merged")
-	require.NoError(t, err)
-
-	expectedShort := []string{"alpha", "bravo", "charlie", "echo", "foxtrot"}
-	var expectedLong []string
-	for _, s := range expectedShort {
-		expectedLong = append(expectedLong, tmp+"/"+s+".merged")
-	}
-	assert.Equal(t, files, expectedLong)
-
-}
-
-func createEmptyFile(filename string) error {
-	emptyFile, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	emptyFile.Close()
-	return nil
-}
-
-func toBlockNum(blockID string) uint64 {
-	if len(blockID) < 8 {
-		return 0
-	}
-	bin, err := hex.DecodeString(blockID[:8])
-	if err != nil {
-		return 0
-	}
-	return uint64(binary.BigEndian.Uint32(bin))
 }

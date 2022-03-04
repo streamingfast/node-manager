@@ -1,59 +1,111 @@
 package mindreader
 
 import (
-	"io"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/streamingfast/bstream"
-	"github.com/streamingfast/shutter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/shutter"
 )
 
 func TestMindReaderPlugin_ReadFlow(t *testing.T) {
-	a := NewTestArchiver()
-	mindReader, err := testNewMindReaderPlugin(a, 0, 0)
-	mindReader.OnTerminating(func(err error) {
-		t.Error("should not be called", err)
-	})
-	require.NoError(t, err)
+	numOfLines := 1
+	lines := make(chan string, numOfLines)
+	blocks := make(chan *bstream.Block, numOfLines)
 
-	mindReader.Launch()
+	mindReader := &MindReaderPlugin{
+		Shutter:       shutter.New(),
+		lines:         lines,
+		consoleReader: newTestConsolerReader(lines),
+		transformer:   testConsoleReaderBlockTransformer,
+		startGate:     NewBlockNumberGate(1),
+	}
 
-	mindReader.LogLine(`DMLOG {"id":"0000004ez"}`)
+	wg := sync.WaitGroup{}
+	wg.Add(numOfLines)
 
-	a.consumeBlockFromChannel(t, 5*time.Millisecond)
+	var readMessageError error
+	go func() {
+		defer wg.Done()
+		readMessageError = mindReader.readOneMessage(blocks)
+	}()
 
-	assert.Equal(t, 1, len(a.blocks))
-	assert.Equal(t, "0000004ez", a.blocks[0].ID())
+	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
+	select {
+	case b := <-blocks:
+		require.Equal(t, uint64(01), b.Number)
+	case <-time.After(time.Second):
+		t.Error("too long")
+	}
+
+	wg.Wait()
+	require.NoError(t, readMessageError)
 }
 
 func TestMindReaderPlugin_GatePassed(t *testing.T) {
-	a := NewTestArchiver()
+	numOfLines := 2
+	lines := make(chan string, numOfLines)
+	blocks := make(chan *bstream.Block, numOfLines)
 
-	mindReader, err := testNewMindReaderPlugin(a, 2, 0)
-	mindReader.OnTerminating(func(_ error) {
-		t.Error("should not be called")
-	})
-	require.NoError(t, err)
-
-	mindReader.Launch()
+	mindReader := &MindReaderPlugin{
+		Shutter:       shutter.New(),
+		lines:         lines,
+		consoleReader: newTestConsolerReader(lines),
+		transformer:   testConsoleReaderBlockTransformer,
+		startGate:     NewBlockNumberGate(2),
+	}
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
 	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
 
-	a.consumeBlockFromChannel(t, 5*time.Millisecond)
+	wg := sync.WaitGroup{}
+	wg.Add(numOfLines)
 
-	assert.Equal(t, 1, len(a.blocks))
-	assert.Equal(t, "00000002a", a.blocks[0].ID())
+	readErrors := []error{}
+	go func() {
+		for i := 0; i < numOfLines; i++ {
+			err := mindReader.readOneMessage(blocks)
+			readErrors = append(readErrors, err)
+			wg.Done()
+		}
+	}()
+
+	select {
+	case b := <-blocks:
+		require.Equal(t, uint64(02), b.Number)
+	case <-time.After(time.Second):
+		t.Error("too long")
+	}
+
+	wg.Wait()
+	for _, err := range readErrors {
+		require.NoError(t, err)
+	}
 }
 
 func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
-	a := NewTestArchiver()
-
+	numOfLines := 2
+	lines := make(chan string, numOfLines)
+	blocks := make(chan *bstream.Block, numOfLines)
 	done := make(chan interface{})
-	mindReader, err := testNewMindReaderPlugin(a, 0, 1)
+
+	mindReader := &MindReaderPlugin{
+		Shutter:       shutter.New(),
+		lines:         lines,
+		consoleReader: newTestConsolerReader(lines),
+		transformer:   testConsoleReaderBlockTransformer,
+		startGate:     NewBlockNumberGate(0),
+		stopBlock:     2,
+		zlogger:       testLogger,
+	}
 	mindReader.OnTerminating(func(err error) {
 		if err == nil {
 			close(done)
@@ -61,81 +113,95 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 			t.Error("should not be called")
 		}
 	})
-	require.NoError(t, err)
-
-	mindReader.Launch()
 
 	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
-	a.consumeBlockFromChannel(t, 5*time.Millisecond)
-
 	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
+
+	wg := sync.WaitGroup{}
+	wg.Add(numOfLines)
+
+	readErrors := []error{}
+	go func() {
+		for i := 0; i < numOfLines; i++ {
+			err := mindReader.readOneMessage(blocks)
+			readErrors = append(readErrors, err)
+			wg.Done()
+		}
+	}()
 
 	select {
 	case <-done:
-	case <-time.After(10 * time.Millisecond):
-		t.Error("should have call onComplete at this point")
+	case <-time.After(1 * time.Millisecond):
+		t.Error("too long")
+	}
+
+	wg.Wait()
+	for _, err := range readErrors {
+		require.NoError(t, err)
 	}
 
 	// Validate actually read block
-	assert.True(t, len(a.blocks) >= 1) // moderate requirement, race condition can make it pass more blocks
-	assert.Equal(t, "00000001a", a.blocks[0].ID())
+	assert.Equal(t, numOfLines, len(blocks)) // moderate requirement, race condition can make it pass more blocks
 }
 
 func TestMindReaderPlugin_OneBlockSuffixFormat(t *testing.T) {
-	workDir := newWorkDir(t)
-	shutdown := func(error) {}
-	tracker := bstream.NewTracker(0)
-	bstream.GetBlockWriterFactory = bstream.BlockWriterFactoryFunc(func(writer io.Writer) (bstream.BlockWriter, error) {
-		return newTestBlockWriter(writer)
-	})
-
-	initMindreader := func(suffix string) error {
-		_, err := NewMindReaderPlugin("tmp/mindreader/one_block", "tmp/mindreader/merged_block", false, time.Second, workDir, testConsoleReaderFactory, testConsoleReaderBlockTransformer, tracker, 0, 0, 1, nil, shutdown, false, time.Second, suffix, nil, testLogger)
-		return err
-	}
-
-	assert.NoError(t, initMindreader(""))
-	assert.NoError(t, initMindreader("example"))
-	assert.NoError(t, initMindreader("example-hostname-123"))
-	assert.NoError(t, initMindreader("example_hostname_123"))
-	assert.Equal(t, `oneblock_suffix contains invalid characters: "example.lan"`, initMindreader("example.lan").Error())
+	assert.NoError(t, validateOneBlockSuffix(""))
+	assert.NoError(t, validateOneBlockSuffix("example"))
+	assert.NoError(t, validateOneBlockSuffix("example-hostname-123"))
+	assert.NoError(t, validateOneBlockSuffix("example_hostname_123"))
+	assert.Equal(t, `oneblock_suffix contains invalid characters: "example.lan"`, validateOneBlockSuffix("example.lan").Error())
 }
 
-type TestArchiver struct {
-	*shutter.Shutter
-	blocks        []*bstream.Block
-	receivedBlock chan *bstream.Block
+type testConsolerReader struct {
+	lines chan string
+	done  chan interface{}
 }
 
-func NewTestArchiver() *TestArchiver {
-	return &TestArchiver{
-		blocks:        []*bstream.Block{},
-		receivedBlock: make(chan *bstream.Block),
+func newTestConsolerReader(lines chan string) *testConsolerReader {
+	return &testConsolerReader{
+		lines: lines,
 	}
 }
 
-func (s *TestArchiver) Init() error {
-	return nil
+func (c *testConsolerReader) Done() <-chan interface{} {
+	return c.done
 }
 
-func (s *TestArchiver) StoreBlock(block *bstream.Block) error {
-	s.blocks = append(s.blocks, block)
-	s.receivedBlock <- block
-	return nil
+func (c *testConsolerReader) Read() (obj interface{}, err error) {
+	line, _ := <-c.lines
+	obj = line[6:]
+	return
 }
 
-func (s *TestArchiver) consumeBlockFromChannel(t *testing.T, timeout time.Duration) *bstream.Block {
-	t.Helper()
-
-	select {
-	case blk := <-s.receivedBlock:
-		return blk
-	case <-time.After(timeout):
-		t.Errorf("should have read a block after %s", timeout)
+func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
+	content, ok := obj.(string)
+	if !ok {
+		return nil, fmt.Errorf("expecting type string, got %T", obj)
 	}
 
-	return nil
+	type block struct {
+		ID string `json:"id"`
+	}
+
+	data := new(block)
+	err := json.Unmarshal([]byte(content), data)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling error on '%s': %w", content, err)
+	}
+
+	return &bstream.Block{
+		Id:     data.ID,
+		Number: toBlockNum(data.ID),
+	}, nil
 }
 
-func (s *TestArchiver) Start() {
+func toBlockNum(blockID string) uint64 {
+	if len(blockID) < 8 {
+		return 0
+	}
+	bin, err := hex.DecodeString(blockID[:8])
+	if err != nil {
+		return 0
+	}
+	return uint64(binary.BigEndian.Uint32(bin))
 }
