@@ -3,6 +3,7 @@ package mindreader
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,10 @@ func TestFileUploader(t *testing.T) {
 		}
 		return nil
 	}
+	localStore.ObjectPathFunc = func(s string) string {
+		return s
+	}
+
 	destinationStore := &TestStore{}
 	var destinationTestFiles []string
 	done := make(chan interface{})
@@ -28,6 +33,9 @@ func TestFileUploader(t *testing.T) {
 		}
 		return nil
 	}
+	destinationStore.ObjectPathFunc = func(s string) string {
+		return s
+	}
 
 	uploader := NewFileUploader(localStore, destinationStore, zap.NewNop())
 	err := uploader.uploadFiles(context.Background())
@@ -35,8 +43,8 @@ func TestFileUploader(t *testing.T) {
 
 	select {
 	case <-done:
-		{
-			assert.Equal(t, 3, len(destinationTestFiles))
-		}
+		assert.Equal(t, 3, len(destinationTestFiles))
+	case <-time.After(5 * time.Second):
+		t.Error("took took long")
 	}
 }

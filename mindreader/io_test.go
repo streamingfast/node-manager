@@ -80,6 +80,7 @@ func (io *TestArchiverIO) WalkMergeableOneBlockFiles(ctx context.Context) ([]*bu
 type TestStore struct {
 	WalkFunc          func(ctx context.Context, prefix, ignoreSuffix string, f func(filename string) (err error)) error
 	PushLocalFileFunc func(ctx context.Context, localFile, toBaseName string) (err error)
+	ObjectPathFunc    func(string) string
 }
 
 func (t TestStore) OpenObject(ctx context.Context, name string) (out io.ReadCloser, err error) {
@@ -91,7 +92,10 @@ func (t TestStore) FileExists(ctx context.Context, base string) (bool, error) {
 }
 
 func (t TestStore) ObjectPath(base string) string {
-	panic("unimplemented")
+	if t.ObjectPathFunc == nil {
+		return ""
+	}
+	return t.ObjectPathFunc(base)
 }
 
 func (t TestStore) ObjectURL(base string) string {
