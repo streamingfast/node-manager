@@ -15,11 +15,11 @@
 package mindreader
 
 import (
-	"go.uber.org/zap"
+	"github.com/streamingfast/logging"
 )
 
-var testLogger = zap.NewNop()
+var testLogger, _ = logging.PackageLogger("node-manager", "github.com/streamingfast/node-manager/mindreader/tests")
 
 func init() {
-	testLogger, _ = zap.NewDevelopment()
+	logging.InstantiateLoggers()
 }

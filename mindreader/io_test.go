@@ -2,8 +2,6 @@ package mindreader
 
 import (
 	"context"
-	"io"
-	"net/url"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/merger/bundle"
@@ -75,68 +73,4 @@ func (io *TestArchiverIO) WalkMergeableOneBlockFiles(ctx context.Context) ([]*bu
 	}
 
 	return io.WalkMergeableOneBlockFilesFunc(ctx)
-}
-
-type TestStore struct {
-	WalkFunc          func(ctx context.Context, prefix, ignoreSuffix string, f func(filename string) (err error)) error
-	PushLocalFileFunc func(ctx context.Context, localFile, toBaseName string) (err error)
-	ObjectPathFunc    func(string) string
-}
-
-func (t TestStore) OpenObject(ctx context.Context, name string) (out io.ReadCloser, err error) {
-	panic("unimplemented")
-}
-
-func (t TestStore) FileExists(ctx context.Context, base string) (bool, error) {
-	panic("unimplemented")
-}
-
-func (t TestStore) ObjectPath(base string) string {
-	if t.ObjectPathFunc == nil {
-		return ""
-	}
-	return t.ObjectPathFunc(base)
-}
-
-func (t TestStore) ObjectURL(base string) string {
-	panic("unimplemented")
-}
-
-func (t TestStore) WriteObject(ctx context.Context, base string, f io.Reader) (err error) {
-	panic("unimplemented")
-}
-
-func (t TestStore) PushLocalFile(ctx context.Context, localFile, toBaseName string) (err error) {
-	if t.PushLocalFileFunc == nil {
-		return nil
-
-	}
-	return t.PushLocalFileFunc(ctx, localFile, toBaseName)
-}
-
-func (t TestStore) Overwrite() bool {
-	panic("unimplemented")
-}
-
-func (t TestStore) SetOverwrite(enabled bool) {
-	panic("unimplemented")
-}
-
-func (t TestStore) Walk(ctx context.Context, prefix, ignoreSuffix string, f func(filename string) (err error)) error {
-	if t.WalkFunc == nil {
-		return nil
-	}
-	return t.WalkFunc(ctx, prefix, ignoreSuffix, f)
-}
-
-func (t TestStore) ListFiles(ctx context.Context, prefix, ignoreSuffix string, max int) ([]string, error) {
-	panic("unimplemented")
-}
-
-func (t TestStore) DeleteObject(ctx context.Context, base string) error {
-	panic("unimplemented")
-}
-
-func (t TestStore) BaseURL() *url.URL {
-	panic("unimplemented")
 }

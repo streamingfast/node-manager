@@ -119,6 +119,6 @@ func (cc *continuityChecker) Write(val uint64) error {
 	cc.highestSeenBlock = val
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, uint64(val))
-	cc.zlogger.Debug("writing through ontinuity checker", zap.Uint64("highest_seen_block", cc.highestSeenBlock))
+	cc.zlogger.Debug("writing through continuity checker", zap.Uint64("highest_seen_block", cc.highestSeenBlock))
 	return renameio.WriteFile(cc.filePath, b, os.FileMode(0644))
 }
