@@ -139,15 +139,20 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableMergedBlocksDir, err)
 	}
 
-	oneBlocksStore, err := dstore.NewDBinStore(archiveStoreURL)
+	// remote stores
+	newDBinStoreNoCompress := func(s string) (dstore.Store, error) {
+		return dstore.NewStore(s, "dbin.zst", "", false)
+	}
+	oneBlocksStore, err := newDBinStoreNoCompress(archiveStoreURL)
 	if err != nil {
 		return nil, fmt.Errorf("new one block store: %w", err)
 	}
-	mergedBlocksStore, err := dstore.NewDBinStore(mergeArchiveStoreURL)
+	mergedBlocksStore, err := newDBinStoreNoCompress(mergeArchiveStoreURL)
 	if err != nil {
 		return nil, fmt.Errorf("new merge blocks store: %w", err)
 	}
 
+	// local stores
 	mergeableOneBlocksStore, err := dstore.NewDBinStore(mergeableOneBlockDir)
 	if err != nil {
 		return nil, fmt.Errorf("new mergeableOneBlocksStore: %w", err)
