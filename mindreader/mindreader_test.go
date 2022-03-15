@@ -145,7 +145,7 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 }
 
 func TestMindReaderPlugin_OneBlockSuffixFormat(t *testing.T) {
-	assert.NoError(t, validateOneBlockSuffix(""))
+	assert.Error(t, validateOneBlockSuffix(""))
 	assert.NoError(t, validateOneBlockSuffix("example"))
 	assert.NoError(t, validateOneBlockSuffix("example-hostname-123"))
 	assert.NoError(t, validateOneBlockSuffix("example_hostname_123"))

@@ -218,7 +218,10 @@ func NewMindReaderPlugin(
 }
 
 func validateOneBlockSuffix(suffix string) error {
-	if suffix != "" && !oneblockSuffixRegexp.MatchString(suffix) {
+	if suffix == "" {
+		return fmt.Errorf("oneblock_suffix cannot be empty")
+	}
+	if !oneblockSuffixRegexp.MatchString(suffix) {
 		return fmt.Errorf("oneblock_suffix contains invalid characters: %q", suffix)
 	}
 	return nil

@@ -183,7 +183,7 @@ func (a *Archiver) loadLastPartial(ctx context.Context, block *bstream.Block) er
 
 	return nil
 }
-func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlockFile, block *bstream.Block) error {
+func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 	merging := a.shouldMerge(block)
 	if !merging {
 		if a.bundler != nil {
@@ -201,7 +201,7 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 					return fmt.Errorf("new block from bytes: %w", err)
 				}
 
-				err = a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(blk), blk)
+				err = a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(blk, a.oneblockSuffix), blk)
 				if err != nil {
 					return fmt.Errorf("storing one block file: %w", err)
 				}
@@ -209,8 +209,11 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 		}
 		a.bundler = nil
 
-		return a.io.StoreOneBlockFile(ctx, bundle.BlockFileName(block), block)
+		return a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
 	}
+
+	oneBlockFileName := bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix)
+	oneBlockFile := bundle.MustNewOneBlockFile(oneBlockFileName)
 	if a.bundler == nil {
 		exclusiveHighestBlockLimit := ((block.Number / a.bundleSize) * a.bundleSize) + a.bundleSize
 		a.bundler = bundle.NewBundler(a.bundleSize, exclusiveHighestBlockLimit)
@@ -226,7 +229,7 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 		return nil
 	}
 
-	err := a.io.StoreMergeableOneBlockFile(ctx, oneBlockFile.CanonicalName, block)
+	err := a.io.StoreMergeableOneBlockFile(ctx, oneBlockFileName, block)
 	if err != nil {
 		return fmt.Errorf("storing one block to be merged: %w", err)
 	}
@@ -251,7 +254,5 @@ func (a *Archiver) storeBlock(ctx context.Context, oneBlockFile *bundle.OneBlock
 
 }
 func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
-	oneBlockFileName := bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix)
-
-	return a.storeBlock(ctx, bundle.MustNewOneBlockFile(oneBlockFileName), block)
+	return a.storeBlock(ctx, block)
 }

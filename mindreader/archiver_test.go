@@ -66,7 +66,7 @@ func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
@@ -143,7 +143,7 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
@@ -190,7 +190,7 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
@@ -240,7 +240,7 @@ func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
@@ -303,7 +303,7 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 
 	ctx := context.Background()
 	for i, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		if i == 4 {
 			archiver.currentlyMerging = false //force the end off merging state.
 		}
@@ -321,8 +321,8 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
 
 	srcExistingMergeableOneBlockFiles := []string{
-		"0000000001-20210728T105016.01-00000001a-00000000a-0-suffix",
-		"0000000002-20210728T105016.02-00000002a-00000001a-1-suffix",
+		"0000000001-20210728T105016.01-0000001a-0000000a-0-suffix",
+		"0000000002-20210728T105016.02-0000002a-0000001a-1-suffix",
 	}
 
 	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
@@ -337,9 +337,9 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 	}
 
 	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-0000003a-0000002a-1-suffix"),
+		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-0000004a-0000003a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-0000006a-0000004a-2-suffix"),
 	}
 
 	storedMergableOneBlockFiles := 0
@@ -367,7 +367,7 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
@@ -377,7 +377,7 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 	assert.Equal(t, 0, storedUploadableOneBlockFiles)
 }
 
-func TestArchiver_StoreBlock_NewBlocksBatchModeNonConnectedPartial_MultipleBoundaries(t *testing.T) {
+func TestArchiver_StoreBlock_NewBlocksBatchNonConnectedPartial_MultipleBoundaries(t *testing.T) {
 	io := &TestArchiverIO{}
 	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
 
@@ -432,7 +432,7 @@ func TestArchiver_StoreBlock_NewBlocksBatchModeNonConnectedPartial_MultipleBound
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
@@ -511,7 +511,7 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFile, oneBlockFileToBlock(oneBlockFile))
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
