@@ -17,6 +17,7 @@ package node_mindreader_stdin
 import (
 	"bufio"
 	"fmt"
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"io"
 	"os"
 	"time"
@@ -44,6 +45,8 @@ type Config struct {
 	DiscardAfterStopBlock        bool
 	WorkingDir                   string
 	WaitUploadCompleteOnShutdown time.Duration
+	LogToZap                     bool
+	DebugDeepMind                bool
 }
 
 type Modules struct {
@@ -121,8 +124,12 @@ func (a *App) Run() error {
 
 	a.zlogger.Debug("running mindreader log plugin")
 	go mindreaderLogPlugin.Launch()
-
 	go a.modules.MetricsAndReadinessManager.Launch()
+
+	var logPlugin *logplugin.ToZapLogPlugin
+	if a.Config.LogToZap {
+		logPlugin = logplugin.NewToZapLogPlugin(a.Config.DebugDeepMind, a.zlogger)
+	}
 
 	stdin := bufio.NewReader(os.Stdin)
 	go func() {
@@ -141,6 +148,10 @@ func (a *App) Run() error {
 					return
 				}
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")
+			}
+
+			if logPlugin != nil {
+				logPlugin.LogLine(in)
 			}
 
 			mindreaderLogPlugin.LogLine(in)
