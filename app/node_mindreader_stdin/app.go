@@ -123,7 +123,7 @@ func (a *App) Run() error {
 	}
 
 	a.zlogger.Debug("running mindreader log plugin")
-	go mindreaderLogPlugin.Launch()
+	mindreaderLogPlugin.Launch()
 	go a.modules.MetricsAndReadinessManager.Launch()
 
 	var logPlugin *logplugin.ToZapLogPlugin
@@ -144,11 +144,12 @@ func (a *App) Run() error {
 				}
 				if len(in) == 0 {
 					a.zlogger.Info("done reading from stdin")
-					mindreaderLogPlugin.Shutdown(nil)
 					return
 				}
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")
 			}
+			// strip the \n
+			in = in[:len(in)-2]
 
 			if logPlugin != nil {
 				logPlugin.LogLine(in)

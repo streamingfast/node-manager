@@ -299,7 +299,6 @@ func (p *MindReaderPlugin) launch() {
 
 	go func() {
 		for {
-			// Always read messages otherwise you'll stall the shutdown lifecycle of the managed process, leading to corrupted database if exit uncleanly afterward
 			err := p.readOneMessage(blocks)
 			if err != nil {
 				if err == io.EOF {
@@ -309,7 +308,10 @@ func (p *MindReaderPlugin) launch() {
 				}
 				p.zlogger.Error("reading from console logs", zap.Error(err))
 				p.Shutdown(err)
-				continue
+				// Always read messages otherwise you'll stall the shutdown lifecycle of the managed process, leading to corrupted database if exit uncleanly afterward
+				p.drainMessages()
+				close(blocks)
+				return
 			}
 		}
 	}()
@@ -386,6 +388,13 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 		}
 
 	}
+}
+
+func (p *MindReaderPlugin) drainMessages() {
+	for line := range p.lines {
+		_ = line
+	}
+	return
 }
 
 func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
