@@ -135,7 +135,7 @@ func (a *App) Run() error {
 	go func() {
 		a.zlogger.Info("starting stdin reader")
 		for {
-			in, err := stdin.ReadString('\n')
+			in, _, err := stdin.ReadLine()
 			if err != nil {
 				if err != io.EOF {
 					a.zlogger.Error("got an error from readstring", zap.Error(err))
@@ -148,14 +148,13 @@ func (a *App) Run() error {
 				}
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")
 			}
-			// strip the \n
-			in = in[:len(in)-2]
+			line := string(in)
 
 			if logPlugin != nil {
-				logPlugin.LogLine(in)
+				logPlugin.LogLine(line)
 			}
 
-			mindreaderLogPlugin.LogLine(in)
+			mindreaderLogPlugin.LogLine(line)
 		}
 	}()
 
