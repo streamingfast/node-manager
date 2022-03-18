@@ -1,4 +1,4 @@
-module github.com/dfuse-io/manageos
+module github.com/zhongshuwen/node-manager
 
 go 1.12
 
@@ -6,13 +6,13 @@ require (
 	cloud.google.com/go/storage v1.4.0
 	github.com/ShinyTrinkets/overseer v0.3.0
 	github.com/abourget/llerrgroup v0.0.0-20161118145731-75f536392d17
-	github.com/dfuse-io/bstream v0.0.0-20200427161155-5bc64e86c005
-	github.com/dfuse-io/dbin v0.0.0-20200406215642-ec7f22e794eb
-	github.com/dfuse-io/dgrpc v0.0.0-20200406214416-6271093e544c
-	github.com/dfuse-io/dmetrics v0.0.0-20200508152325-93e7e9d576bb
-	github.com/dfuse-io/dstore v0.1.0
-	github.com/dfuse-io/logging v0.0.0-20200407175011-14021b7a79af
-	github.com/dfuse-io/shutter v1.4.1-0.20200319040708-c809eec458e6
+	github.com/streamingfast/bstream v0.0.0-20200427161155-5bc64e86c005
+	github.com/streamingfast/dbin v0.0.0-20200406215642-ec7f22e794eb
+	github.com/streamingfast/dgrpc v0.0.0-20200406214416-6271093e544c
+	github.com/streamingfast/dmetrics v0.0.0-20200508152325-93e7e9d576bb
+	github.com/streamingfast/dstore v0.1.0
+	github.com/streamingfast/logging v0.0.0-20200407175011-14021b7a79af
+	github.com/streamingfast/shutter v1.4.1-0.20200319040708-c809eec458e6
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/eoscanada/eos-go v0.9.1-0.20200506160036-5e090ae689ef
 	github.com/eoscanada/pitreos v1.0.1-0.20190618150521-240402eb30e2
