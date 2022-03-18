@@ -21,6 +21,7 @@ require (
 	github.com/klauspost/compress v1.10.2
 	github.com/matishsiao/goInfo v0.0.0-20170803142006-617e6440957e
 	github.com/spf13/viper v1.3.2
+	github.com/streamingfast/shutter v1.5.0
 	github.com/stretchr/testify v1.4.0
 	go.uber.org/atomic v1.6.0
 	go.uber.org/zap v1.14.0

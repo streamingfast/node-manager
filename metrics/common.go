@@ -14,9 +14,7 @@
 
 package metrics
 
-import (
-	"github.com/dfuse-io/dmetrics"
-)
+import "github.com/dfuse-io/dmetrics"
 
 var Metricset = dmetrics.NewSet()
 

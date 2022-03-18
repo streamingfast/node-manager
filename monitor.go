@@ -3,7 +3,7 @@ package manageos
 import (
 	"time"
 
-	"github.com/dfuse-io/dmetrics"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/atomic"
 )
 

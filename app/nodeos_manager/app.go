@@ -21,8 +21,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/dmetrics"
 	"github.com/dfuse-io/manageos"
+	"github.com/streamingfast/shutter"
 
 	"github.com/dfuse-io/manageos/metrics"
 	"github.com/dfuse-io/manageos/operator"
