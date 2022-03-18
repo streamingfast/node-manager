@@ -148,7 +148,7 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 	}
 
 	assert.Equal(t, 0, storedMergedFiles)
-	assert.Equal(t, 0, deletedFiles)
+	assert.Equal(t, 2, deletedFiles) // previous bundle files must be deleted
 	assert.Equal(t, 0, storedMergableOneBlockFiles)
 	assert.Equal(t, 5, storedUploadableOneBlockfiles)
 }
@@ -157,6 +157,7 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 	io := &TestArchiverIO{}
 	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
 
+	bstream.GetProtocolFirstStreamableBlock = 1
 	srcOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
 		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
@@ -244,10 +245,10 @@ func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, 1, storedMergedFiles)
-	assert.Equal(t, 4, deletedFiles)
-	assert.Equal(t, 5, storedMergableOneBlockFiles)
-	assert.Equal(t, 0, storedUploadableOneBlockfiles)
+	assert.Equal(t, 0, storedMergedFiles)
+	assert.Equal(t, 0, deletedFiles)
+	assert.Equal(t, 1, storedMergableOneBlockFiles)   // 16
+	assert.Equal(t, 5, storedUploadableOneBlockfiles) // 11, 5, 12 13, 14
 }
 
 func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
@@ -256,6 +257,7 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
 
 	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("00000000010-20210728T105016.00-000000010a-000000009a-9-suffix"),
 		bundle.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
 		bundle.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
 		bundle.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
@@ -304,16 +306,16 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 	ctx := context.Background()
 	for i, oneBlockFile := range srcOneBlockFiles {
 		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
-		if i == 4 {
+		if i == 5 {
 			archiver.currentlyMerging = false //force the end off merging state.
 		}
 		require.NoError(t, err)
 	}
 
-	assert.Equal(t, 1, storedMergedFiles)
-	assert.Equal(t, 4, deletedFiles)
-	assert.Equal(t, 5, storedMergableOneBlockFiles)
-	assert.Equal(t, 2, storedUploadableOneBlockFiles)
+	assert.Equal(t, 1, storedMergedFiles)             //10->14
+	assert.Equal(t, 6, deletedFiles)                  // 10->14 + 16 which is i=5
+	assert.Equal(t, 6, storedMergableOneBlockFiles)   // the same that were deleted after
+	assert.Equal(t, 2, storedUploadableOneBlockFiles) // 16, 17
 }
 
 func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
@@ -377,10 +379,11 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 	assert.Equal(t, 0, storedUploadableOneBlockFiles)
 }
 
-func TestArchiver_StoreBlock_NewBlocksBatchNonConnectedPartial_MultipleBoundaries(t *testing.T) {
+func TestArchiver_StoreBlock_NewBlocksBatchNonConnectedPartial(t *testing.T) {
 	io := &TestArchiverIO{}
 	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
 
+	bstream.GetProtocolFirstStreamableBlock = 1
 	srcExistingMergeableOneBlockFiles := []string{
 		"0000000001-20210728T105016.01-00000001a-00000000a-0-suffix",
 		"0000000002-20210728T105016.02-00000002a-00000001a-1-suffix",
@@ -397,49 +400,13 @@ func TestArchiver_StoreBlock_NewBlocksBatchNonConnectedPartial_MultipleBoundarie
 		return result, nil
 	}
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		//bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-4-suffix"),
-		bundle.MustNewOneBlockFile("0000000007-20210728T105016.09-00000007a-00000006a-4-suffix"),
-		bundle.MustNewOneBlockFile("0000000009-20210728T105016.09-00000009a-00000007a-6-suffix"),
-		bundle.MustNewOneBlockFile("0000000010-20210728T105016.09-00000010a-00000009a-6-suffix"),
-		bundle.MustNewOneBlockFile("0000000011-20210728T105016.09-00000011a-00000010a-9-suffix"),
-	}
-
-	storedMergableOneBlockFiles := 0
-	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
-		storedMergableOneBlockFiles++
-		return nil
-	}
-
-	storedUploadableOneBlockfiles := 0
-	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
-		storedUploadableOneBlockfiles++
-		return nil
-	}
-
-	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
-		storedMergedFiles++
-		return nil
-	}
-
-	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
-		deletedFiles += len(oneBlockFiles)
-	}
+	//bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
+	srcOneBlockFile := bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-1-suffix")
 
 	ctx := context.Background()
-	for _, oneBlockFile := range srcOneBlockFiles {
-		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
-		require.NoError(t, err)
-	}
+	err := archiver.storeBlock(ctx, oneBlockFileToBlock(srcOneBlockFile))
+	require.Error(t, err)
 
-	assert.Equal(t, 2, storedMergedFiles)
-	assert.Equal(t, 4, deletedFiles)
-	assert.Equal(t, 6, storedMergableOneBlockFiles)
-	assert.Equal(t, 0, storedUploadableOneBlockfiles)
 }
 
 func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
@@ -461,6 +428,7 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 	secondstr := fmt.Sprintf("%0*d", 2, time.Now().Second())
 	nowstr := fmt.Sprintf("%s%s%sT%s%s%s", yearstr, monthstr, daystr, hourstr, minutestr, secondstr)
 
+	bstream.GetProtocolFirstStreamableBlock = 1
 	srcOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("0000000001-20000728T105016.01-00000001a-00000000a-0-suffix"), //old block
 		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000002-%s.02-00000002a-00000001a-1-suffix", nowstr)),
@@ -516,7 +484,7 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 	}
 
 	assert.Equal(t, 0, storedMergedFiles)
-	assert.Equal(t, 0, deletedFiles)
+	assert.Equal(t, 1, deletedFiles)
 	assert.Equal(t, 1, storedMergableOneBlockFiles)
 	assert.Equal(t, 8, storedUploadableOneBlockfiles)
 }

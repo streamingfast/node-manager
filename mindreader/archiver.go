@@ -34,9 +34,10 @@ type Archiver struct {
 	bundler *bundle.Bundler
 	io      ArchiverIO
 
-	currentlyMerging bool
+	currentlyMerging    bool
+	firstBoundaryTarget uint64
 
-	batchMode              bool // forces merging blocks without tracker or LIB checking
+	batchMode              bool // forces merging blocks without age threshold
 	tracker                *bstream.Tracker
 	mergeThresholdBlockAge time.Duration
 	lastSeenLIB            *atomic.Uint64
@@ -126,13 +127,13 @@ func (a *Archiver) launchLastLIBUpdater(ctx context.Context) {
 }
 
 func (a *Archiver) shouldMerge(block *bstream.Block) bool {
-	if a.batchMode {
-		return true
-	}
-
 	//Be default currently merging is set to true
 	if !a.currentlyMerging {
 		return false
+	}
+
+	if a.batchMode {
+		return true
 	}
 
 	blockAge := time.Since(block.Time())
@@ -145,94 +146,171 @@ func (a *Archiver) shouldMerge(block *bstream.Block) bool {
 		return true
 	}
 
+	a.currentlyMerging = false
 	return false
 }
 
-func (a *Archiver) loadLastPartial(ctx context.Context, block *bstream.Block) error {
-	oneBlockFiles, err := a.io.WalkMergeableOneBlockFiles(ctx)
-	if err != nil {
-		return fmt.Errorf("walking mergeable one block files: %w", err)
-	}
-	var highestOneBlockFile *bundle.OneBlockFile
+func (a *Archiver) sendBundleAsIndividualBlocks(ctx context.Context, oneBlockFiles []*bundle.OneBlockFile) error {
 	for _, oneBlockFile := range oneBlockFiles {
-		if highestOneBlockFile == nil {
-			highestOneBlockFile = oneBlockFile
+		oneBlockBytes, err := a.io.DownloadOneBlockFile(context.TODO(), oneBlockFile)
+		if err != nil {
+			return fmt.Errorf("downloading one block file: %w", err)
 		}
-		if oneBlockFile.Num > highestOneBlockFile.Num {
-			highestOneBlockFile = oneBlockFile
+
+		blk, err := bstream.NewBlockFromBytes(oneBlockBytes)
+		if err != nil {
+			return fmt.Errorf("new block from bytes: %w", err)
+		}
+
+		err = a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(blk, a.oneblockSuffix), blk)
+		if err != nil {
+			return fmt.Errorf("storing one block file: %w", err)
 		}
 	}
+	return nil
+}
 
-	if highestOneBlockFile == nil {
+func validatePartialBlocks(ctx context.Context, partialBlocks []*bundle.OneBlockFile, block *bstream.Block, bundleSize uint64) error {
+	if len(partialBlocks) == 0 {
 		return nil
 	}
 
-	if !strings.HasSuffix(block.PreviousID(), highestOneBlockFile.ID) {
-		a.logger.Info(
-			"last partial block does not connect to the current block",
-			zap.String("block_previous_id", block.PreviousID()),
-			zap.String("last_partial_block_id", highestOneBlockFile.ID),
-		)
-		return nil
+	highest := partialBlocks[len(partialBlocks)-1]
+	if !strings.HasSuffix(block.PreviousId, highest.ID) {
+		return fmt.Errorf("highest mergeable block on disk #%d (%s) is not the parent of first seen block %s, expecting %s", highest.Num, highest.ID, block.String(), block.PreviousId)
 	}
 
-	// load files into current bundle
-	for _, oneBlockFile := range oneBlockFiles {
-		a.bundler.AddOneBlockFile(oneBlockFile)
+	lowest := partialBlocks[0]
+	if lowBoundary(lowest.Num, bundleSize) != lowBoundary(block.Number, bundleSize) {
+		return fmt.Errorf("lowest mergeable block is not part of the same bundle as first seen block")
 	}
 
 	return nil
 }
+
+func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, io ArchiverIO, bundleSize uint64, logger *zap.Logger) (*bundle.Bundler, error) {
+
+	partialBlocks, err := io.WalkMergeableOneBlockFiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("walking mergeable one block files: %w", err)
+	}
+
+	err = validatePartialBlocks(ctx, partialBlocks, block, bundleSize)
+	if err != nil {
+		return nil, fmt.Errorf("validating partial blocks on disk: %w", err)
+	}
+
+	bundleLow := lowBoundary(block.Number, bundleSize)
+
+	bundler := bundle.NewBundler(bundleSize, bundleLow+bundleSize)
+	if len(partialBlocks) != 0 {
+		logger.Info("setting up bundler from partial files",
+			zap.Uint64("low_boundary", bundleLow),
+			zap.Uint64("block_number", block.Number),
+			zap.Int("len_partial_blocks", len(partialBlocks)),
+		)
+		lowest := partialBlocks[0]
+		if lowest.Num == bundleLow { //exception for FirstStreamableBlock not on boundary
+			bundler.InitLIB(bstream.NewBlockRef(lowest.ID, lowest.Num))
+		}
+		for _, blk := range partialBlocks {
+			bundler.AddOneBlockFile(blk)
+		}
+		return bundler, nil
+	}
+
+	if isBoundary(block.Number, bundleSize) {
+		logger.Info("setting up bundler on a boundary block",
+			zap.Uint64("low_boundary", bundleLow),
+			zap.Uint64("block_number", block.Number),
+		)
+		if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
+			bundler.InitLIB(block)
+		}
+		return bundler, nil
+	}
+
+	err = bundler.Bootstrap(func(lowBlockNum uint64) (oneBlockFiles []*bundle.OneBlockFile, err error) {
+		oneBlockFiles, fetchErr := io.FetchMergedOneBlockFiles(lowBlockNum)
+		if fetchErr != nil {
+			return nil, fmt.Errorf("fetching one block files from merged file with low block num %d: %w", lowBlockNum, fetchErr)
+		}
+		return oneBlockFiles, err
+	})
+	if err != nil {
+		logger.Debug("trying to bootstrap non-boundary block", zap.Stringer("block", block), zap.Error(err))
+		return nil, nil
+	}
+
+	firstBlockNumFound, err := bundler.LongestChainFirstBlockNum()
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("setting up bundler from a block that connects to previous bundles",
+		zap.Uint64("low_boundary", bundleLow),
+		zap.Uint64("block_number", block.Number),
+		zap.Uint64("first_block_num_found", firstBlockNumFound),
+	)
+	return bundler, nil
+}
+
 func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 	merging := a.shouldMerge(block)
 	if !merging {
 		if a.bundler != nil {
-			// download all the one block files in the current incomplete bundle and store them
-			// in the oneblockArchiver
 			oneBlockFiles := a.bundler.ToBundle(math.MaxUint64)
-			for _, oneBlockFile := range oneBlockFiles {
-				oneBlockBytes, err := a.io.DownloadOneBlockFile(context.TODO(), oneBlockFile)
-				if err != nil {
-					return fmt.Errorf("downloading one block file: %w", err)
-				}
-
-				blk, err := bstream.NewBlockFromBytes(oneBlockBytes)
-				if err != nil {
-					return fmt.Errorf("new block from bytes: %w", err)
-				}
-
-				err = a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(blk, a.oneblockSuffix), blk)
-				if err != nil {
-					return fmt.Errorf("storing one block file: %w", err)
-				}
+			a.logger.Info("switching to one-block-files, emptying current bundle", zap.Int("len_bundle", len(oneBlockFiles)))
+			if err := a.sendBundleAsIndividualBlocks(ctx, oneBlockFiles); err != nil {
+				// try to send this one anyway
+				a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
+				return err
 			}
+			a.io.Delete(oneBlockFiles)
 		}
 		a.bundler = nil
 
 		return a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
 	}
 
+	if a.bundler == nil {
+		if a.firstBoundaryTarget == 0 {
+			bundler, err := initializeBundlerFromFirstBlock(ctx, block, a.io, a.bundleSize, a.logger)
+			if err != nil {
+				return fmt.Errorf("initializing bundler: %w", err)
+			}
+			if bundler == nil {
+				a.firstBoundaryTarget = highBoundary(block.Number, a.bundleSize)
+				a.logger.Debug("sending one-blocks directly until first boundary is met and we can start merging",
+					zap.Stringer("block", block),
+					zap.Uint64("first_boundary_target", a.firstBoundaryTarget),
+				)
+				return a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
+			}
+			a.bundler = bundler
+		} else if block.Number < a.firstBoundaryTarget {
+			a.logger.Debug("still waiting for first boundary before we create a bundle and start merging",
+				zap.Stringer("block", block),
+				zap.Uint64("first_boundary_target", a.firstBoundaryTarget),
+			)
+			return a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
+		} else {
+			bundleLow := lowBoundary(block.Number, a.bundleSize)
+			a.bundler = bundle.NewBundler(a.bundleSize, bundleLow+a.bundleSize)
+			if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
+				a.bundler.InitLIB(block)
+			}
+		}
+
+	}
+
 	oneBlockFileName := bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix)
 	oneBlockFile := bundle.MustNewOneBlockFile(oneBlockFileName)
-	if a.bundler == nil {
-		exclusiveHighestBlockLimit := ((block.Number / a.bundleSize) * a.bundleSize) + a.bundleSize
-		a.bundler = bundle.NewBundler(a.bundleSize, exclusiveHighestBlockLimit)
-		if err := a.loadLastPartial(ctx, block); err != nil {
-			return fmt.Errorf("loading partial: %w", err)
-		}
-	}
-	a.bundler.AddOneBlockFile(oneBlockFile)
-
-	if block.Number < a.bundler.BundleInclusiveLowerBlock() {
-		oneBlockFile.Merged = true
-		//at this point it is certain that the bundle can not be completed
-		return nil
-	}
-
 	err := a.io.StoreMergeableOneBlockFile(ctx, oneBlockFileName, block)
 	if err != nil {
 		return fmt.Errorf("storing one block to be merged: %w", err)
 	}
+	a.bundler.AddOneBlockFile(oneBlockFile)
 
 	bundleCompleted, highestBlockLimit := a.bundler.BundleCompleted()
 	if bundleCompleted {
@@ -245,14 +323,25 @@ func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 		}
 
 		a.bundler.Commit(highestBlockLimit)
-		a.bundler.Purge(func(oneBlockFilesToDelete []*bundle.OneBlockFile) {
-			a.io.Delete(oneBlockFiles)
+		a.bundler.Purge(func(toDelete []*bundle.OneBlockFile) {
+			a.io.Delete(toDelete)
 		})
 	}
 
 	return nil
-
 }
+
 func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
 	return a.storeBlock(ctx, block)
+}
+
+func isBoundary(i, mod uint64) bool {
+	return i%mod == 0 || i == bstream.GetProtocolFirstStreamableBlock
+}
+
+func lowBoundary(i uint64, mod uint64) uint64 {
+	return i - (i % mod)
+}
+func highBoundary(i uint64, mod uint64) uint64 {
+	return i - (i % mod) + mod
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/streamingfast/dstore"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,16 +17,19 @@ func TestFileUploader(t *testing.T) {
 
 	destinationStore := dstore.NewMockStore(nil)
 
-	var destinationTestFiles []string
 	done := make(chan interface{})
-	destinationStore.PushLocalFileFunc = func(ctx context.Context, localFile, toBaseName string) (err error) {
-		destinationTestFiles = append(destinationTestFiles, localFile)
-		if len(destinationTestFiles) == 3 {
-			close(done)
-		}
+	out := make(chan bool, 3)
 
+	destinationStore.PushLocalFileFunc = func(ctx context.Context, localFile, toBaseName string) (err error) {
+		out <- true
 		return nil
 	}
+	go func() {
+		for i := 0; i < 3; i++ {
+			<-out
+		}
+		close(done)
+	}()
 
 	uploader := NewFileUploader(localStore, destinationStore, testLogger)
 	err := uploader.uploadFiles(context.Background())
@@ -35,7 +37,6 @@ func TestFileUploader(t *testing.T) {
 
 	select {
 	case <-done:
-		assert.Equal(t, 3, len(destinationTestFiles))
 	case <-time.After(5 * time.Second):
 		t.Error("took took long")
 	}

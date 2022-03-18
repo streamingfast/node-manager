@@ -181,6 +181,7 @@ func NewMindReaderPlugin(
 		250,
 		5,
 		500*time.Millisecond,
+		zlogger,
 	)
 
 	archiver := NewArchiver(
@@ -342,7 +343,6 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 	p.zlogger.Info("starting consume flow")
 	defer close(p.consumeReadFlowDone)
 
-	var dropBlocks bool
 	ctx := context.Background()
 	for {
 		p.zlogger.Debug("waiting to consume next block.")
@@ -360,19 +360,17 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 			return
 		}
 
-		if dropBlocks {
-			p.zlogger.Info("dropping one block because archiver is broken and we are shutting down", zap.Uint64("block_num", block.Number))
-			continue
-		}
 		p.zlogger.Debug("got one block", zap.Uint64("block_num", block.Number))
 
 		err := p.archiver.StoreBlock(ctx, block)
 		if err != nil {
-			p.zlogger.Error("failed storing block in archiver, shutting down. You will need to reprocess over this range to get this block.", zap.Error(err), zap.Stringer("block", block))
 			if !p.IsTerminating() {
-				dropBlocks = true
+				p.zlogger.Error("failed storing block in archiver, shutting down and trying to send next blocks individually. You will need to reprocess over this range.", zap.Error(err), zap.Stringer("block", block))
+				p.archiver.currentlyMerging = false // no more merging when broken
 				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
 				continue
+			} else {
+				p.zlogger.Error("failed storing block in archiver. You will need to reprocess over this range.", zap.Error(err), zap.Stringer("block", block))
 			}
 		}
 		if p.blockStreamServer != nil {

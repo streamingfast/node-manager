@@ -10,6 +10,7 @@ import (
 	"github.com/streamingfast/dstore"
 	"github.com/streamingfast/merger"
 	"github.com/streamingfast/merger/bundle"
+	"go.uber.org/zap"
 )
 
 var _ ArchiverIO = (*ArchiverDStoreIO)(nil) //compile-time check
@@ -37,6 +38,7 @@ type ArchiverDStoreIO struct {
 
 	uploadableOneBlockStore     dstore.Store
 	uploadableMergedBlocksStore dstore.Store
+	logger                      *zap.Logger
 }
 
 func NewArchiverDStoreIO(
@@ -50,6 +52,7 @@ func NewArchiverDStoreIO(
 	maxOneBlockOperationsBatchSize int,
 	retryAttempts int,
 	retryCooldown time.Duration,
+	logger *zap.Logger,
 ) *ArchiverDStoreIO {
 	deleter := merger.NewOneBlockFilesDeleter(mergeableOneBlockStore)
 	deleter.Start(2, maxOneBlockOperationsBatchSize)
@@ -64,6 +67,7 @@ func NewArchiverDStoreIO(
 		mergedBlocksStore:           mergedBlocksStore,
 		OneBlockFilesDeleter:        deleter,
 		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, maxOneBlockOperationsBatchSize, retryAttempts, retryCooldown),
+		logger:                      logger,
 	}
 }
 
@@ -95,16 +99,9 @@ func (m *ArchiverDStoreIO) storeOneBlockFile(ctx context.Context, fileName strin
 
 func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error) {
 	err = m.mergeableOneBlockStore.Walk(ctx, "", "", func(filename string) (err error) {
-		blockNum, _, blockId, prevId, _, canonicalName, err := bundle.ParseFilename(filename)
+		obf, err := bundle.NewOneBlockFile(filename)
 		if err != nil {
-			return fmt.Errorf("could not parse filename %s: %w", filename, err)
-		}
-
-		obf := &bundle.OneBlockFile{
-			CanonicalName: canonicalName,
-			ID:            blockId,
-			Num:           blockNum,
-			PreviousID:    prevId,
+			m.logger.Warn("walking mergeable oneblockfiles found invalid file, skipping", zap.String("filename", filename), zap.Error(err))
 		}
 
 		if obf.InnerLibNum == nil {
