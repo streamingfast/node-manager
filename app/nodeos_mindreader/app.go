@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/dmetrics"
+	"github.com/streamingfast/dmetrics"
 	manageos "github.com/zhongshuwen/node-manager"
 
 	"github.com/dfuse-io/dgrpc"

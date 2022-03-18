@@ -9,7 +9,6 @@ require (
 	github.com/dfuse-io/bstream v0.0.0-20200427161155-5bc64e86c005
 	github.com/dfuse-io/dbin v0.0.0-20200406215642-ec7f22e794eb
 	github.com/dfuse-io/dgrpc v0.0.0-20200406214416-6271093e544c
-	github.com/dfuse-io/dmetrics v0.0.0-20200508152325-93e7e9d576bb
 	github.com/dfuse-io/dstore v0.1.0
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/eoscanada/eos-go v0.9.1-0.20200506160036-5e090ae689ef
@@ -21,6 +20,7 @@ require (
 	github.com/klauspost/compress v1.10.2
 	github.com/matishsiao/goInfo v0.0.0-20170803142006-617e6440957e
 	github.com/spf13/viper v1.3.2
+	github.com/streamingfast/dmetrics v0.0.0-20220307162521-2389094ab4a1
 	github.com/streamingfast/logging v0.0.0-20220304214715-bc750a74b424
 	github.com/streamingfast/shutter v1.5.0
 	github.com/stretchr/testify v1.7.0

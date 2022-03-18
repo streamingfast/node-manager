@@ -14,7 +14,7 @@
 
 package metrics
 
-import "github.com/dfuse-io/dmetrics"
+import "github.com/streamingfast/dmetrics"
 
 var NodeosMetricset = dmetrics.NewSet()
 
