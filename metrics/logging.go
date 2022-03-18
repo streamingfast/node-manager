@@ -15,12 +15,12 @@
 package metrics
 
 import (
-	"github.com/dfuse-io/logging"
+	"github.com/streamingfast/logging"
 	"go.uber.org/zap"
 )
 
 var zlog *zap.Logger
 
 func init() {
-	logging.Register("github.com/dfuse-io/manageos/metrics", &zlog)
+	logging.Register("github.com/zhongshuwen/node-manager/metrics", &zlog)
 }

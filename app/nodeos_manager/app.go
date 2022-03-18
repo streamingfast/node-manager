@@ -21,14 +21,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/dfuse-io/manageos"
 	"github.com/streamingfast/shutter"
+	"github.com/zhongshuwen/node-manager"
 
-	"github.com/dfuse-io/manageos/metrics"
-	"github.com/dfuse-io/manageos/operator"
-	"github.com/dfuse-io/manageos/profiler"
-	"github.com/dfuse-io/manageos/superviser/nodeos"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
+	"github.com/zhongshuwen/node-manager/metrics"
+	"github.com/zhongshuwen/node-manager/operator"
+	"github.com/zhongshuwen/node-manager/profiler"
+	"github.com/zhongshuwen/node-manager/superviser/nodeos"
 	"go.uber.org/zap"
 )
 

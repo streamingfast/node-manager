@@ -15,7 +15,7 @@
 package nodeos_manager
 
 import (
-	"github.com/dfuse-io/logging"
+	"github.com/streamingfast/logging"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +23,6 @@ var zlog *zap.Logger
 var zlogNodeos *zap.Logger
 
 func init() {
-	logging.Register("github.com/dfuse-io/manageos/app/nodeos_manager", &zlog)
-	logging.Register("github.com/dfuse-io/manageos/app/nodeos_manager/nodeos", &zlogNodeos)
+	logging.Register("github.com/zhongshuwen/node-manager/app/nodeos_manager", &zlog)
+	logging.Register("github.com/zhongshuwen/node-manager/app/nodeos_manager/nodeos", &zlogNodeos)
 }

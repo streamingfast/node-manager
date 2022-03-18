@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dfuse-io/manageos"
+	manageos "github.com/zhongshuwen/node-manager"
 	"go.uber.org/zap"
 )
 

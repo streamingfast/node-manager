@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/dfuse-io/dgrpc"
-	"github.com/dfuse-io/manageos/mindreader"
-	nodeosMindreader "github.com/dfuse-io/manageos/mindreader/nodeos"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
+	"github.com/zhongshuwen/node-manager/mindreader"
+	nodeosMindreader "github.com/zhongshuwen/node-manager/mindreader/nodeos"
 	"go.uber.org/zap"
 )
 

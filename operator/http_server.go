@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dfuse-io/manageos/superviser"
+	"github.com/zhongshuwen/node-manager/superviser"
 
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"

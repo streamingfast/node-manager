@@ -21,12 +21,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dfuse-io/manageos"
+	"github.com/zhongshuwen/node-manager"
 
 	"github.com/dfuse-io/bstream"
 	"github.com/dfuse-io/bstream/blockstream"
 	"github.com/dfuse-io/dstore"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )

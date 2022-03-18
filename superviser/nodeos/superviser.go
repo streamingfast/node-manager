@@ -24,12 +24,12 @@ import (
 	"time"
 
 	"github.com/ShinyTrinkets/overseer"
-	"github.com/dfuse-io/manageos"
-	logplugin "github.com/dfuse-io/manageos/log_plugin"
-	"github.com/dfuse-io/manageos/metrics"
-	"github.com/dfuse-io/manageos/superviser"
 	"github.com/eoscanada/eos-go"
 	"github.com/spf13/viper"
+	manageos "github.com/zhongshuwen/node-manager"
+	logplugin "github.com/zhongshuwen/node-manager/log_plugin"
+	"github.com/zhongshuwen/node-manager/metrics"
+	"github.com/zhongshuwen/node-manager/superviser"
 	"go.uber.org/zap"
 )
 

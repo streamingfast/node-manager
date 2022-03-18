@@ -24,8 +24,8 @@ import (
 
 	"github.com/dfuse-io/dstore"
 
-	"github.com/dfuse-io/manageos/metrics"
 	eos "github.com/eoscanada/eos-go"
+	"github.com/zhongshuwen/node-manager/metrics"
 	"go.uber.org/zap"
 )
 

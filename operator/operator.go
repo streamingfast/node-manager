@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/dfuse-io/dstore"
-	"github.com/dfuse-io/manageos"
-	"github.com/dfuse-io/manageos/profiler"
-	"github.com/dfuse-io/shutter"
+	"github.com/streamingfast/shutter"
+	manageos "github.com/zhongshuwen/node-manager"
+	"github.com/zhongshuwen/node-manager/profiler"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )

@@ -18,8 +18,8 @@ import (
 	"sync"
 
 	"github.com/ShinyTrinkets/overseer"
-	"github.com/dfuse-io/manageos"
-	logplugin "github.com/dfuse-io/manageos/log_plugin"
+	"github.com/zhongshuwen/node-manager"
+	logplugin "github.com/zhongshuwen/node-manager/log_plugin"
 	"go.uber.org/zap"
 )
 

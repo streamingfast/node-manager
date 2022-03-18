@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/dfuse-io/bstream"
-	"github.com/dfuse-io/logging"
+	"github.com/streamingfast/logging"
 )
 
 func init() {

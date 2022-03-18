@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	logplugin "github.com/dfuse-io/manageos/log_plugin"
 	"github.com/stretchr/testify/assert"
+	logplugin "github.com/zhongshuwen/node-manager/log_plugin"
 )
 
 var infiniteScript = `
