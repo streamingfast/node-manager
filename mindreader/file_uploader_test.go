@@ -20,7 +20,7 @@ func TestFileUploader(t *testing.T) {
 	done := make(chan interface{})
 	out := make(chan bool, 3)
 
-	destinationStore.PushLocalFileFunc = func(ctx context.Context, localFile, toBaseName string) (err error) {
+	destinationStore.PushLocalFileFunc = func(_ context.Context, _, _ string) (err error) {
 		out <- true
 		return nil
 	}
