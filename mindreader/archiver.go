@@ -17,7 +17,6 @@ package mindreader
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -35,6 +34,7 @@ type Archiver struct {
 	io      ArchiverIO
 
 	currentlyMerging    bool
+	firstBlockSeen      bool
 	firstBoundaryTarget uint64
 
 	batchMode              bool // forces merging blocks without age threshold
@@ -225,7 +225,11 @@ func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, 
 			zap.Uint64("block_number", block.Number),
 		)
 		if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
-			bundler.InitLIB(block)
+			blkrefShortID := bstream.NewBlockRef(shortBlockID(block.Id), block.Number)
+			logger.Debug("initializing lib",
+				zap.Stringer("block", blkrefShortID),
+			)
+			bundler.InitLIB(blkrefShortID)
 		}
 		return bundler, nil
 	}
@@ -256,17 +260,16 @@ func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, 
 }
 
 func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
+	if !a.firstBlockSeen {
+		defer func() { a.firstBlockSeen = true }()
+	}
 	merging := a.shouldMerge(block)
 	if !merging {
-		if a.bundler != nil {
-			oneBlockFiles := a.bundler.ToBundle(math.MaxUint64)
-			a.logger.Info("switching to one-block-files, emptying current bundle", zap.Int("len_bundle", len(oneBlockFiles)))
-			if err := a.sendBundleAsIndividualBlocks(ctx, oneBlockFiles); err != nil {
-				// try to send this one anyway
-				a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
-				return err
+		if !a.firstBlockSeen || a.bundler != nil {
+			err := a.io.SendMergeableAsOneBlockFiles(ctx)
+			if err != nil {
+				a.logger.Warn("cannot send stale mergeable blocks")
 			}
-			a.io.Delete(oneBlockFiles)
 		}
 		a.bundler = nil
 
@@ -298,7 +301,11 @@ func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 			bundleLow := lowBoundary(block.Number, a.bundleSize)
 			a.bundler = bundle.NewBundler(a.bundleSize, bundleLow+a.bundleSize)
 			if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
-				a.bundler.InitLIB(block)
+				blkrefShortID := bstream.NewBlockRef(shortBlockID(block.Id), block.Number)
+				a.logger.Debug("initializing lib",
+					zap.Stringer("block", blkrefShortID),
+				)
+				a.bundler.InitLIB(blkrefShortID)
 			}
 		}
 

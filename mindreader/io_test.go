@@ -13,10 +13,18 @@ type TestArchiverIO struct {
 	FetchOneBlockFilesFunc       func(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error)
 	DownloadOneBlockFileFunc     func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error)
 
-	StoreOneBlockFileFunc          func(ctx context.Context, fileName string, block *bstream.Block) error
-	StoreMergeableOneBlockFileFunc func(ctx context.Context, fileName string, block *bstream.Block) error
-	DeleteOneBlockFilesFunc        func(oneBlockFiles []*bundle.OneBlockFile)
-	WalkMergeableOneBlockFilesFunc func(ctx context.Context) ([]*bundle.OneBlockFile, error)
+	StoreOneBlockFileFunc            func(ctx context.Context, fileName string, block *bstream.Block) error
+	StoreMergeableOneBlockFileFunc   func(ctx context.Context, fileName string, block *bstream.Block) error
+	DeleteOneBlockFilesFunc          func(oneBlockFiles []*bundle.OneBlockFile)
+	WalkMergeableOneBlockFilesFunc   func(ctx context.Context) ([]*bundle.OneBlockFile, error)
+	SendMergeableAsOneBlockFilesFunc func(ctx context.Context) error
+}
+
+func (io *TestArchiverIO) SendMergeableAsOneBlockFiles(ctx context.Context) error {
+	if io.SendMergeableAsOneBlockFilesFunc == nil {
+		return nil
+	}
+	return io.SendMergeableAsOneBlockFilesFunc(ctx)
 }
 
 func (io *TestArchiverIO) MergeAndStore(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {

@@ -20,6 +20,7 @@ type ArchiverIO interface {
 	merger.OneBlockFilesDeleter
 	StoreMergeableOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
 	StoreOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
+	SendMergeableAsOneBlockFiles(ctx context.Context) error
 	WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error)
 }
 
@@ -93,9 +94,10 @@ func (m *ArchiverDStoreIO) storeOneBlockFile(ctx context.Context, fileName strin
 	return store.WriteObject(ctx, fileName, buffer)
 }
 
-//func (m *ArchiverDStoreIO) DeleteOneBlockFiles(oneBlockFiles []*bundle.OneBlockFile) {
-//	m.Delete(oneBlockFiles)
-//}
+func (m *ArchiverDStoreIO) SendMergeableAsOneBlockFiles(ctx context.Context) error {
+	uploader := NewFileUploader(m.mergeableOneBlockStore, m.oneBlockStore, m.logger)
+	return uploader.uploadFiles(ctx)
+}
 
 func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error) {
 	err = m.mergeableOneBlockStore.Walk(ctx, "", "", func(filename string) (err error) {

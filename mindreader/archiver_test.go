@@ -64,16 +64,79 @@ func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
+	var sentOneblockfilesFromMergeable bool
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		sentOneblockfilesFromMergeable = true
+		return nil
+	}
+
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
 		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
+	assert.True(t, sentOneblockfilesFromMergeable) // called at the beginning, but will not match anything
 	assert.Equal(t, 0, storedMergedFiles)
 	assert.Equal(t, 0, deletedFiles)
 	assert.Equal(t, 0, storedMergableOneBlockFiles)
 	assert.Equal(t, 5, storedUploadableOneBlockfiles)
+}
+
+func TestArchiver_InitLIBOnBoundary(t *testing.T) {
+	io := &TestArchiverIO{}
+	superLongTimeAgo := time.Since(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC))
+	archiver := NewArchiver(5, io, true, nil, "suffix", superLongTimeAgo, testLogger)
+
+	srcOneBlockFiles := []*bundle.OneBlockFile{
+		bundle.MustNewOneBlockFile("0000000005-20210728T105016.01-0000005a-0000000a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000006-20210728T105016.02-0000006a-0000005a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000007-20210728T105016.03-0000007a-0000006a-0-suffix"),
+		bundle.MustNewOneBlockFile("0000000008-20210728T105016.06-0000008a-0000007a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000009-20210728T105016.08-0000009a-0000008a-2-suffix"),
+		bundle.MustNewOneBlockFile("0000000010-20210728T105016.08-0000010a-0000009a-2-suffix"),
+	}
+
+	storedMergableOneBlockFiles := 0
+	io.StoreMergeableOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedMergableOneBlockFiles++
+		return nil
+	}
+
+	storedUploadableOneBlockfiles := 0
+	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		storedUploadableOneBlockfiles++
+		return nil
+	}
+
+	storedMergedFiles := 0
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+		storedMergedFiles++
+		return nil
+	}
+
+	deletedFiles := 0
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+		deletedFiles += len(oneBlockFiles)
+	}
+
+	var sentOneblockfilesFromMergeable bool
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		sentOneblockfilesFromMergeable = true
+		return nil
+	}
+
+	ctx := context.Background()
+	for _, oneBlockFile := range srcOneBlockFiles {
+		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
+		require.NoError(t, err)
+	}
+
+	assert.False(t, sentOneblockfilesFromMergeable)
+	assert.Equal(t, 1, storedMergedFiles)
+	assert.Equal(t, 5, deletedFiles)
+	assert.Equal(t, 6, storedMergableOneBlockFiles)
+	assert.Equal(t, 0, storedUploadableOneBlockfiles)
 }
 
 func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
@@ -141,16 +204,23 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
+	var sentOneblockfilesFromMergeable bool
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		sentOneblockfilesFromMergeable = true
+		return nil
+	}
+
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
 		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
+	assert.True(t, sentOneblockfilesFromMergeable)
 	assert.Equal(t, 0, storedMergedFiles)
-	assert.Equal(t, 2, deletedFiles) // previous bundle files must be deleted
+	assert.Equal(t, 0, deletedFiles)
 	assert.Equal(t, 0, storedMergableOneBlockFiles)
-	assert.Equal(t, 5, storedUploadableOneBlockfiles)
+	assert.Equal(t, 3, storedUploadableOneBlockfiles)
 }
 
 func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
@@ -187,6 +257,11 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 	deletedFiles := 0
 	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
+	}
+
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		t.Error()
+		return nil
 	}
 
 	ctx := context.Background()
@@ -237,6 +312,11 @@ func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 	deletedFiles := 0
 	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
+	}
+
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		t.Error()
+		return nil
 	}
 
 	ctx := context.Background()
@@ -302,6 +382,11 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
+	var sentOneblockfilesFromMergeable bool
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		sentOneblockfilesFromMergeable = true
+		return nil
+	}
 
 	ctx := context.Background()
 	for i, oneBlockFile := range srcOneBlockFiles {
@@ -311,11 +396,11 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 		}
 		require.NoError(t, err)
 	}
-
+	assert.True(t, sentOneblockfilesFromMergeable)
 	assert.Equal(t, 1, storedMergedFiles)             //10->14
-	assert.Equal(t, 6, deletedFiles)                  // 10->14 + 16 which is i=5
+	assert.Equal(t, 5, deletedFiles)                  // 10->14 (16 is sent from SendMergeableAsOneBlockFiles)
 	assert.Equal(t, 6, storedMergableOneBlockFiles)   // the same that were deleted after
-	assert.Equal(t, 2, storedUploadableOneBlockFiles) // 16, 17
+	assert.Equal(t, 1, storedUploadableOneBlockFiles) // 17 (16 is sent from SendMergeableAsOneBlockFiles)
 }
 
 func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
@@ -477,16 +562,23 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
+	var sentOneblockfilesFromMergeable bool
+	io.SendMergeableAsOneBlockFilesFunc = func(context.Context) error {
+		sentOneblockfilesFromMergeable = true
+		return nil
+	}
+
 	ctx := context.Background()
 	for _, oneBlockFile := range srcOneBlockFiles {
 		err := archiver.storeBlock(ctx, oneBlockFileToBlock(oneBlockFile))
 		require.NoError(t, err)
 	}
 
+	assert.True(t, sentOneblockfilesFromMergeable)
 	assert.Equal(t, 0, storedMergedFiles)
-	assert.Equal(t, 1, deletedFiles)
+	assert.Equal(t, 0, deletedFiles)
 	assert.Equal(t, 1, storedMergableOneBlockFiles)
-	assert.Equal(t, 8, storedUploadableOneBlockfiles)
+	assert.Equal(t, 7, storedUploadableOneBlockfiles)
 }
 
 func oneBlockFileToBlock(oneBlockFile *bundle.OneBlockFile) *bstream.Block {

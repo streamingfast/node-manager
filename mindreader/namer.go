@@ -7,17 +7,18 @@ import (
 	"github.com/streamingfast/bstream"
 )
 
+func shortBlockID(in string) string {
+	if len(in) > 8 {
+		return in[len(in)-8:]
+	}
+	return in
+}
+
 func blockFileName(block *bstream.Block, suffix string) string {
 
-	blockID := block.ID()
-	if len(blockID) > 8 {
-		blockID = blockID[len(blockID)-8:]
-	}
+	blockID := shortBlockID(block.ID())
 
-	previousID := block.PreviousID()
-	if len(previousID) > 8 {
-		previousID = previousID[len(previousID)-8:]
-	}
+	previousID := shortBlockID(block.PreviousID())
 
 	if suffix == "" {
 		suffix = "default"
