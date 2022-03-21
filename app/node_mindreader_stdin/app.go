@@ -131,7 +131,7 @@ func (a *App) Run() error {
 		logPlugin = logplugin.NewToZapLogPlugin(a.Config.DebugDeepMind, a.zlogger)
 	}
 
-	stdin := bufio.NewReader(os.Stdin)
+	stdin := bufio.NewReaderSize(os.Stdin, 50*1024*1024)
 	go func() {
 		a.zlogger.Info("starting stdin reader")
 		for {
