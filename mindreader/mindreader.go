@@ -123,21 +123,12 @@ func NewMindReaderPlugin(
 	// Create directory and its parent(s), it's a no-op if everything already exists
 	err = os.MkdirAll(workingDirectory, os.ModePerm)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create working directory %q: %w", workingDirectory, err)
+		return nil, fmt.Errorf("create working directory: %w", err)
 	}
 
 	mergeableOneBlockDir := path.Join(workingDirectory, "mergeable")
-	if err != nil {
-		return nil, fmt.Errorf("unable to create mergeableOneBlockDir directory %q: %w", mergeableOneBlockDir, err)
-	}
 	uploadableOneBlocksDir := path.Join(workingDirectory, "uploadable-oneblock")
-	if err != nil {
-		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableOneBlocksDir, err)
-	}
 	uploadableMergedBlocksDir := path.Join(workingDirectory, "uploadable-merged")
-	if err != nil {
-		return nil, fmt.Errorf("unable to create uploadableMergedBlocksDir directory %q: %w", uploadableMergedBlocksDir, err)
-	}
 
 	// remote stores
 	newDBinStoreNoCompress := func(s string) (dstore.Store, error) {
