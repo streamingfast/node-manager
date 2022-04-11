@@ -67,7 +67,7 @@ func NewArchiverDStoreIO(
 		oneBlockStore:               oneBlocksStore,
 		mergedBlocksStore:           mergedBlocksStore,
 		OneBlockFilesDeleter:        deleter,
-		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, maxOneBlockOperationsBatchSize, retryAttempts, retryCooldown),
+		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown),
 		logger:                      logger,
 	}
 }

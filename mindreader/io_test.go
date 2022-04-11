@@ -10,7 +10,7 @@ import (
 type TestArchiverIO struct {
 	MergeAndStoreFunc            func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error)
 	FetchMergedOneBlockFilesFunc func(lowBlockNum uint64) ([]*bundle.OneBlockFile, error)
-	FetchOneBlockFilesFunc       func(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error)
+	WalkOneBlockFilesFunc        func(ctx context.Context, callback func(*bundle.OneBlockFile) error) (err error)
 	DownloadOneBlockFileFunc     func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error)
 
 	StoreOneBlockFileFunc            func(ctx context.Context, fileName string, block *bstream.Block) error
@@ -41,11 +41,11 @@ func (io *TestArchiverIO) FetchMergedOneBlockFiles(lowBlockNum uint64) ([]*bundl
 	return io.FetchMergedOneBlockFilesFunc(lowBlockNum)
 }
 
-func (io *TestArchiverIO) FetchOneBlockFiles(ctx context.Context) (oneBlockFiles []*bundle.OneBlockFile, err error) {
-	if io.FetchOneBlockFilesFunc == nil {
-		return nil, nil
+func (io *TestArchiverIO) WalkOneBlockFiles(ctx context.Context, callback func(*bundle.OneBlockFile) error) (err error) {
+	if io.WalkOneBlockFilesFunc == nil {
+		return nil
 	}
-	return io.FetchOneBlockFilesFunc(ctx)
+	return io.WalkOneBlockFilesFunc(ctx, callback)
 }
 
 func (io *TestArchiverIO) DownloadOneBlockFile(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
