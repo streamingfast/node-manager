@@ -24,7 +24,7 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	mindReader := &MindReaderPlugin{
 		Shutter:       shutter.New(),
 		lines:         lines,
-		consoleReader: newTestConsolerReader(lines),
+		consoleReader: newTestConsoleReader(lines),
 		transformer:   testConsoleReaderBlockTransformer,
 		startGate:     NewBlockNumberGate(1),
 	}
@@ -58,7 +58,7 @@ func TestMindReaderPlugin_GatePassed(t *testing.T) {
 	mindReader := &MindReaderPlugin{
 		Shutter:       shutter.New(),
 		lines:         lines,
-		consoleReader: newTestConsolerReader(lines),
+		consoleReader: newTestConsoleReader(lines),
 		transformer:   testConsoleReaderBlockTransformer,
 		startGate:     NewBlockNumberGate(2),
 	}
@@ -100,7 +100,7 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	mindReader := &MindReaderPlugin{
 		Shutter:       shutter.New(),
 		lines:         lines,
-		consoleReader: newTestConsolerReader(lines),
+		consoleReader: newTestConsoleReader(lines),
 		transformer:   testConsoleReaderBlockTransformer,
 		startGate:     NewBlockNumberGate(0),
 		stopBlock:     2,
@@ -152,47 +152,41 @@ func TestMindReaderPlugin_OneBlockSuffixFormat(t *testing.T) {
 	assert.Equal(t, `oneblock_suffix contains invalid characters: "example.lan"`, validateOneBlockSuffix("example.lan").Error())
 }
 
-type testConsolerReader struct {
+type testConsoleReader struct {
 	lines chan string
 	done  chan interface{}
 }
 
-func newTestConsolerReader(lines chan string) *testConsolerReader {
-	return &testConsolerReader{
+func newTestConsoleReader(lines chan string) *testConsoleReader {
+	return &testConsoleReader{
 		lines: lines,
 	}
 }
 
-func (c *testConsolerReader) Done() <-chan interface{} {
+func (c *testConsoleReader) Done() <-chan interface{} {
 	return c.done
 }
 
-func (c *testConsolerReader) Read() (obj interface{}, err error) {
+func (c *testConsoleReader) ReadBlock() (*bstream.Block, error) {
 	line, _ := <-c.lines
-	obj = line[6:]
-	return
-}
-
-func testConsoleReaderBlockTransformer(obj interface{}) (*bstream.Block, error) {
-	content, ok := obj.(string)
-	if !ok {
-		return nil, fmt.Errorf("expecting type string, got %T", obj)
-	}
+	formatedLine := line[6:]
 
 	type block struct {
 		ID string `json:"id"`
 	}
 
 	data := new(block)
-	err := json.Unmarshal([]byte(content), data)
-	if err != nil {
-		return nil, fmt.Errorf("marshalling error on '%s': %w", content, err)
+	if err := json.Unmarshal([]byte(formatedLine), data); err != nil {
+		return nil, fmt.Errorf("marshalling error on '%s': %w", formatedLine, err)
 	}
-
 	return &bstream.Block{
 		Id:     data.ID,
 		Number: toBlockNum(data.ID),
 	}, nil
+}
+
+func testConsoleReaderBlockTransformer(obj *bstream.Block) (*bstream.Block, error) {
+	return obj, nil
 }
 
 func toBlockNum(blockID string) uint64 {
