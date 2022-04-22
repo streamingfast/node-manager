@@ -17,10 +17,11 @@ package node_mindreader_stdin
 import (
 	"bufio"
 	"fmt"
-	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"io"
 	"os"
 	"time"
+
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dgrpc"
@@ -51,7 +52,6 @@ type Config struct {
 
 type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
-	ConsoleReaderTransformer   mindreader.ConsoleReaderBlockTransformer
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
 	RegisterGRPCService        func(server *grpc.Server) error
 	Tracker                    *bstream.Tracker
@@ -89,7 +89,6 @@ func (a *App) Run() error {
 		a.Config.MergeThresholdBlockAge,
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
-		a.modules.ConsoleReaderTransformer,
 		a.modules.Tracker,
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,

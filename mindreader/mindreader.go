@@ -42,11 +42,6 @@ type ConsolerReader interface {
 
 type ConsolerReaderFactory func(lines chan string) (ConsolerReader, error)
 
-// ConsoleReaderBlockTransformer is a function that accepts an `obj` of type
-// `interface{}` as produced by a specialized ConsoleReader implementation and
-// turns it into a `bstream.Block` that is able to flow in block streams.
-type ConsoleReaderBlockTransformer func(obj *bstream.Block) (*bstream.Block, error)
-
 type MindReaderPlugin struct {
 	*shutter.Shutter
 	zlogger *zap.Logger
@@ -59,8 +54,7 @@ type MindReaderPlugin struct {
 	lines         chan string
 	consoleReader ConsolerReader // contains the 'reader' part of the pipe
 
-	transformer     ConsoleReaderBlockTransformer // objects read from consoleReader are transformed into blocks
-	channelCapacity int                           // transformed blocks are buffered in a channel
+	channelCapacity int // transformed blocks are buffered in a channel
 
 	archiver                 *Archiver // transformed blocks are sent to Archiver
 	oneBlockFileUploader     *FileUploader
@@ -75,7 +69,6 @@ type MindReaderPlugin struct {
 
 // NewMindReaderPlugin initiates its own:
 // * ConsoleReader (from given Factory)
-// * ConsoleReaderBlockTransformer (from given Factory)
 // * Archiver (from archive store params)
 // * ContinuityChecker
 // * Shutter
@@ -86,7 +79,6 @@ func NewMindReaderPlugin(
 	mergeThresholdBlockAge time.Duration,
 	workingDirectory string,
 	consoleReaderFactory ConsolerReaderFactory,
-	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	tracker *bstream.Tracker,
 	startBlockNum uint64,
 	stopBlockNum uint64,
@@ -193,7 +185,6 @@ func NewMindReaderPlugin(
 		oneBlockFileUploader,
 		mergedBlocksFileUploader,
 		consoleReaderFactory,
-		consoleReaderTransformer,
 		startBlockNum,
 		stopBlockNum,
 		channelCapacity,
@@ -226,7 +217,6 @@ func newMindReaderPlugin(
 	oneBlockFileUploader *FileUploader,
 	mergedBlocksFileUploader *FileUploader,
 	consoleReaderFactory ConsolerReaderFactory,
-	consoleReaderTransformer ConsoleReaderBlockTransformer,
 	startBlock uint64,
 	stopBlock uint64,
 	channelCapacity int,
@@ -238,7 +228,6 @@ func newMindReaderPlugin(
 	return &MindReaderPlugin{
 		Shutter:                  shutter.New(),
 		consoleReaderFactory:     consoleReaderFactory,
-		transformer:              consoleReaderTransformer,
 		archiver:                 archiver,
 		oneBlockFileUploader:     oneBlockFileUploader,
 		mergedBlocksFileUploader: mergedBlocksFileUploader,
@@ -390,11 +379,6 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	block, err := p.consoleReader.ReadBlock()
 	if err != nil {
 		return err
-	}
-
-	block, err = p.transformer(block)
-	if err != nil {
-		return fmt.Errorf("unable to transform console read bstream.Block: %w", err)
 	}
 
 	if !p.startGate.pass(block) {

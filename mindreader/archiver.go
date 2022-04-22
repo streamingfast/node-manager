@@ -135,7 +135,7 @@ func (a *Archiver) launchLastLIBUpdater(ctx context.Context) {
 }
 
 func (a *Archiver) shouldMerge(block *bstream.Block) bool {
-	//Be default currently merging is set to true
+	// Be default currently merging is set to true
 	if !a.currentlyMerging {
 		return false
 	}

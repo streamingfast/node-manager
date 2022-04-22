@@ -25,7 +25,6 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 		Shutter:       shutter.New(),
 		lines:         lines,
 		consoleReader: newTestConsoleReader(lines),
-		transformer:   testConsoleReaderBlockTransformer,
 		startGate:     NewBlockNumberGate(1),
 	}
 
@@ -59,7 +58,6 @@ func TestMindReaderPlugin_GatePassed(t *testing.T) {
 		Shutter:       shutter.New(),
 		lines:         lines,
 		consoleReader: newTestConsoleReader(lines),
-		transformer:   testConsoleReaderBlockTransformer,
 		startGate:     NewBlockNumberGate(2),
 	}
 
@@ -101,7 +99,6 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 		Shutter:       shutter.New(),
 		lines:         lines,
 		consoleReader: newTestConsoleReader(lines),
-		transformer:   testConsoleReaderBlockTransformer,
 		startGate:     NewBlockNumberGate(0),
 		stopBlock:     2,
 		zlogger:       testLogger,
@@ -183,10 +180,6 @@ func (c *testConsoleReader) ReadBlock() (*bstream.Block, error) {
 		Id:     data.ID,
 		Number: toBlockNum(data.ID),
 	}, nil
-}
-
-func testConsoleReaderBlockTransformer(obj *bstream.Block) (*bstream.Block, error) {
-	return obj, nil
 }
 
 func toBlockNum(blockID string) uint64 {
