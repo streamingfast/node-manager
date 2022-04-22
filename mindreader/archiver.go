@@ -16,6 +16,7 @@ package mindreader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -104,7 +105,14 @@ func (a *Archiver) launchLastLIBUpdater(ctx context.Context) {
 	sleepTime := 200 * time.Millisecond
 
 	err = a.updateLastLIB(ctx)
-	if err == nil { // don't warn on first error, maybe blockmeta is booting with us
+	if err == nil {
+		if errors.Is(err, bstream.ErrGetterUndefined) {
+			a.logger.Warn("no tracker defined that tracks network last irreversible block, stopping LIB updater since this condition will never change")
+			return
+		}
+
+		// On all other error cases, we do not report an error just yet as the component
+		// acting as a tracker is maybe booting up.
 		sleepTime = 30 * time.Second
 	}
 
@@ -114,13 +122,13 @@ func (a *Archiver) launchLastLIBUpdater(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(sleepTime):
-				//
 			}
 
 			err = a.updateLastLIB(ctx)
 			if err != nil {
-				a.logger.Warn("failed getting last lib from blockmeta", zap.Error(err))
+				a.logger.Warn("failed getting LIB from network last irreversible block tracker(s)", zap.Error(err))
 			}
+
 			sleepTime = 30 * time.Second
 		}
 	}()
