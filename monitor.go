@@ -79,7 +79,6 @@ func (m *MetricsAndReadinessManager) Launch() {
 		} else {
 			m.setReadinessProbeOff()
 		}
-
 	}
 }
 
