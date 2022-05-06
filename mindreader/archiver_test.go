@@ -155,7 +155,7 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
 	}
 
-	bundler := bundle.NewBundler(5, math.MaxUint64)
+	bundler := bundle.NewBundler(math.MaxUint64-5, 0, 5)
 	for _, obf := range bundlerOneBlockFiles {
 		bundler.AddOneBlockFile(obf)
 	}

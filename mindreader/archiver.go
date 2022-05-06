@@ -210,7 +210,7 @@ func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, 
 
 	bundleLow := lowBoundary(block.Number, bundleSize)
 
-	bundler := bundle.NewBundler(bundleSize, bundleLow+bundleSize)
+	bundler := bundle.NewBundler(bundleLow, bstream.GetProtocolFirstStreamableBlock, bundleSize)
 	if len(partialBlocks) != 0 {
 		logger.Info("setting up bundler from partial files",
 			zap.Uint64("low_boundary", bundleLow),
@@ -307,7 +307,7 @@ func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 			return a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
 		} else {
 			bundleLow := lowBoundary(block.Number, a.bundleSize)
-			a.bundler = bundle.NewBundler(a.bundleSize, bundleLow+a.bundleSize)
+			a.bundler = bundle.NewBundler(bundleLow, bstream.GetProtocolFirstStreamableBlock, a.bundleSize)
 			if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
 				blkrefShortID := bstream.NewBlockRef(shortBlockID(block.Id), block.Number)
 				a.logger.Debug("initializing lib",
@@ -327,7 +327,10 @@ func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 	}
 	a.bundler.AddOneBlockFile(oneBlockFile)
 
-	bundleCompleted, highestBlockLimit := a.bundler.BundleCompleted()
+	bundleCompleted, highestBlockLimit, err := a.bundler.BundleCompleted()
+	if err != nil {
+		return fmt.Errorf("heyhey error: %w", err)
+	}
 	if bundleCompleted {
 		a.logger.Info("bundle completed, will merge and store it", zap.String("details", a.bundler.String()))
 		oneBlockFiles := a.bundler.ToBundle(highestBlockLimit)

@@ -153,6 +153,9 @@ func NewMindReaderPlugin(
 		mergedBlocksStore.SetOverwrite(true)
 	}
 
+	bundleSize := uint64(100) //todo: replace this with parameter
+	lowestPossibleBlock := bstream.GetProtocolFirstStreamableBlock
+
 	archiverIO := NewArchiverDStoreIO(
 		bstream.GetBlockWriterFactory,
 		bstream.GetBlockReaderFactory,
@@ -165,10 +168,12 @@ func NewMindReaderPlugin(
 		5,
 		500*time.Millisecond,
 		zlogger,
+		lowestPossibleBlock,
+		bundleSize,
 	)
 
 	archiver := NewArchiver(
-		100, //todo: replace this with parameter
+		bundleSize,
 		archiverIO,
 		batchMode,
 		tracker,
@@ -307,6 +312,8 @@ func (p MindReaderPlugin) Stop() {
 		// we exit right now.
 		return
 	}
+
+	p.Shutdown(nil)
 
 	close(p.lines)
 	p.waitForReadFlowToComplete()

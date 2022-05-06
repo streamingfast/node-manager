@@ -54,6 +54,8 @@ func NewArchiverDStoreIO(
 	retryAttempts int,
 	retryCooldown time.Duration,
 	logger *zap.Logger,
+	lowestPossibleBlock uint64,
+	bundleSize uint64,
 ) *ArchiverDStoreIO {
 	deleter := merger.NewOneBlockFilesDeleter(mergeableOneBlockStore)
 	deleter.Start(2, maxOneBlockOperationsBatchSize)
@@ -67,7 +69,7 @@ func NewArchiverDStoreIO(
 		oneBlockStore:               oneBlocksStore,
 		mergedBlocksStore:           mergedBlocksStore,
 		OneBlockFilesDeleter:        deleter,
-		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown),
+		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown, lowestPossibleBlock, bundleSize),
 		logger:                      logger,
 	}
 }
