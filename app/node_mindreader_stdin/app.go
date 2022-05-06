@@ -23,7 +23,6 @@ import (
 
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
 
-	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dgrpc"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/mindreader"
@@ -37,8 +36,7 @@ type Config struct {
 	ArchiveStoreURL              string
 	MergeArchiveStoreURL         string
 	OneblockSuffix               string
-	BatchMode                    bool
-	MergeThresholdBlockAge       time.Duration
+	MergeThresholdBlockAge       string
 	MindReadBlocksChanCapacity   int
 	FailOnNonContinuousBlocks    bool
 	StartBlockNum                uint64
@@ -54,7 +52,6 @@ type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
 	RegisterGRPCService        func(server *grpc.Server) error
-	Tracker                    *bstream.Tracker
 }
 
 type App struct {
@@ -85,17 +82,14 @@ func (a *App) Run() error {
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
 		a.Config.MergeArchiveStoreURL,
-		a.Config.BatchMode,
 		a.Config.MergeThresholdBlockAge,
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
-		a.modules.Tracker,
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func(_ error) {},
-		a.Config.FailOnNonContinuousBlocks,
 		a.Config.WaitUploadCompleteOnShutdown,
 		a.Config.OneblockSuffix,
 		nil,

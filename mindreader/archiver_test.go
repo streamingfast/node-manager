@@ -31,7 +31,7 @@ import (
 func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 	io := &TestArchiverIO{}
 	superLongTimeAgo := time.Since(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC))
-	archiver := NewArchiver(5, io, false, nil, "suffix", superLongTimeAgo, testLogger)
+	archiver := NewArchiver(5, io, "suffix", superLongTimeAgo, testLogger)
 
 	srcOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
@@ -85,8 +85,7 @@ func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 
 func TestArchiver_InitLIBOnBoundary(t *testing.T) {
 	io := &TestArchiverIO{}
-	superLongTimeAgo := time.Since(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC))
-	archiver := NewArchiver(5, io, true, nil, "suffix", superLongTimeAgo, testLogger)
+	archiver := NewArchiver(5, io, "suffix", 1, testLogger)
 
 	srcOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("0000000005-20210728T105016.01-0000005a-0000000a-0-suffix"),
@@ -105,6 +104,7 @@ func TestArchiver_InitLIBOnBoundary(t *testing.T) {
 
 	storedUploadableOneBlockfiles := 0
 	io.StoreOneBlockFileFunc = func(ctx context.Context, fileName string, block *bstream.Block) error {
+		fmt.Println("uploading", fileName)
 		storedUploadableOneBlockfiles++
 		return nil
 	}
@@ -148,7 +148,7 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 
 	io := &TestArchiverIO{}
 	superLongTimeAgo := time.Since(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC))
-	archiver := NewArchiver(5, io, false, nil, "suffix", superLongTimeAgo, testLogger)
+	archiver := NewArchiver(5, io, "suffix", superLongTimeAgo, testLogger)
 
 	bundlerOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
@@ -225,7 +225,7 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 
 func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 	io := &TestArchiverIO{}
-	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
+	archiver := NewArchiver(5, io, "suffix", time.Hour, testLogger)
 
 	bstream.GetProtocolFirstStreamableBlock = 1
 	srcOneBlockFiles := []*bundle.OneBlockFile{
@@ -278,7 +278,7 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 
 func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 	io := &TestArchiverIO{}
-	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
+	archiver := NewArchiver(5, io, "suffix", time.Hour, testLogger)
 
 	srcOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
@@ -328,13 +328,13 @@ func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 	assert.Equal(t, 0, storedMergedFiles)
 	assert.Equal(t, 0, deletedFiles)
 	assert.Equal(t, 1, storedMergableOneBlockFiles)   // 16
-	assert.Equal(t, 5, storedUploadableOneBlockfiles) // 11, 5, 12 13, 14
+	assert.Equal(t, 6, storedUploadableOneBlockfiles) // 11, 5, 12 13, 14, 16 (16 is sent so a merger instance will 'close' the [10-15] range)
 }
 
 func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 	bstream.GetBlockPayloadSetter = bstream.MemoryBlockPayloadSetter
 	io := &TestArchiverIO{}
-	archiver := NewArchiver(5, io, false, nil, "suffix", time.Hour, testLogger)
+	archiver := NewArchiver(5, io, "suffix", time.Hour, testLogger)
 
 	srcOneBlockFiles := []*bundle.OneBlockFile{
 		bundle.MustNewOneBlockFile("00000000010-20210728T105016.00-000000010a-000000009a-9-suffix"),
@@ -403,9 +403,9 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 	assert.Equal(t, 1, storedUploadableOneBlockFiles) // 17 (16 is sent from SendMergeableAsOneBlockFiles)
 }
 
-func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
+func TestArchiver_StoreBlock_NewBlocksMergeEverything(t *testing.T) {
 	io := &TestArchiverIO{}
-	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
+	archiver := NewArchiver(5, io, "suffix", 1, testLogger)
 
 	srcExistingMergeableOneBlockFiles := []string{
 		"0000000001-20210728T105016.01-0000001a-0000000a-0-suffix",
@@ -464,9 +464,9 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 	assert.Equal(t, 0, storedUploadableOneBlockFiles)
 }
 
-func TestArchiver_StoreBlock_NewBlocksBatchNonConnectedPartial(t *testing.T) {
+func TestArchiver_StoreBlock_NewBlocksMergeNowNonConnectedPartial(t *testing.T) {
 	io := &TestArchiverIO{}
-	archiver := NewArchiver(5, io, true, nil, "suffix", time.Hour, testLogger)
+	archiver := NewArchiver(5, io, "suffix", 1, testLogger)
 
 	bstream.GetProtocolFirstStreamableBlock = 1
 	srcExistingMergeableOneBlockFiles := []string{
@@ -502,7 +502,7 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 	}()
 
 	io := &TestArchiverIO{}
-	archiver := NewArchiver(5, io, false, nil, "suffix", 24*time.Hour, testLogger)
+	archiver := NewArchiver(5, io, "suffix", 24*time.Hour, testLogger)
 
 	time.Now().Year()
 	yearstr := fmt.Sprintf("%0*d", 4, time.Now().Year())

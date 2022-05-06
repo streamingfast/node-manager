@@ -75,42 +75,49 @@ type MindReaderPlugin struct {
 func NewMindReaderPlugin(
 	archiveStoreURL string,
 	mergeArchiveStoreURL string,
-	batchMode bool,
-	mergeThresholdBlockAge time.Duration,
+	mergeThresholdBlockAge string,
 	workingDirectory string,
 	consoleReaderFactory ConsolerReaderFactory,
-	tracker *bstream.Tracker,
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
 	shutdownFunc func(error),
-	failOnNonContinuousBlocks bool,
 	waitUploadCompleteOnShutdown time.Duration,
 	oneblockSuffix string,
 	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 ) (*MindReaderPlugin, error) {
+	err := validateOneBlockSuffix(oneblockSuffix)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsedMergeThresholdBlockAge time.Duration
+	switch mergeThresholdBlockAge {
+	case "never":
+		parsedMergeThresholdBlockAge = 0
+	case "always":
+		parsedMergeThresholdBlockAge = 1
+	default:
+		parsedMergeThresholdBlockAge, err = time.ParseDuration(mergeThresholdBlockAge)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse merge-threshold-duration. Should be one of 'never', 'always', or a valid golang duration string (ex: 1h)")
+		}
+	}
 	zlogger.Info("creating mindreader plugin",
 		zap.String("archive_store_url", archiveStoreURL),
 		zap.String("merge_archive_store_url", mergeArchiveStoreURL),
 		zap.String("oneblock_suffix", oneblockSuffix),
-		zap.Bool("batch_mode", batchMode),
-		zap.Duration("merge_threshold_age", mergeThresholdBlockAge),
+		zap.Duration("merge_threshold_age", parsedMergeThresholdBlockAge),
 		zap.String("working_directory", workingDirectory),
 		zap.Uint64("start_block_num", startBlockNum),
 		zap.Uint64("stop_block_num", stopBlockNum),
 		zap.Int("channel_capacity", channelCapacity),
 		zap.Bool("with_head_block_update_func", headBlockUpdateFunc != nil),
 		zap.Bool("with_shutdown_func", shutdownFunc != nil),
-		zap.Bool("fail_on_non_continuous_blocks", failOnNonContinuousBlocks),
 		zap.Duration("wait_upload_complete_on_shutdown", waitUploadCompleteOnShutdown),
 	)
-
-	err := validateOneBlockSuffix(oneblockSuffix)
-	if err != nil {
-		return nil, err
-	}
 
 	// Create directory and its parent(s), it's a no-op if everything already exists
 	err = os.MkdirAll(workingDirectory, os.ModePerm)
@@ -149,10 +156,6 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("new uploadableOneBlocksStore: %w", err)
 	}
 
-	if batchMode {
-		mergedBlocksStore.SetOverwrite(true)
-	}
-
 	bundleSize := uint64(100) //todo: replace this with parameter
 	lowestPossibleBlock := bstream.GetProtocolFirstStreamableBlock
 
@@ -175,10 +178,8 @@ func NewMindReaderPlugin(
 	archiver := NewArchiver(
 		bundleSize,
 		archiverIO,
-		batchMode,
-		tracker,
 		oneblockSuffix,
-		mergeThresholdBlockAge,
+		parsedMergeThresholdBlockAge,
 		zlogger,
 	)
 
