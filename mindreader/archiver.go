@@ -187,7 +187,7 @@ func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, 
 		return nil, fmt.Errorf("validating partial blocks on disk: %w", err)
 	}
 
-	bundler := bundle.NewBundler(bundleLowBoundary, bstream.GetProtocolFirstStreamableBlock, bundleSize)
+	bundler := bundle.NewBundler(logger, bundleLowBoundary, bstream.GetProtocolFirstStreamableBlock, bundleSize)
 	if len(partialBlocks) != 0 {
 		logger.Info("setting up bundler from partial files",
 			zap.Uint64("low_boundary", bundleLowBoundary),
@@ -287,7 +287,7 @@ func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 			return a.io.StoreOneBlockFile(ctx, bundle.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
 		} else {
 			bundleLow := lowBoundary(block.Number, a.bundleSize)
-			a.bundler = bundle.NewBundler(bundleLow, bstream.GetProtocolFirstStreamableBlock, a.bundleSize)
+			a.bundler = bundle.NewBundler(a.logger, bundleLow, bstream.GetProtocolFirstStreamableBlock, a.bundleSize)
 			if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
 				blkrefShortID := bstream.NewBlockRef(shortBlockID(block.Id), block.Number)
 				a.logger.Debug("initializing lib",

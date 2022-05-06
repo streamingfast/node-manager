@@ -172,9 +172,10 @@ func NewMindReaderPlugin(
 		250,
 		5,
 		500*time.Millisecond,
-		zlogger,
 		lowestPossibleBlock,
 		bundleSize,
+		zlogger,
+		tracer,
 	)
 
 	archiver := NewArchiver(

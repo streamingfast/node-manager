@@ -376,6 +376,8 @@ github.com/streamingfast/dgrpc v0.0.0-20220301153539-536adf71b594 h1:/TrU0xalSNF
 github.com/streamingfast/dgrpc v0.0.0-20220301153539-536adf71b594/go.mod h1:HFjyAk8wkkb92dLBq1lxArfaWvDHb9Y53+fg7O5WTiU=
 github.com/streamingfast/dhammer v0.0.0-20220301172711-8ed5599dbab1 h1:aGIe8dENSOj1tcWfjyL7PS0g/LYalrkRWjAr/uO6WYI=
 github.com/streamingfast/dhammer v0.0.0-20220301172711-8ed5599dbab1/go.mod h1:mYYgb16eA6NAaLrsbOYxIiuTDnuYQWAaYUccSE+E0yk=
+github.com/streamingfast/dhammer v0.0.0-20220506192416-3797a7906da2 h1:/mcLVdwy6NeHWfJwuh2GD4+FMfPa59fkfM15sl8Jejk=
+github.com/streamingfast/dhammer v0.0.0-20220506192416-3797a7906da2/go.mod h1:MyG3U4ABuf7ANS8tix+e8UUevN7B9juhEnAbslS/X3M=
 github.com/streamingfast/dmetrics v0.0.0-20210811180524-8494aeb34447 h1:oZwOVjxpWCqLUjgcPgVigVCHYR40JkmXfm1kuMcCOQk=
 github.com/streamingfast/dmetrics v0.0.0-20210811180524-8494aeb34447/go.mod h1:VLdQY/FwczmC/flqWkcsBbqXO4BhU4zQDSK7GMrpcjY=
 github.com/streamingfast/dstore v0.1.1-0.20220304164644-696f9c5fc231/go.mod h1:aii8QXJg+2b5CXw+Y1SkTf5QJkJOu8ujq6+rw8J1OK0=
@@ -392,6 +394,8 @@ github.com/streamingfast/merger v0.0.3-0.20220506133237-43732cabbdd7 h1:f7TvjFEx
 github.com/streamingfast/merger v0.0.3-0.20220506133237-43732cabbdd7/go.mod h1:hmSlm5RBySzsk0Xjv/UpB74bHwKUK+x8GjGMnBX3NUg=
 github.com/streamingfast/merger v0.0.3-0.20220506162918-4bcb0632b628 h1:AGpxCwp7dR0zGIeeb8uNx+dbDu6+XH/xE681E63xl8A=
 github.com/streamingfast/merger v0.0.3-0.20220506162918-4bcb0632b628/go.mod h1:hmSlm5RBySzsk0Xjv/UpB74bHwKUK+x8GjGMnBX3NUg=
+github.com/streamingfast/merger v0.0.3-0.20220506192522-f8be80e054cb h1:l6Yeh6EkRz4O/Rsk7FIZEYi1sMvU2RWBWGkk4omyRCs=
+github.com/streamingfast/merger v0.0.3-0.20220506192522-f8be80e054cb/go.mod h1:nuYb7xVnolRgDCrrjmuaHcdl9GqFKkdJl3Pc1KRTTdc=
 github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308 h1:xlWSfi1BoPfsHtPb0VEHGUcAdBF208LUiFCwfaVPfLA=
 github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308/go.mod h1:K1p8Bj/wG34KJvYzPUqtzpndffmpkrVY11u2hkyxCWQ=
 github.com/streamingfast/overseer v0.2.1-0.20210326144022-ee491780e3ef h1:9IVFHRsqvI+vKJwgF1OMV6L55jHbaV/ZLoU4IAG/dME=
@@ -638,6 +642,8 @@ golang.org/x/sys v0.0.0-20220114195835-da31bd327af9/go.mod h1:oPkhp1MJrh7nUepCBc
 golang.org/x/sys v0.0.0-20220128215802-99c3d69c2c27/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20220209214540-3681064d5158 h1:rm+CHSpPEEW2IsXUib1ThaHIjuBVZjxNgSKmBLFfD4c=
 golang.org/x/sys v0.0.0-20220209214540-3681064d5158/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6 h1:nonptSpoQ4vQjyraW20DXPAglgQfVnM9ZC6MmNLMR60=
+golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 h1:JGgROgKl9N8DuW20oFS5gxc+lE67/N3FcwmBPMe7ArY=
 golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
