@@ -21,10 +21,10 @@ import (
 	"os"
 	"time"
 
-	logplugin "github.com/streamingfast/node-manager/log_plugin"
-
 	"github.com/streamingfast/dgrpc"
+	"github.com/streamingfast/logging"
 	nodeManager "github.com/streamingfast/node-manager"
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
@@ -60,15 +60,17 @@ type App struct {
 	ReadyFunc func()
 	modules   *Modules
 	zlogger   *zap.Logger
+	tracer    logging.Tracer
 }
 
-func New(c *Config, modules *Modules, zlogger *zap.Logger) *App {
+func New(c *Config, modules *Modules, zlogger *zap.Logger, tracer logging.Tracer) *App {
 	n := &App{
 		Shutter:   shutter.New(),
 		Config:    c,
 		ReadyFunc: func() {},
 		modules:   modules,
 		zlogger:   zlogger,
+		tracer:    tracer,
 	}
 	return n
 }
@@ -94,6 +96,7 @@ func (a *App) Run() error {
 		a.Config.OneblockSuffix,
 		nil,
 		a.zlogger,
+		a.tracer,
 	)
 	if err != nil {
 		return err

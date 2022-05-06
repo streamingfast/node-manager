@@ -26,6 +26,7 @@ import (
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/blockstream"
 	"github.com/streamingfast/dstore"
+	"github.com/streamingfast/logging"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
@@ -87,6 +88,7 @@ func NewMindReaderPlugin(
 	oneblockSuffix string,
 	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
+	tracer logging.Tracer,
 ) (*MindReaderPlugin, error) {
 	err := validateOneBlockSuffix(oneblockSuffix)
 	if err != nil {
@@ -181,6 +183,7 @@ func NewMindReaderPlugin(
 		oneblockSuffix,
 		parsedMergeThresholdBlockAge,
 		zlogger,
+		tracer,
 	)
 
 	oneBlockFileUploader := NewFileUploader(uploadableOneBlocksStore, oneBlocksStore, zlogger)
@@ -352,13 +355,12 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 		err := p.archiver.StoreBlock(ctx, block)
 		if err != nil {
+			p.zlogger.Error("failed storing block in archiver, shutting down and trying to send next blocks individually. You will need to reprocess over this range.", zap.Error(err), zap.Stringer("received_block", block))
+
 			if !p.IsTerminating() {
-				p.zlogger.Error("failed storing block in archiver, shutting down and trying to send next blocks individually. You will need to reprocess over this range.", zap.Error(err), zap.Stringer("block", block))
 				p.archiver.currentlyMerging = false // no more merging when broken
 				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
 				continue
-			} else {
-				p.zlogger.Error("failed storing block in archiver. You will need to reprocess over this range.", zap.Error(err), zap.Stringer("block", block))
 			}
 		}
 		if p.blockStreamServer != nil {

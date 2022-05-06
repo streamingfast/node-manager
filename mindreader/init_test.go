@@ -18,7 +18,7 @@ import (
 	"github.com/streamingfast/logging"
 )
 
-var testLogger, _ = logging.PackageLogger("node-manager", "github.com/streamingfast/node-manager/mindreader/tests")
+var testLogger, testTracer = logging.PackageLogger("node-manager", "github.com/streamingfast/node-manager/mindreader/tests")
 
 func init() {
 	logging.InstantiateLoggers()

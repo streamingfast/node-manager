@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/streamingfast/bstream"
+	"github.com/streamingfast/logging"
 	"github.com/streamingfast/merger/bundle"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
@@ -38,9 +39,11 @@ type Archiver struct {
 
 	mergeThresholdBlockAge time.Duration
 
-	logger         *zap.Logger
 	bundleSize     uint64
 	oneblockSuffix string
+
+	logger *zap.Logger
+	tracer logging.Tracer
 }
 
 func NewArchiver(
@@ -49,6 +52,7 @@ func NewArchiver(
 	oneblockSuffix string,
 	mergeThresholdBlockAge time.Duration,
 	logger *zap.Logger,
+	tracer logging.Tracer,
 ) *Archiver {
 	a := &Archiver{
 		Shutter:                shutter.New(),
@@ -56,8 +60,9 @@ func NewArchiver(
 		io:                     io,
 		oneblockSuffix:         oneblockSuffix,
 		mergeThresholdBlockAge: mergeThresholdBlockAge,
-		logger:                 logger,
 		currentlyMerging:       true,
+		logger:                 logger,
+		tracer:                 tracer,
 	}
 
 	return a
@@ -76,21 +81,41 @@ func (a *Archiver) Start(ctx context.Context) {
 func (a *Archiver) shouldMerge(block *bstream.Block) bool {
 	// Be default currently merging is set to true
 	if !a.currentlyMerging {
+		if a.tracer.Enabled() {
+			a.logger.Debug("not merging on block because currently merging state is false", zap.Stringer("block", block))
+		}
+
 		return false
 	}
 
 	if a.mergeThresholdBlockAge == 0 {
+		if a.tracer.Enabled() {
+			a.logger.Debug("not merging on block because merge threshold block age is 0 (never)", zap.Stringer("block", block))
+		}
+
 		a.currentlyMerging = false
 		return false
 	}
 
 	if a.mergeThresholdBlockAge == 1 {
+		if a.tracer.Enabled() {
+			a.logger.Debug("merging on block because merge threshold block age is 1 (always)", zap.Stringer("block", block))
+		}
+
 		return true
 	}
 
 	blockAge := time.Since(block.Time())
 	if blockAge > a.mergeThresholdBlockAge {
+		if a.tracer.Enabled() {
+			a.logger.Debug("merging on block because merge threshold block age is > block age", zap.Stringer("block", block), zap.Duration("block_age", blockAge), zap.Duration("threshold", a.mergeThresholdBlockAge))
+		}
+
 		return true
+	}
+
+	if a.tracer.Enabled() {
+		a.logger.Debug("not merging on block because no condition met", zap.Stringer("block", block))
 	}
 
 	a.currentlyMerging = false
@@ -117,47 +142,60 @@ func (a *Archiver) sendBundleAsIndividualBlocks(ctx context.Context, oneBlockFil
 	return nil
 }
 
-func validatePartialBlocks(ctx context.Context, partialBlocks []*bundle.OneBlockFile, block *bstream.Block, bundleSize uint64) error {
-	if len(partialBlocks) == 0 {
-		return nil
-	}
+func validatePartialBlocks(ctx context.Context, logger *zap.Logger, partialBlocks []*bundle.OneBlockFile, block *bstream.Block, bundleSize uint64) (bundleLowBoundary uint64, err error) {
+	receivedBlockLowBoundary := lowBoundary(block.Number, bundleSize)
 
-	highest := partialBlocks[len(partialBlocks)-1]
-	if !strings.HasSuffix(block.PreviousId, highest.ID) {
-		return fmt.Errorf("highest mergeable block on disk #%d (%s) is not the parent of first seen block %s, expecting %s", highest.Num, highest.ID, block.String(), block.PreviousId)
+	if len(partialBlocks) == 0 {
+		logger.Debug("skipping validation of partial blocks since there is none to verify")
+		return receivedBlockLowBoundary, nil
 	}
 
 	lowest := partialBlocks[0]
-	if lowBoundary(lowest.Num, bundleSize) != lowBoundary(block.Number, bundleSize) {
-		return fmt.Errorf("lowest mergeable block is not part of the same bundle as first seen block")
+	lowestLowBoundary := lowBoundary(lowest.Num, bundleSize)
+	highest := partialBlocks[len(partialBlocks)-1]
+	highestLowBoundary := lowBoundary(highest.Num, bundleSize)
+
+	logger.Debug("validating partial blocks",
+		zap.Int("count", len(partialBlocks)),
+		zap.Stringer("received_block", block),
+		zap.Uint64("received_block_low_boundary", receivedBlockLowBoundary),
+		zap.Stringer("lowest", lowest),
+		zap.Uint64("lowest_low_boundary", lowestLowBoundary),
+		zap.Stringer("highest", highest),
+		zap.Uint64("highest_low_boundary", highestLowBoundary),
+	)
+
+	if !strings.HasSuffix(block.PreviousId, highest.ID) {
+		return 0, fmt.Errorf("highest mergeable block on disk %s is not the parent of first seen block %s, expecting %s", highest, block, block.PreviousId)
 	}
 
-	return nil
+	if lowestLowBoundary != receivedBlockLowBoundary {
+		return lowestLowBoundary, nil
+	}
+
+	return receivedBlockLowBoundary, nil
 }
 
 func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, io ArchiverIO, bundleSize uint64, logger *zap.Logger) (*bundle.Bundler, error) {
-
 	partialBlocks, err := io.WalkMergeableOneBlockFiles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("walking mergeable one block files: %w", err)
 	}
 
-	err = validatePartialBlocks(ctx, partialBlocks, block, bundleSize)
+	bundleLowBoundary, err := validatePartialBlocks(ctx, logger, partialBlocks, block, bundleSize)
 	if err != nil {
 		return nil, fmt.Errorf("validating partial blocks on disk: %w", err)
 	}
 
-	bundleLow := lowBoundary(block.Number, bundleSize)
-
-	bundler := bundle.NewBundler(bundleLow, bstream.GetProtocolFirstStreamableBlock, bundleSize)
+	bundler := bundle.NewBundler(bundleLowBoundary, bstream.GetProtocolFirstStreamableBlock, bundleSize)
 	if len(partialBlocks) != 0 {
 		logger.Info("setting up bundler from partial files",
-			zap.Uint64("low_boundary", bundleLow),
+			zap.Uint64("low_boundary", bundleLowBoundary),
 			zap.Uint64("block_number", block.Number),
 			zap.Int("len_partial_blocks", len(partialBlocks)),
 		)
 		lowest := partialBlocks[0]
-		if lowest.Num == bundleLow { //exception for FirstStreamableBlock not on boundary
+		if lowest.Num == bundleLowBoundary { //exception for FirstStreamableBlock not on boundary
 			bundler.InitLIB(bstream.NewBlockRef(lowest.ID, lowest.Num))
 		}
 		for _, blk := range partialBlocks {
@@ -168,10 +206,10 @@ func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, 
 
 	if isBoundary(block.Number, bundleSize) {
 		logger.Info("setting up bundler on a boundary block",
-			zap.Uint64("low_boundary", bundleLow),
+			zap.Uint64("low_boundary", bundleLowBoundary),
 			zap.Uint64("block_number", block.Number),
 		)
-		if block.Number == bundleLow { //exception for FirstStreamableBlock not on boundary
+		if block.Number == bundleLowBoundary { //exception for FirstStreamableBlock not on boundary
 			blkrefShortID := bstream.NewBlockRef(shortBlockID(block.Id), block.Number)
 			logger.Debug("initializing lib",
 				zap.Stringer("block", blkrefShortID),
@@ -200,7 +238,7 @@ func initializeBundlerFromFirstBlock(ctx context.Context, block *bstream.Block, 
 	}
 
 	logger.Info("setting up bundler from a block that connects to previous bundles",
-		zap.Uint64("low_boundary", bundleLow),
+		zap.Uint64("low_boundary", bundleLowBoundary),
 		zap.Uint64("block_number", block.Number),
 		zap.Uint64("first_block_num_found", firstBlockNumFound),
 	)
@@ -211,6 +249,7 @@ func (a *Archiver) storeBlock(ctx context.Context, block *bstream.Block) error {
 	if !a.firstBlockSeen {
 		defer func() { a.firstBlockSeen = true }()
 	}
+
 	merging := a.shouldMerge(block)
 	if !merging {
 		if !a.firstBlockSeen || a.bundler != nil {

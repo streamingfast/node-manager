@@ -390,6 +390,8 @@ github.com/streamingfast/logging v0.0.0-20220304214715-bc750a74b424 h1:qKt1W13L7
 github.com/streamingfast/logging v0.0.0-20220304214715-bc750a74b424/go.mod h1:VlduQ80JcGJSargkRU4Sg9Xo63wZD/l8A5NC/Uo1/uU=
 github.com/streamingfast/merger v0.0.3-0.20220506133237-43732cabbdd7 h1:f7TvjFEx7WmiP56MHj4KTPhQ34PcN8iRpcH5HSjcINI=
 github.com/streamingfast/merger v0.0.3-0.20220506133237-43732cabbdd7/go.mod h1:hmSlm5RBySzsk0Xjv/UpB74bHwKUK+x8GjGMnBX3NUg=
+github.com/streamingfast/merger v0.0.3-0.20220506162918-4bcb0632b628 h1:AGpxCwp7dR0zGIeeb8uNx+dbDu6+XH/xE681E63xl8A=
+github.com/streamingfast/merger v0.0.3-0.20220506162918-4bcb0632b628/go.mod h1:hmSlm5RBySzsk0Xjv/UpB74bHwKUK+x8GjGMnBX3NUg=
 github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308 h1:xlWSfi1BoPfsHtPb0VEHGUcAdBF208LUiFCwfaVPfLA=
 github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308/go.mod h1:K1p8Bj/wG34KJvYzPUqtzpndffmpkrVY11u2hkyxCWQ=
 github.com/streamingfast/overseer v0.2.1-0.20210326144022-ee491780e3ef h1:9IVFHRsqvI+vKJwgF1OMV6L55jHbaV/ZLoU4IAG/dME=
