@@ -14,7 +14,7 @@ require (
 	github.com/streamingfast/dmetrics v0.0.0-20210811180524-8494aeb34447
 	github.com/streamingfast/dstore v0.1.1-0.20220315134935-980696943a79
 	github.com/streamingfast/logging v0.0.0-20220304214715-bc750a74b424
-	github.com/streamingfast/merger v0.0.3-0.20220412144000-3ad818763ec5
+	github.com/streamingfast/merger v0.0.3-0.20220506192522-f8be80e054cb
 	github.com/streamingfast/shutter v1.5.0
 	github.com/stretchr/testify v1.7.0
 	go.uber.org/atomic v1.9.0

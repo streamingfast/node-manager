@@ -3,7 +3,19 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+
 ## Unreleased
+
+### Removed
+* No more 'BatchMode' option, we get wanted behavior only by setting MergeThresholdBlockAge:
+    - '0' -> do not automatically merge, ever
+    - '1' -> always merge
+    - (any other duration) -> only merge bundle when all its blocks are older than this duration
+* No more 'tracker' to auto-merge based on current LIB (that feature requires too much setup)
+* No more option 'FailOnNonContinuousBlocks'  -> (was not actually implemented anyway)
+
+## 2021 (released throughout..)
 
 ### Added
 * New Feature: `auto-merge` the mindreader will switch between producing merged-blocks and one-block files depending on the existence of merged files in destination store and on the age of the blocks. It will also never overwrite destination files (unless BatchMode is set)

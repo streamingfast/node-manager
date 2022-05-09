@@ -21,11 +21,10 @@ import (
 	"os"
 	"time"
 
-	logplugin "github.com/streamingfast/node-manager/log_plugin"
-
-	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dgrpc"
+	"github.com/streamingfast/logging"
 	nodeManager "github.com/streamingfast/node-manager"
+	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
@@ -37,8 +36,7 @@ type Config struct {
 	ArchiveStoreURL              string
 	MergeArchiveStoreURL         string
 	OneblockSuffix               string
-	BatchMode                    bool
-	MergeThresholdBlockAge       time.Duration
+	MergeThresholdBlockAge       string
 	MindReadBlocksChanCapacity   int
 	FailOnNonContinuousBlocks    bool
 	StartBlockNum                uint64
@@ -54,7 +52,6 @@ type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
 	RegisterGRPCService        func(server *grpc.Server) error
-	Tracker                    *bstream.Tracker
 }
 
 type App struct {
@@ -63,15 +60,17 @@ type App struct {
 	ReadyFunc func()
 	modules   *Modules
 	zlogger   *zap.Logger
+	tracer    logging.Tracer
 }
 
-func New(c *Config, modules *Modules, zlogger *zap.Logger) *App {
+func New(c *Config, modules *Modules, zlogger *zap.Logger, tracer logging.Tracer) *App {
 	n := &App{
 		Shutter:   shutter.New(),
 		Config:    c,
 		ReadyFunc: func() {},
 		modules:   modules,
 		zlogger:   zlogger,
+		tracer:    tracer,
 	}
 	return n
 }
@@ -85,21 +84,19 @@ func (a *App) Run() error {
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
 		a.Config.MergeArchiveStoreURL,
-		a.Config.BatchMode,
 		a.Config.MergeThresholdBlockAge,
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
-		a.modules.Tracker,
 		a.Config.StartBlockNum,
 		a.Config.StopBlockNum,
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func(_ error) {},
-		a.Config.FailOnNonContinuousBlocks,
 		a.Config.WaitUploadCompleteOnShutdown,
 		a.Config.OneblockSuffix,
 		nil,
 		a.zlogger,
+		a.tracer,
 	)
 	if err != nil {
 		return err

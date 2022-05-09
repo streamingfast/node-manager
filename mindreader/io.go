@@ -8,6 +8,7 @@ import (
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
+	"github.com/streamingfast/logging"
 	"github.com/streamingfast/merger"
 	"github.com/streamingfast/merger/bundle"
 	"go.uber.org/zap"
@@ -53,9 +54,12 @@ func NewArchiverDStoreIO(
 	maxOneBlockOperationsBatchSize int,
 	retryAttempts int,
 	retryCooldown time.Duration,
+	lowestPossibleBlock uint64,
+	bundleSize uint64,
 	logger *zap.Logger,
+	tracer logging.Tracer,
 ) *ArchiverDStoreIO {
-	deleter := merger.NewOneBlockFilesDeleter(mergeableOneBlockStore)
+	deleter := merger.NewOneBlockFilesDeleter(logger, mergeableOneBlockStore)
 	deleter.Start(2, maxOneBlockOperationsBatchSize)
 
 	return &ArchiverDStoreIO{
@@ -67,7 +71,7 @@ func NewArchiverDStoreIO(
 		oneBlockStore:               oneBlocksStore,
 		mergedBlocksStore:           mergedBlocksStore,
 		OneBlockFilesDeleter:        deleter,
-		DStoreIO:                    merger.NewDStoreIO(mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown),
+		DStoreIO:                    merger.NewDStoreIO(logger, tracer, mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown, lowestPossibleBlock, bundleSize),
 		logger:                      logger,
 	}
 }

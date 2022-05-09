@@ -99,9 +99,9 @@ func New(zlogger *zap.Logger, chainSuperviser nodeManager.ChainSuperviser, chain
 
 	o.OnTerminating(func(err error) {
 		//wait for supervisor to terminate, supervisor will wait for plugins to terminate
-		if !o.Superviser.IsTerminating() {
+		if !chainSuperviser.IsTerminating() {
 			zlogger.Info("operator is terminating", zap.Error(err))
-			o.Superviser.Shutdown(err)
+			chainSuperviser.Shutdown(err)
 		}
 
 		zlogger.Info("operator is waiting for superviser to shutdown", zap.Error(err))
@@ -138,8 +138,10 @@ func (o *Operator) Launch(httpListenAddr string, options ...HTTPOption) error {
 		o.zlogger.Info("operator ready to receive commands")
 		select {
 		case <-o.Superviser.Stopped(): // the chain stopped outside of a command that was expecting it.
-			if o.Superviser.IsTerminating() || o.IsTerminating() { // This is the natural way of exiting this loop on global shutdown.
-				return nil
+			if o.Superviser.IsTerminating() {
+				o.zlogger.Info("superviser terminating, waiting for operator...")
+				<-o.Terminating()
+				return o.Err()
 			}
 			// FIXME call a restore handler if passed...
 			lastLogLines := o.Superviser.LastLogLines()
