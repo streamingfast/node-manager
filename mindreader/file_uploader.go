@@ -54,7 +54,7 @@ func (fu *FileUploader) uploadFiles(ctx context.Context) error {
 	defer fu.mutex.Unlock()
 
 	eg := llerrgroup.New(5)
-	_ = fu.localStore.Walk(ctx, "", ".tmp", func(filename string) (err error) {
+	_ = fu.localStore.Walk(ctx, "", func(filename string) (err error) {
 		if eg.Stop() {
 			return nil
 		}
@@ -65,7 +65,7 @@ func (fu *FileUploader) uploadFiles(ctx context.Context) error {
 			if traceEnabled {
 				fu.logger.Debug("uploading file to storage", zap.String("local_file", filename))
 			}
-			
+
 			if err = fu.destinationStore.PushLocalFile(ctx, fu.localStore.ObjectPath(filename), filename); err != nil {
 				return fmt.Errorf("moving file %q to storage: %w", filename, err)
 			}

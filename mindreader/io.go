@@ -104,7 +104,7 @@ func (m *ArchiverDStoreIO) SendMergeableAsOneBlockFiles(ctx context.Context) err
 }
 
 func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error) {
-	err = m.mergeableOneBlockStore.Walk(ctx, "", "", func(filename string) (err error) {
+	err = m.mergeableOneBlockStore.Walk(ctx, "", func(filename string) (err error) {
 		obf, err := bundle.NewOneBlockFile(filename)
 		if err != nil {
 			m.logger.Warn("walking mergeable oneblockfiles found invalid file, skipping", zap.String("filename", filename), zap.Error(err))
