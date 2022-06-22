@@ -136,7 +136,7 @@ func (a *Archiver) initializeBundlerFromFirstBlock(ctx context.Context, block *b
 		}
 
 		linkable := false
-		targetID := merger.TruncateBlockID(block.PreviousId)
+		targetID := bstream.TruncateBlockID(block.PreviousId)
 		for _, b := range existingOneBlocks {
 			if b.ID == targetID {
 				linkable = true
@@ -167,7 +167,7 @@ func (a *Archiver) initializeBundlerFromFirstBlock(ctx context.Context, block *b
 
 	if block.Number == a.firstStreamableBlock {
 		bundleLowBoundary := lowBoundary(block.Number, a.bundleSize)
-		lib := bstream.NewBlockRef(merger.TruncateBlockID(block.Id), block.Number)
+		lib := bstream.NewBlockRef(bstream.TruncateBlockID(block.Id), block.Number)
 
 		bundler := merger.NewBundler(bundleLowBoundary, a.bundleSize, a.io)
 		bundler.Reset(bundleLowBoundary, lib)
@@ -221,7 +221,7 @@ func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
 			a.bundler = nil
 		}
 
-		return a.io.StoreOneBlockFile(ctx, merger.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
+		return a.io.StoreOneBlockFile(ctx, bstream.BlockFileNameWithSuffix(block, a.oneblockSuffix), block)
 	}
 
 	if a.bundler == nil {
@@ -232,8 +232,8 @@ func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
 		a.bundler = bundler
 	}
 
-	oneBlockFileName := merger.BlockFileNameWithSuffix(block, a.oneblockSuffix)
-	oneBlockFile := merger.MustNewOneBlockFile(oneBlockFileName)
+	oneBlockFileName := bstream.BlockFileNameWithSuffix(block, a.oneblockSuffix)
+	oneBlockFile := bstream.MustNewOneBlockFile(oneBlockFileName)
 	err := a.io.StoreMergeableOneBlockFile(ctx, oneBlockFileName, block)
 	if err != nil {
 		return fmt.Errorf("storing one block to be merged: %w", err)
@@ -255,7 +255,7 @@ func (a *Archiver) deleteMergedFilesBelow(ctx context.Context, base uint64) erro
 	if err != nil {
 		return fmt.Errorf("walking mergeable one block files to delete them: %w", err)
 	}
-	var toDelete []*merger.OneBlockFile
+	var toDelete []*bstream.OneBlockFile
 	for _, ob := range existingOneBlocks {
 		if ob.Num < base {
 			toDelete = append(toDelete, ob)

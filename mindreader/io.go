@@ -20,7 +20,7 @@ type ArchiverIO interface {
 	StoreMergeableOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
 	StoreOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
 	SendMergeableAsOneBlockFiles(ctx context.Context) error
-	WalkMergeableOneBlockFiles(ctx context.Context) (out []*merger.OneBlockFile, err error)
+	WalkMergeableOneBlockFiles(ctx context.Context) (out []*bstream.OneBlockFile, err error)
 }
 
 type ArchiverDStoreIO struct {
@@ -95,9 +95,9 @@ func (m *ArchiverDStoreIO) SendMergeableAsOneBlockFiles(ctx context.Context) err
 	return uploader.uploadFiles(ctx)
 }
 
-func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*merger.OneBlockFile, err error) {
+func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*bstream.OneBlockFile, err error) {
 	err = m.mergeableOneBlockStore.Walk(ctx, "", func(filename string) (err error) {
-		obf, err := merger.NewOneBlockFile(filename)
+		obf, err := bstream.NewOneBlockFile(filename)
 		if err != nil {
 			m.logger.Warn("walking mergeable oneblockfiles found invalid file, skipping", zap.String("filename", filename), zap.Error(err))
 		}
