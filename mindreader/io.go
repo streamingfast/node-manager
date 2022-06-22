@@ -10,7 +10,6 @@ import (
 	"github.com/streamingfast/dstore"
 	"github.com/streamingfast/logging"
 	"github.com/streamingfast/merger"
-	"github.com/streamingfast/merger/bundle"
 	"go.uber.org/zap"
 )
 
@@ -18,16 +17,14 @@ var _ ArchiverIO = (*ArchiverDStoreIO)(nil) //compile-time check
 
 type ArchiverIO interface {
 	merger.IOInterface
-	merger.OneBlockFilesDeleter
 	StoreMergeableOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
 	StoreOneBlockFile(ctx context.Context, fileName string, block *bstream.Block) error
 	SendMergeableAsOneBlockFiles(ctx context.Context) error
-	WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error)
+	WalkMergeableOneBlockFiles(ctx context.Context) (out []*merger.OneBlockFile, err error)
 }
 
 type ArchiverDStoreIO struct {
 	*merger.DStoreIO
-	merger.OneBlockFilesDeleter
 
 	blockWriterFactory bstream.BlockWriterFactory
 	blockReaderFactory bstream.BlockReaderFactory
@@ -54,13 +51,10 @@ func NewArchiverDStoreIO(
 	maxOneBlockOperationsBatchSize int,
 	retryAttempts int,
 	retryCooldown time.Duration,
-	lowestPossibleBlock uint64,
 	bundleSize uint64,
 	logger *zap.Logger,
 	tracer logging.Tracer,
 ) *ArchiverDStoreIO {
-	deleter := merger.NewOneBlockFilesDeleter(logger, mergeableOneBlockStore)
-	deleter.Start(2, maxOneBlockOperationsBatchSize)
 
 	return &ArchiverDStoreIO{
 		blockWriterFactory:          blockWriterFactory,
@@ -70,8 +64,7 @@ func NewArchiverDStoreIO(
 		uploadableMergedBlocksStore: uploadableMergedBlocksStore,
 		oneBlockStore:               oneBlocksStore,
 		mergedBlocksStore:           mergedBlocksStore,
-		OneBlockFilesDeleter:        deleter,
-		DStoreIO:                    merger.NewDStoreIO(logger, tracer, mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown, lowestPossibleBlock, bundleSize),
+		DStoreIO:                    merger.NewDStoreIO(logger, tracer, mergeableOneBlockStore, uploadableMergedBlocksStore, retryAttempts, retryCooldown, bundleSize),
 		logger:                      logger,
 	}
 }
@@ -103,9 +96,9 @@ func (m *ArchiverDStoreIO) SendMergeableAsOneBlockFiles(ctx context.Context) err
 	return uploader.uploadFiles(ctx)
 }
 
-func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*bundle.OneBlockFile, err error) {
+func (m *ArchiverDStoreIO) WalkMergeableOneBlockFiles(ctx context.Context) (out []*merger.OneBlockFile, err error) {
 	err = m.mergeableOneBlockStore.Walk(ctx, "", func(filename string) (err error) {
-		obf, err := bundle.NewOneBlockFile(filename)
+		obf, err := merger.NewOneBlockFile(filename)
 		if err != nil {
 			m.logger.Warn("walking mergeable oneblockfiles found invalid file, skipping", zap.String("filename", filename), zap.Error(err))
 		}

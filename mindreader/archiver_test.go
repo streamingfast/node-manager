@@ -23,7 +23,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/streamingfast/bstream"
-	"github.com/streamingfast/merger/bundle"
+	"github.com/streamingfast/merger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,19 +41,19 @@ func newArchiver(t *testing.T, mergeAgeThreshold time.Duration) (io *TestArchive
 func newArchiverWithIO(t *testing.T, io ArchiverIO, mergeAgeThreshold time.Duration) (archiver *Archiver) {
 	t.Helper()
 
-	archiver = NewArchiver(5, io, "suffix", mergeAgeThreshold, testLogger, testTracer)
+	archiver = NewArchiver(0, 5, io, "suffix", mergeAgeThreshold, testLogger, testTracer)
 	return
 }
 
 func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 	io, archiver := newArchiver(t, superLongTimeAgo)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
 	}
 
 	storedMergableOneBlockFiles := 0
@@ -69,13 +69,13 @@ func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(_ context.Context, inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -101,70 +101,70 @@ func TestArchiver_StoreBlockNewBlocks(t *testing.T) {
 func TestArchiver_StoreBlock_FirstIsTriggeringValideMerge(t *testing.T) {
 	io, archiver := newArchiver(t, time.Hour)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000000-20210728T105016.00-00000000a-000000000-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.04-00000004a-00000003a-3-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000000-20210728T105016.00-00000000a-000000000-0-suffix"),
+		merger.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-1-suffix"),
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.04-00000004a-00000003a-3-suffix"),
 	}
 
-	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*merger.OneBlockFile, error) {
 		return srcOneBlockFiles, nil
 	}
 
-	block := bundle.MustNewOneBlockFile("0000000005-20210728T105016.05-00000005a-00000004a-4-suffix")
+	block := merger.MustNewOneBlockFile("0000000005-20210728T105016.05-00000005a-00000004a-4-suffix")
 	require.NoError(t, archiver.storeBlock(context.Background(), oneBlockFileToBlock(block)))
 }
 
 func TestArchiver_StoreBlock_FirstIsTriggeringValideMerge_OnChainWithBlockNumSkip(t *testing.T) {
 	io, archiver := newArchiver(t, time.Hour)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000000-20210728T105016.00-00000000a-000000000-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.04-00000004a-00000003a-3-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000000-20210728T105016.00-00000000a-000000000-0-suffix"),
+		merger.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-1-suffix"),
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.04-00000004a-00000003a-3-suffix"),
 	}
 
-	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*merger.OneBlockFile, error) {
 		return srcOneBlockFiles, nil
 	}
 
-	block := bundle.MustNewOneBlockFile("0000000006-20210728T105016.06-00000006a-00000004a-4-suffix")
+	block := merger.MustNewOneBlockFile("0000000006-20210728T105016.06-00000006a-00000004a-4-suffix")
 	require.NoError(t, archiver.storeBlock(context.Background(), oneBlockFileToBlock(block)))
 }
 
 func TestArchiver_StoreBlock_FirstFailsBecauseMissingBlock(t *testing.T) {
 	io, archiver := newArchiver(t, time.Hour)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000000-20210728T105016.00-00000000a-000000000-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.04-00000004a-00000003a-3-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000000-20210728T105016.00-00000000a-000000000-0-suffix"),
+		merger.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-1-suffix"),
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.04-00000004a-00000003a-3-suffix"),
 	}
 
-	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*merger.OneBlockFile, error) {
 		return srcOneBlockFiles, nil
 	}
 
-	block := bundle.MustNewOneBlockFile("0000000006-20210728T105016.06-00000006a-00000005a-4-suffix")
-	require.EqualError(t, archiver.storeBlock(context.Background(), oneBlockFileToBlock(block)), "initializing bundler: validating partial blocks on disk: highest mergeable block on disk #4 (ID 00000004a, ParentID 00000003a) is not the parent of first seen block #6 (00000006a), expecting 00000005a")
+	block := merger.MustNewOneBlockFile("0000000006-20210728T105016.06-00000006a-00000005a-4-suffix")
+	require.EqualError(t, archiver.storeBlock(context.Background(), oneBlockFileToBlock(block)), "initializing merger: validating partial blocks on disk: highest mergeable block on disk #4 (ID 00000004a, ParentID 00000003a) is not the parent of first seen block #6 (00000006a), expecting 00000005a")
 }
 
 func TestArchiver_InitLIBOnBoundary(t *testing.T) {
 	io, archiver := newArchiver(t, alwaysMergeThreshold)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000005-20210728T105016.01-0000005a-0000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.02-0000006a-0000005a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000007-20210728T105016.03-0000007a-0000006a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000008-20210728T105016.06-0000008a-0000007a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000009-20210728T105016.08-0000009a-0000008a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000010-20210728T105016.08-0000010a-0000009a-2-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000005-20210728T105016.01-0000005a-0000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000006-20210728T105016.02-0000006a-0000005a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000007-20210728T105016.03-0000007a-0000006a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000008-20210728T105016.06-0000008a-0000007a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000009-20210728T105016.08-0000009a-0000008a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000010-20210728T105016.08-0000010a-0000009a-2-suffix"),
 	}
 
 	storedMergableOneBlockFiles := 0
@@ -180,13 +180,13 @@ func TestArchiver_InitLIBOnBoundary(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -218,24 +218,24 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 
 	io, archiver := newArchiver(t, superLongTimeAgo)
 
-	bundlerOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+	merger := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
 	}
 
-	bundler := bundle.NewBundler(testLogger, math.MaxUint64-5, 0, 5)
-	for _, obf := range bundlerOneBlockFiles {
-		bundler.AddOneBlockFile(obf)
+	merger := merger.NewBundler(testLogger, math.MaxUint64-5, 0, 5)
+	for _, obf := range merger {
+		merger.AddOneBlockFile(obf)
 	}
-	archiver.bundler = bundler
+	archiver.merger = merger
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
 	}
 
-	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *merger.OneBlockFile) (data []byte, err error) {
 		blk := oneBlockFileToBlock(oneBlockFile)
 		blk, err = bstream.MemoryBlockPayloadSetter(blk, []byte(oneBlockFile.CanonicalName))
 		if err != nil {
@@ -262,13 +262,13 @@ func TestArchiver_StoreBlockNewBlocksWithExistingBundlerBlocks(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -295,12 +295,12 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 	io, archiver := newArchiver(t, time.Hour)
 
 	bstream.GetProtocolFirstStreamableBlock = 1
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000001-20210728T105016.01-00000001a-00000000a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000002-20210728T105016.02-00000002a-00000001a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-0-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000006-20210728T105016.08-00000006a-00000004a-2-suffix"),
 	}
 
 	storedMergableOneBlockFiles := 0
@@ -316,13 +316,13 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -346,15 +346,15 @@ func TestArchiver_StoreBlock_OldBlocksPassThroughBoundary(t *testing.T) {
 func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 	io, archiver := newArchiver(t, time.Hour)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
 
-		bundle.MustNewOneBlockFile("00000000005-20210728T105015.00-0000000005a-000000004a-01-suffix"),
+		merger.MustNewOneBlockFile("00000000005-20210728T105015.00-0000000005a-000000004a-01-suffix"),
 
-		bundle.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
-		bundle.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
-		bundle.MustNewOneBlockFile("00000000014-20210728T105016.06-000000014a-000000013a-12-suffix"),
-		bundle.MustNewOneBlockFile("00000000016-20210728T105016.08-000000016a-000000014a-12-suffix"),
+		merger.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
+		merger.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
+		merger.MustNewOneBlockFile("00000000014-20210728T105016.06-000000014a-000000013a-12-suffix"),
+		merger.MustNewOneBlockFile("00000000016-20210728T105016.08-000000016a-000000014a-12-suffix"),
 	}
 
 	storedMergableOneBlockFiles := 0
@@ -370,13 +370,13 @@ func TestArchiver_StoreBlock_BundleInclusiveLowerBlock(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -402,16 +402,16 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 
 	io, archiver := newArchiver(t, time.Hour)
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("00000000010-20210728T105016.00-000000010a-000000009a-9-suffix"),
-		bundle.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
-		bundle.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
-		bundle.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
-		bundle.MustNewOneBlockFile("00000000014-20210728T105016.06-000000014a-000000013a-12-suffix"),
-		bundle.MustNewOneBlockFile("00000000016-20210728T105016.08-000000016a-000000014a-12-suffix"),
-		bundle.MustNewOneBlockFile("00000000017-20210728T105016.08-000000017a-000000016a-12-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("00000000010-20210728T105016.00-000000010a-000000009a-9-suffix"),
+		merger.MustNewOneBlockFile("00000000011-20210728T105016.01-000000011a-000000010a-10-suffix"),
+		merger.MustNewOneBlockFile("00000000012-20210728T105016.02-000000012a-000000011a-10-suffix"),
+		merger.MustNewOneBlockFile("00000000013-20210728T105016.03-000000013a-000000012a-10-suffix"),
+		merger.MustNewOneBlockFile("00000000014-20210728T105016.06-000000014a-000000013a-12-suffix"),
+		merger.MustNewOneBlockFile("00000000016-20210728T105016.08-000000016a-000000014a-12-suffix"),
+		merger.MustNewOneBlockFile("00000000017-20210728T105016.08-000000017a-000000016a-12-suffix"),
 	}
-	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *merger.OneBlockFile) (data []byte, err error) {
 		block := oneBlockFileToBlock(oneBlockFile)
 		block, err = bstream.MemoryBlockPayloadSetter(block, []byte(oneBlockFile.CanonicalName))
 		if err != nil {
@@ -439,13 +439,13 @@ func TestArchiver_Store_OneBlock_after_last_merge(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 	var sentOneblockfilesFromMergeable bool
@@ -477,21 +477,21 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 		"0000000002-20210728T105016.02-0000002a-0000001a-1-suffix",
 	}
 
-	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
-		result := []*bundle.OneBlockFile{}
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*merger.OneBlockFile, error) {
+		result := []*merger.OneBlockFile{}
 		for _, filename := range srcExistingMergeableOneBlockFiles {
-			obf := bundle.MustNewOneBlockFile(filename)
-			_, _, _, _, libNumPtr, _, _ := bundle.ParseFilename(filename)
+			obf := merger.MustNewOneBlockFile(filename)
+			_, _, _, _, libNumPtr, _, _ := merger.ParseFilename(filename)
 			obf.InnerLibNum = libNumPtr
 			result = append(result, obf)
 		}
 		return result, nil
 	}
 
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-0000003a-0000002a-1-suffix"),
-		bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-0000004a-0000003a-2-suffix"),
-		bundle.MustNewOneBlockFile("0000000006-20210728T105016.08-0000006a-0000004a-2-suffix"),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000003-20210728T105016.03-0000003a-0000002a-1-suffix"),
+		merger.MustNewOneBlockFile("0000000004-20210728T105016.06-0000004a-0000003a-2-suffix"),
+		merger.MustNewOneBlockFile("0000000006-20210728T105016.08-0000006a-0000004a-2-suffix"),
 	}
 
 	storedMergableOneBlockFiles := 0
@@ -507,13 +507,13 @@ func TestArchiver_StoreBlock_NewBlocksBatchMode(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -538,19 +538,19 @@ func TestArchiver_StoreBlock_NewBlocksBatchNonConnectedPartial(t *testing.T) {
 		"0000000002-20210728T105016.02-00000002a-00000001a-1-suffix",
 	}
 
-	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*bundle.OneBlockFile, error) {
-		result := []*bundle.OneBlockFile{}
+	io.WalkMergeableOneBlockFilesFunc = func(ctx context.Context) ([]*merger.OneBlockFile, error) {
+		result := []*merger.OneBlockFile{}
 		for _, filename := range srcExistingMergeableOneBlockFiles {
-			obf := bundle.MustNewOneBlockFile(filename)
-			_, _, _, _, libNumPtr, _, _ := bundle.ParseFilename(filename)
+			obf := merger.MustNewOneBlockFile(filename)
+			_, _, _, _, libNumPtr, _, _ := merger.ParseFilename(filename)
 			obf.InnerLibNum = libNumPtr
 			result = append(result, obf)
 		}
 		return result, nil
 	}
 
-	//bundle.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
-	srcOneBlockFile := bundle.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-1-suffix")
+	//merger.MustNewOneBlockFile("0000000003-20210728T105016.03-00000003a-00000002a-1-suffix"),
+	srcOneBlockFile := merger.MustNewOneBlockFile("0000000004-20210728T105016.06-00000004a-00000003a-1-suffix")
 
 	ctx := context.Background()
 	err := archiver.storeBlock(ctx, oneBlockFileToBlock(srcOneBlockFile))
@@ -577,18 +577,18 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 	nowstr := fmt.Sprintf("%s%s%sT%s%s%s", yearstr, monthstr, daystr, hourstr, minutestr, secondstr)
 
 	bstream.GetProtocolFirstStreamableBlock = 1
-	srcOneBlockFiles := []*bundle.OneBlockFile{
-		bundle.MustNewOneBlockFile("0000000001-20000728T105016.01-00000001a-00000000a-0-suffix"), //old block
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000002-%s.02-00000002a-00000001a-1-suffix", nowstr)),
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000003-%s.03-00000003a-00000002a-1-suffix", nowstr)),
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000004-%s.06-00000004a-00000003a-2-suffix", nowstr)),
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.08-00000006a-00000004a-2-suffix", nowstr)),
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.09-00000007a-00000006a-2-suffix", nowstr)),
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.10-00000008a-00000007a-2-suffix", nowstr)),
-		bundle.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.11-00000009a-00000008a-2-suffix", nowstr)),
+	srcOneBlockFiles := []*merger.OneBlockFile{
+		merger.MustNewOneBlockFile("0000000001-20000728T105016.01-00000001a-00000000a-0-suffix"), //old block
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000002-%s.02-00000002a-00000001a-1-suffix", nowstr)),
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000003-%s.03-00000003a-00000002a-1-suffix", nowstr)),
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000004-%s.06-00000004a-00000003a-2-suffix", nowstr)),
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.08-00000006a-00000004a-2-suffix", nowstr)),
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.09-00000007a-00000006a-2-suffix", nowstr)),
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.10-00000008a-00000007a-2-suffix", nowstr)),
+		merger.MustNewOneBlockFile(fmt.Sprintf("0000000006-%s.11-00000009a-00000008a-2-suffix", nowstr)),
 	}
 
-	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *bundle.OneBlockFile) (data []byte, err error) {
+	io.DownloadOneBlockFileFunc = func(ctx context.Context, oneBlockFile *merger.OneBlockFile) (data []byte, err error) {
 		blk := oneBlockFileToBlock(oneBlockFile)
 		blk, err = bstream.MemoryBlockPayloadSetter(blk, []byte(oneBlockFile.CanonicalName))
 		if err != nil {
@@ -615,13 +615,13 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 	}
 
 	storedMergedFiles := 0
-	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*bundle.OneBlockFile) (err error) {
+	io.MergeAndStoreFunc = func(inclusiveLowerBlock uint64, oneBlockFiles []*merger.OneBlockFile) (err error) {
 		storedMergedFiles++
 		return nil
 	}
 
 	deletedFiles := 0
-	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*bundle.OneBlockFile) {
+	io.DeleteOneBlockFilesFunc = func(oneBlockFiles []*merger.OneBlockFile) {
 		deletedFiles += len(oneBlockFiles)
 	}
 
@@ -644,7 +644,7 @@ func TestArchiver_OldBlockToNewBlocksPassThrough(t *testing.T) {
 	assert.Equal(t, 7, storedUploadableOneBlockfiles)
 }
 
-func oneBlockFileToBlock(oneBlockFile *bundle.OneBlockFile) *bstream.Block {
+func oneBlockFileToBlock(oneBlockFile *merger.OneBlockFile) *bstream.Block {
 	return &bstream.Block{
 		Id:             oneBlockFile.ID,
 		Number:         oneBlockFile.Num,

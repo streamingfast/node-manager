@@ -400,6 +400,10 @@ github.com/streamingfast/merger v0.0.3-0.20220506162918-4bcb0632b628 h1:AGpxCwp7
 github.com/streamingfast/merger v0.0.3-0.20220506162918-4bcb0632b628/go.mod h1:hmSlm5RBySzsk0Xjv/UpB74bHwKUK+x8GjGMnBX3NUg=
 github.com/streamingfast/merger v0.0.3-0.20220506192522-f8be80e054cb h1:l6Yeh6EkRz4O/Rsk7FIZEYi1sMvU2RWBWGkk4omyRCs=
 github.com/streamingfast/merger v0.0.3-0.20220506192522-f8be80e054cb/go.mod h1:nuYb7xVnolRgDCrrjmuaHcdl9GqFKkdJl3Pc1KRTTdc=
+github.com/streamingfast/merger v0.0.3-0.20220622180423-b67f4292d7ed h1:ENmuCOeNpXarBHJZmN3kKeV0RG/PHFPmceIBM5hULus=
+github.com/streamingfast/merger v0.0.3-0.20220622180423-b67f4292d7ed/go.mod h1:6Z4uDKRiIpeYdvN74Sfeovtg82ajLl/7KKnMqMpjexk=
+github.com/streamingfast/merger v0.0.3-0.20220622190044-9d0f82e533a4 h1:zfmeg0m/P2USCQFK07NHT0ik8Ghn9LyZGe/XDQVIYAI=
+github.com/streamingfast/merger v0.0.3-0.20220622190044-9d0f82e533a4/go.mod h1:6Z4uDKRiIpeYdvN74Sfeovtg82ajLl/7KKnMqMpjexk=
 github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308 h1:xlWSfi1BoPfsHtPb0VEHGUcAdBF208LUiFCwfaVPfLA=
 github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308/go.mod h1:K1p8Bj/wG34KJvYzPUqtzpndffmpkrVY11u2hkyxCWQ=
 github.com/streamingfast/overseer v0.2.1-0.20210326144022-ee491780e3ef h1:9IVFHRsqvI+vKJwgF1OMV6L55jHbaV/ZLoU4IAG/dME=

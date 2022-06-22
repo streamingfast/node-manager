@@ -158,8 +158,7 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("new uploadableOneBlocksStore: %w", err)
 	}
 
-	bundleSize := uint64(100) //todo: replace this with parameter
-	lowestPossibleBlock := bstream.GetProtocolFirstStreamableBlock
+	bundleSize := uint64(100)
 
 	archiverIO := NewArchiverDStoreIO(
 		bstream.GetBlockWriterFactory,
@@ -172,13 +171,13 @@ func NewMindReaderPlugin(
 		250,
 		5,
 		500*time.Millisecond,
-		lowestPossibleBlock,
 		bundleSize,
 		zlogger,
 		tracer,
 	)
 
 	archiver := NewArchiver(
+		bstream.GetProtocolFirstStreamableBlock,
 		bundleSize,
 		archiverIO,
 		oneblockSuffix,
@@ -210,6 +209,7 @@ func NewMindReaderPlugin(
 	return mindReaderPlugin, nil
 }
 
+// Other components may have issues finding the one block files if suffix is invalid
 func validateOneBlockSuffix(suffix string) error {
 	if suffix == "" {
 		return fmt.Errorf("oneblock_suffix cannot be empty")
@@ -219,8 +219,6 @@ func validateOneBlockSuffix(suffix string) error {
 	}
 	return nil
 }
-
-// Other components may have issues finding the one block files if suffix is invalid
 
 func newMindReaderPlugin(
 	archiver *Archiver,
