@@ -32,8 +32,7 @@ type ArchiverDStoreIO struct {
 	oneBlockStore          dstore.Store
 	mergeableOneBlockStore dstore.Store
 
-	localMergedBlocksStore dstore.Store
-	mergedBlocksStore      dstore.Store
+	mergedBlocksStore dstore.Store
 
 	uploadableOneBlockStore     dstore.Store
 	uploadableMergedBlocksStore dstore.Store

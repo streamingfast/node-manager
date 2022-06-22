@@ -381,7 +381,6 @@ func (p *MindReaderPlugin) drainMessages() {
 	for line := range p.lines {
 		_ = line
 	}
-	return
 }
 
 func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
