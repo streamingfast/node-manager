@@ -245,19 +245,24 @@ func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
 	}
 
 	if newBase := a.bundler.BaseBlockNum(); newBase != prevBase {
-		existingOneBlocks, err := a.io.WalkMergeableOneBlockFiles(ctx)
-		if err != nil {
-			return fmt.Errorf("walking mergeable one block files: %w", err)
+		return a.deleteMergedFilesBelow(ctx, newBase)
+	}
+	return nil
+}
+
+func (a *Archiver) deleteMergedFilesBelow(ctx context.Context, base uint64) error {
+	existingOneBlocks, err := a.io.WalkMergeableOneBlockFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("walking mergeable one block files to delete them: %w", err)
+	}
+	var toDelete []*merger.OneBlockFile
+	for _, ob := range existingOneBlocks {
+		if ob.Num < base {
+			toDelete = append(toDelete, ob)
 		}
-		var toDelete []*merger.OneBlockFile
-		for _, ob := range existingOneBlocks {
-			if ob.Num < newBase {
-				toDelete = append(toDelete, ob)
-			}
-		}
-		if len(toDelete) != 0 {
-			a.io.DeleteAsync(toDelete)
-		}
+	}
+	if len(toDelete) != 0 {
+		a.io.DeleteAsync(toDelete)
 	}
 	return nil
 }
