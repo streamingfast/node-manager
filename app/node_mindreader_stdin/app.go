@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/streamingfast/dgrpc"
 	"github.com/streamingfast/logging"
@@ -32,20 +31,15 @@ import (
 )
 
 type Config struct {
-	GRPCAddr                     string
-	ArchiveStoreURL              string
-	MergeArchiveStoreURL         string
-	OneblockSuffix               string
-	MergeThresholdBlockAge       string
-	MindReadBlocksChanCapacity   int
-	FailOnNonContinuousBlocks    bool
-	StartBlockNum                uint64
-	StopBlockNum                 uint64
-	DiscardAfterStopBlock        bool
-	WorkingDir                   string
-	WaitUploadCompleteOnShutdown time.Duration
-	LogToZap                     bool
-	DebugDeepMind                bool
+	GRPCAddr                   string
+	ArchiveStoreURL            string
+	OneblockSuffix             string
+	MindReadBlocksChanCapacity int
+	StartBlockNum              uint64
+	StopBlockNum               uint64
+	WorkingDir                 string
+	LogToZap                   bool
+	DebugDeepMind              bool
 }
 
 type Modules struct {
@@ -83,8 +77,6 @@ func (a *App) Run() error {
 	a.zlogger.Info("launching mindreader plugin")
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
 		a.Config.ArchiveStoreURL,
-		a.Config.MergeArchiveStoreURL,
-		a.Config.MergeThresholdBlockAge,
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
 		a.Config.StartBlockNum,
@@ -92,7 +84,6 @@ func (a *App) Run() error {
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func(_ error) {},
-		a.Config.WaitUploadCompleteOnShutdown,
 		a.Config.OneblockSuffix,
 		nil,
 		a.zlogger,

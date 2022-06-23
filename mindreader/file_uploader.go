@@ -18,11 +18,13 @@ type FileUploader struct {
 	localStore       dstore.Store
 	destinationStore dstore.Store
 	logger           *zap.Logger
+	complete         chan struct{}
 }
 
 func NewFileUploader(localStore dstore.Store, destinationStore dstore.Store, logger *zap.Logger) *FileUploader {
 	return &FileUploader{
 		Shutter:          shutter.New(),
+		complete:         make(chan struct{}),
 		localStore:       localStore,
 		destinationStore: destinationStore,
 		logger:           logger,
@@ -30,20 +32,31 @@ func NewFileUploader(localStore dstore.Store, destinationStore dstore.Store, log
 }
 
 func (fu *FileUploader) Start(ctx context.Context) {
+	defer close(fu.complete)
+
+	fu.OnTerminating(func(_ error) {
+		<-fu.complete
+	})
+
 	if fu.IsTerminating() {
 		return
 	}
 
+	var terminating bool
 	for {
 		err := fu.uploadFiles(ctx)
 		if err != nil {
 			fu.logger.Warn("failed to upload file", zap.Error(err))
 		}
 
+		if terminating {
+			return
+		}
+
 		select {
 		case <-fu.Terminating():
-			fu.logger.Info("terminating upload loop")
-			return
+			fu.logger.Info("terminating upload loop on next pass")
+			terminating = true
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
