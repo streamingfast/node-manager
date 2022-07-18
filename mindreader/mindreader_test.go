@@ -25,7 +25,6 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 		Shutter:       shutter.New(),
 		lines:         lines,
 		consoleReader: newTestConsoleReader(lines),
-		startGate:     NewBlockNumberGate(1),
 	}
 
 	wg := sync.WaitGroup{}
@@ -49,46 +48,6 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 	require.NoError(t, readMessageError)
 }
 
-func TestMindReaderPlugin_GatePassed(t *testing.T) {
-	numOfLines := 2
-	lines := make(chan string, numOfLines)
-	blocks := make(chan *bstream.Block, numOfLines)
-
-	mindReader := &MindReaderPlugin{
-		Shutter:       shutter.New(),
-		lines:         lines,
-		consoleReader: newTestConsoleReader(lines),
-		startGate:     NewBlockNumberGate(2),
-	}
-
-	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
-	mindReader.LogLine(`DMLOG {"id":"00000002a"}`)
-
-	wg := sync.WaitGroup{}
-	wg.Add(numOfLines)
-
-	readErrors := []error{}
-	go func() {
-		for i := 0; i < numOfLines; i++ {
-			err := mindReader.readOneMessage(blocks)
-			readErrors = append(readErrors, err)
-			wg.Done()
-		}
-	}()
-
-	select {
-	case b := <-blocks:
-		require.Equal(t, uint64(02), b.Number)
-	case <-time.After(time.Second):
-		t.Error("too long")
-	}
-
-	wg.Wait()
-	for _, err := range readErrors {
-		require.NoError(t, err)
-	}
-}
-
 func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	numOfLines := 2
 	lines := make(chan string, numOfLines)
@@ -99,7 +58,6 @@ func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 		Shutter:       shutter.New(),
 		lines:         lines,
 		consoleReader: newTestConsoleReader(lines),
-		startGate:     NewBlockNumberGate(0),
 		stopBlock:     2,
 		zlogger:       testLogger,
 	}

@@ -57,6 +57,7 @@ func NewArchiver(
 
 	a := &Archiver{
 		Shutter:             shutter.New(),
+		startBlock:          startBlock,
 		oneblockSuffix:      oneblockSuffix,
 		localOneBlocksStore: localOneBlocksStore,
 		blockWriterFactory:  blockWriterFactory,
