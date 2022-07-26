@@ -32,8 +32,8 @@ import (
 
 type Config struct {
 	GRPCAddr                   string
-	ArchiveStoreURL            string
-	OneblockSuffix             string
+	OneBlocksStoreURL          string
+	OneBlockSuffix             string
 	MindReadBlocksChanCapacity int
 	StartBlockNum              uint64
 	StopBlockNum               uint64
@@ -76,7 +76,7 @@ func (a *App) Run() error {
 
 	a.zlogger.Info("launching mindreader plugin")
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
-		a.Config.ArchiveStoreURL,
+		a.Config.OneBlocksStoreURL,
 		a.Config.WorkingDir,
 		a.modules.ConsoleReaderFactory,
 		a.Config.StartBlockNum,
@@ -84,7 +84,7 @@ func (a *App) Run() error {
 		a.Config.MindReadBlocksChanCapacity,
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func(_ error) {},
-		a.Config.OneblockSuffix,
+		a.Config.OneBlockSuffix,
 		nil,
 		a.zlogger,
 		a.tracer,

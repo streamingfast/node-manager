@@ -63,7 +63,7 @@ type MindReaderPlugin struct {
 // * Archiver (from archive store params)
 // * Shutter
 func NewMindReaderPlugin(
-	archiveStoreURL string,
+	oneBlocksStoreURL string,
 	workingDirectory string,
 	consoleReaderFactory ConsolerReaderFactory,
 	startBlockNum uint64,
@@ -71,19 +71,19 @@ func NewMindReaderPlugin(
 	channelCapacity int,
 	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
 	shutdownFunc func(error),
-	oneblockSuffix string,
+	oneBlockSuffix string,
 	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 	tracer logging.Tracer,
 ) (*MindReaderPlugin, error) {
-	err := validateOneBlockSuffix(oneblockSuffix)
+	err := validateOneBlockSuffix(oneBlockSuffix)
 	if err != nil {
 		return nil, err
 	}
 
 	zlogger.Info("creating mindreader plugin",
-		zap.String("archive_store_url", archiveStoreURL),
-		zap.String("oneblock_suffix", oneblockSuffix),
+		zap.String("one_blocks_store_url", oneBlocksStoreURL),
+		zap.String("one_block_suffix", oneBlockSuffix),
 		zap.String("working_directory", workingDirectory),
 		zap.Uint64("start_block_num", startBlockNum),
 		zap.Uint64("stop_block_num", stopBlockNum),
@@ -105,14 +105,14 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("new localOneBlocksDir: %w", err)
 	}
 
-	remoteOneBlocksStore, err := dstore.NewStore(archiveStoreURL, "dbin.zst", "", false)
+	remoteOneBlocksStore, err := dstore.NewStore(oneBlocksStoreURL, "dbin.zst", "", false)
 	if err != nil {
 		return nil, fmt.Errorf("new remoteOneBlocksStore: %w", err)
 	}
 
 	archiver := NewArchiver(
 		startBlockNum,
-		oneblockSuffix,
+		oneBlockSuffix,
 		localOneBlocksStore,
 		remoteOneBlocksStore,
 		bstream.GetBlockWriterFactory,
