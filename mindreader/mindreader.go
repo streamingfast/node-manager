@@ -302,6 +302,10 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 		return err
 	}
 
+	if block.Num() < bstream.GetProtocolFirstStreamableBlock {
+		return nil
+	}
+
 	if p.headBlockUpdateFunc != nil {
 		p.headBlockUpdateFunc(block.Num(), block.ID(), block.Time())
 	}
