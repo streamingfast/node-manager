@@ -146,7 +146,5 @@ func (a *App) startMindreader() error {
 		return err
 	}
 
-	a.zlogger.Info("launching mindreader plugin")
-	go a.modules.MindreaderPlugin.Launch()
 	return nil
 }
