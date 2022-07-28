@@ -66,7 +66,7 @@ func (fu *FileUploader) uploadFiles(ctx context.Context) error {
 	fu.mutex.Lock()
 	defer fu.mutex.Unlock()
 
-	eg := llerrgroup.New(5)
+	eg := llerrgroup.New(200)
 	_ = fu.localStore.Walk(ctx, "", func(filename string) (err error) {
 		if eg.Stop() {
 			return nil
