@@ -14,6 +14,10 @@
 
 package node_manager
 
+import "github.com/streamingfast/bstream"
+
 type DeepMindDebuggable interface {
 	DebugDeepMind(enabled bool)
 }
+
+type HeadBlockUpdater func(block *bstream.Block)

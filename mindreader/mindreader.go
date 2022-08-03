@@ -49,7 +49,7 @@ type MindReaderPlugin struct {
 	consoleReaderFactory ConsolerReaderFactory
 	stopBlock            uint64 // if set, call shutdownFunc(nil) when we hit this number
 	channelCapacity      int    // transformed blocks are buffered in a channel
-	headBlockUpdateFunc  nodeManager.HeadBlockUpdater
+	headBlockUpdater     func(*bstream.Block)
 	blockStreamServer    *blockstream.Server
 	zlogger              *zap.Logger
 
@@ -69,7 +69,7 @@ func NewMindReaderPlugin(
 	startBlockNum uint64,
 	stopBlockNum uint64,
 	channelCapacity int,
-	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
+	headBlockUpdater nodeManager.HeadBlockUpdater,
 	shutdownFunc func(error),
 	oneBlockSuffix string,
 	blockStreamServer *blockstream.Server,
@@ -88,7 +88,7 @@ func NewMindReaderPlugin(
 		zap.Uint64("start_block_num", startBlockNum),
 		zap.Uint64("stop_block_num", stopBlockNum),
 		zap.Int("channel_capacity", channelCapacity),
-		zap.Bool("with_head_block_update_func", headBlockUpdateFunc != nil),
+		zap.Bool("with_head_block_updater", headBlockUpdater != nil),
 		zap.Bool("with_shutdown_func", shutdownFunc != nil),
 	)
 
@@ -120,20 +120,17 @@ func NewMindReaderPlugin(
 		tracer,
 	)
 
-	mindReaderPlugin, err := newMindReaderPlugin(
-		archiver,
-		consoleReaderFactory,
-		stopBlockNum,
-		channelCapacity,
-		headBlockUpdateFunc,
-		blockStreamServer,
-		zlogger,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return mindReaderPlugin, nil
+	zlogger.Info("creating new mindreader plugin")
+	return &MindReaderPlugin{
+		Shutter:              shutter.New(),
+		archiver:             archiver,
+		consoleReaderFactory: consoleReaderFactory,
+		stopBlock:            stopBlockNum,
+		channelCapacity:      channelCapacity,
+		headBlockUpdater:     headBlockUpdater,
+		blockStreamServer:    blockStreamServer,
+		zlogger:              zlogger,
+	}, nil
 }
 
 // Other components may have issues finding the one block files if suffix is invalid
@@ -147,35 +144,13 @@ func validateOneBlockSuffix(suffix string) error {
 	return nil
 }
 
-func newMindReaderPlugin(
-	archiver *Archiver,
-	consoleReaderFactory ConsolerReaderFactory,
-	stopBlock uint64,
-	channelCapacity int,
-	headBlockUpdateFunc nodeManager.HeadBlockUpdater,
-	blockStreamServer *blockstream.Server,
-	zlogger *zap.Logger,
-) (*MindReaderPlugin, error) {
-	zlogger.Info("creating new mindreader plugin")
-	return &MindReaderPlugin{
-		Shutter:              shutter.New(),
-		archiver:             archiver,
-		consoleReaderFactory: consoleReaderFactory,
-		stopBlock:            stopBlock,
-		channelCapacity:      channelCapacity,
-		headBlockUpdateFunc:  headBlockUpdateFunc,
-		blockStreamServer:    blockStreamServer,
-		zlogger:              zlogger,
-	}, nil
-}
-
 func (p *MindReaderPlugin) Name() string {
 	return "MindReaderPlugin"
 }
 
 func (p *MindReaderPlugin) Launch() {
 	ctx, cancel := context.WithCancel(context.Background())
-	p.OnTerminating(func(err error) {
+	p.OnTerminating(func(_ error) {
 		cancel()
 	})
 
@@ -306,8 +281,8 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 		return nil
 	}
 
-	if p.headBlockUpdateFunc != nil {
-		p.headBlockUpdateFunc(block.Num(), block.ID(), block.Time())
+	if p.headBlockUpdater != nil {
+		p.headBlockUpdater(block)
 	}
 
 	blocks <- block
