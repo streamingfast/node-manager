@@ -20,4 +20,4 @@ type DeepMindDebuggable interface {
 	DebugDeepMind(enabled bool)
 }
 
-type HeadBlockUpdater func(block *bstream.Block)
+type HeadBlockUpdater func(block *bstream.Block) error

@@ -49,7 +49,7 @@ type MindReaderPlugin struct {
 	consoleReaderFactory ConsolerReaderFactory
 	stopBlock            uint64 // if set, call shutdownFunc(nil) when we hit this number
 	channelCapacity      int    // transformed blocks are buffered in a channel
-	headBlockUpdater     func(*bstream.Block)
+	headBlockUpdater     nodeManager.HeadBlockUpdater
 	blockStreamServer    *blockstream.Server
 	zlogger              *zap.Logger
 
@@ -282,13 +282,24 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 	}
 
 	if p.headBlockUpdater != nil {
-		p.headBlockUpdater(block)
+		if err := p.headBlockUpdater(block); err != nil {
+			p.zlogger.Info("shutting down because head block updater generated an error", zap.Error(err))
+
+			// We are shutting dow in a separate goroutine because the shutdown signal reaches us back at some point which
+			// if we were not on a goroutine, we would dead block with the shutdown pipeline that would wait for us to
+			// terminate which would never happen.
+			//
+			// 0a33f6b578cc4d0b
+			go p.Shutdown(err)
+		}
 	}
 
 	blocks <- block
 
 	if p.stopBlock != 0 && block.Num() >= p.stopBlock && !p.IsTerminating() {
 		p.zlogger.Info("shutting down because requested end block reached", zap.Uint64("block_num", block.Num()))
+
+		// See command tagged with 0a33f6b578cc4d0b
 		go p.Shutdown(nil)
 	}
 
