@@ -90,6 +90,7 @@ func (m *MetricsAndReadinessManager) Launch() {
 	}
 }
 
-func (m *MetricsAndReadinessManager) UpdateHeadBlock(block *bstream.Block) {
+func (m *MetricsAndReadinessManager) UpdateHeadBlock(block *bstream.Block) error {
 	m.headBlockChan <- block
+	return nil
 }
