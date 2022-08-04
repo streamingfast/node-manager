@@ -31,7 +31,12 @@ type Superviser struct {
 	*shutter.Shutter
 	Binary    string
 	Arguments []string
-	Logger    *zap.Logger
+	// Env represents the environment variables the command will run with, the `nil`
+	// is handled differently than the `[]string{}` empty case. In the `nil` case,
+	// the process inherits from the parent process. In the empty case, it starts
+	// without any variables set.
+	Env    []string
+	Logger *zap.Logger
 
 	cmd     *overseer.Cmd
 	cmdLock sync.Mutex
@@ -50,7 +55,7 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 		Logger:    logger,
 	}
 
-	s.Shutter.OnTerminating(func(err error) {
+	s.Shutter.OnTerminating(func(_ error) {
 		s.Logger.Info("superviser is terminating")
 
 		if err := s.Stop(); err != nil {
@@ -59,7 +64,6 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 
 		s.Logger.Info("shutting down plugins", zap.Int("last_exit_code", s.LastExitCode()))
 		s.endLogPlugins()
-
 	})
 
 	return s
@@ -163,7 +167,7 @@ func (s *Superviser) Start(options ...nodeManager.StartOption) error {
 		args = append(args, a)
 	}
 
-	s.cmd = overseer.NewCmd(s.Binary, s.Arguments, overseer.Options{Streaming: true})
+	s.cmd = overseer.NewCmd(s.Binary, s.Arguments, overseer.Options{Streaming: true, Env: s.Env})
 
 	go s.start(s.cmd)
 

@@ -21,3 +21,5 @@ type DeepMindDebuggable interface {
 }
 
 type HeadBlockUpdater func(block *bstream.Block) error
+
+type OnBlockWritten func(block *bstream.Block) error

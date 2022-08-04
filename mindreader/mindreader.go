@@ -50,6 +50,7 @@ type MindReaderPlugin struct {
 	stopBlock            uint64 // if set, call shutdownFunc(nil) when we hit this number
 	channelCapacity      int    // transformed blocks are buffered in a channel
 	headBlockUpdater     nodeManager.HeadBlockUpdater
+	onBlockWritten       nodeManager.OnBlockWritten
 	blockStreamServer    *blockstream.Server
 	zlogger              *zap.Logger
 
@@ -226,7 +227,7 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 	ctx := context.Background()
 	for {
-		p.zlogger.Debug("waiting to consume next block.")
+		p.zlogger.Debug("waiting to consume next block")
 		block, ok := <-blocks
 		if !ok {
 			p.zlogger.Info("all blocks in channel were drained, exiting read flow")
@@ -247,13 +248,29 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 
 			if !p.IsTerminating() {
 				go p.Shutdown(fmt.Errorf("archiver store block failed: %w", err))
+			}
+
+			continue
+		}
+
+		if p.onBlockWritten != nil {
+			err = p.onBlockWritten(block)
+			if err != nil {
+				p.zlogger.Error("onBlockWritten callback failed", zap.Error(err))
+
+				if !p.IsTerminating() {
+					go p.Shutdown(fmt.Errorf("onBlockWritten callback failed: %w", err))
+				}
+
 				continue
 			}
 		}
+
 		if p.blockStreamServer != nil {
 			err = p.blockStreamServer.PushBlock(block)
 			if err != nil {
 				p.zlogger.Error("failed passing block to blockStreamServer (this should not happen, shutting down)", zap.Error(err))
+
 				if !p.IsTerminating() {
 					go p.Shutdown(fmt.Errorf("blockstreamserver failed: %w", err))
 				}
@@ -261,7 +278,6 @@ func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
 				continue
 			}
 		}
-
 	}
 }
 
@@ -312,4 +328,8 @@ func (p *MindReaderPlugin) LogLine(in string) {
 		return
 	}
 	p.lines <- in
+}
+
+func (p *MindReaderPlugin) OnBlockWritten(callback nodeManager.OnBlockWritten) {
+	p.onBlockWritten = callback
 }
