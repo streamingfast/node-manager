@@ -57,7 +57,6 @@ func New(config *Config, modules *Modules, zlogger *zap.Logger) *App {
 func (a *App) Run() error {
 	a.zlogger.Info("running nodeos manager app", zap.Reflect("config", a.config))
 
-	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
 	a.OnTerminating(func(err error) {

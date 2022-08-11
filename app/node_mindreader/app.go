@@ -70,7 +70,6 @@ func (a *App) Run() error {
 	hostname, _ := os.Hostname()
 	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
-	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
 	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)

@@ -17,6 +17,7 @@ type MetricsAndReadinessManager struct {
 	headBlockChan      chan *bstream.Block
 	headBlockTimeDrift *dmetrics.HeadTimeDrift
 	headBlockNumber    *dmetrics.HeadBlockNum
+	appReadiness       *dmetrics.AppReadiness
 	readinessProbe     *atomic.Bool
 
 	// ReadinessMaxLatency is the max delta between head block time and
@@ -26,10 +27,11 @@ type MetricsAndReadinessManager struct {
 	logger *zap.Logger
 }
 
-func NewMetricsAndReadinessManager(headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, readinessMaxLatency time.Duration) *MetricsAndReadinessManager {
+func NewMetricsAndReadinessManager(headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, appReadiness *dmetrics.AppReadiness, readinessMaxLatency time.Duration) *MetricsAndReadinessManager {
 	return &MetricsAndReadinessManager{
 		headBlockChan:       make(chan *bstream.Block, 1), // just for non-blocking, saving a few nanoseconds here
 		readinessProbe:      atomic.NewBool(false),
+		appReadiness:        appReadiness,
 		headBlockTimeDrift:  headBlockTimeDrift,
 		headBlockNumber:     headBlockNumber,
 		readinessMaxLatency: readinessMaxLatency,
@@ -37,19 +39,13 @@ func NewMetricsAndReadinessManager(headBlockTimeDrift *dmetrics.HeadTimeDrift, h
 }
 
 func (m *MetricsAndReadinessManager) setReadinessProbeOn() {
-	if m.readinessProbe.CAS(false, true) {
-		if m.logger != nil {
-			m.logger.Info("nodeos superviser is now assumed to be ready")
-		}
-	}
+	m.readinessProbe.CAS(false, true)
+	m.appReadiness.SetReady()
 }
 
 func (m *MetricsAndReadinessManager) setReadinessProbeOff() {
-	if m.readinessProbe.CAS(true, false) {
-		if m.logger != nil {
-			m.logger.Info("nodeos superviser is now assumed to be unavailable (not ready)")
-		}
-	}
+	m.readinessProbe.CAS(true, false)
+	m.appReadiness.SetNotReady()
 }
 
 func (m *MetricsAndReadinessManager) IsReady() bool {

@@ -73,7 +73,6 @@ func (a *App) Run() error {
 	hostname, _ := os.Hostname()
 	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
 
-	dmetrics.Register(metrics.NodeosMetricset)
 	dmetrics.Register(metrics.Metricset)
 
 	a.OnTerminating(func(err error) {
