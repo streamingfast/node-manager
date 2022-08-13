@@ -15,8 +15,6 @@
 package logplugin
 
 import (
-	"strings"
-
 	"github.com/streamingfast/shutter"
 
 	"go.uber.org/zap"
@@ -60,7 +58,7 @@ func ToZapLogPluginTransformer(transformer func(in string) string) ToZapLogPlugi
 	})
 }
 
-// ToZapLogPlugin takes a line, and if it's not a DMLOG line or
+// ToZapLogPlugin takes a line, and if it's not a FIRE (or DMLOG) line or
 // if we are actively debugging deep mind, will print the line to received
 // logger instance.
 type ToZapLogPlugin struct {
@@ -102,7 +100,7 @@ func (p *ToZapLogPlugin) DebugDeepMind(enabled bool) {
 //}
 
 func (p *ToZapLogPlugin) LogLine(in string) {
-	if strings.HasPrefix(in, "DMLOG ") {
+	if readerInstrumentationPrefixRegex.MatchString(in) {
 		if p.debugDeepMind {
 			// Needs to be an info since often used in production where debug level is not enabled by default
 			p.logger.Info(in)

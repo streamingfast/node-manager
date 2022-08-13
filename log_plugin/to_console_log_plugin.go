@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/streamingfast/shutter"
 )
@@ -34,7 +33,7 @@ func init() {
 	}
 }
 
-// ToConsoleLogPlugin takes a line, and if it's not a DMLOG line or
+// ToConsoleLogPlugin takes a line, and if it's not a FIRE (or DMLOG) line or
 // if we are actively debugging deep mind, will print the line to the
 // standard output
 type ToConsoleLogPlugin struct {
@@ -59,7 +58,7 @@ func (p *ToConsoleLogPlugin) DebugDeepMind(enabled bool) {
 }
 
 func (p *ToConsoleLogPlugin) LogLine(in string) {
-	if p.debugDeepMind || !strings.HasPrefix(in, "DMLOG ") {
+	if p.debugDeepMind || !readerInstrumentationPrefixRegex.MatchString(in) {
 		logLineLength := int64(len(in))
 
 		// We really want to write lines to stdout and not through our logger, it's the purpose of our plugin!

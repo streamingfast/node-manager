@@ -14,7 +14,13 @@
 
 package logplugin
 
-import "github.com/streamingfast/bstream/blockstream"
+import (
+	"regexp"
+
+	"github.com/streamingfast/bstream/blockstream"
+)
+
+var readerInstrumentationPrefixRegex = regexp.MustCompile("^(DMLOG|FIRE) ")
 
 type LogPlugin interface {
 	Name() string

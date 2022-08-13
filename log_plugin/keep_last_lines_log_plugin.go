@@ -15,8 +15,6 @@
 package logplugin
 
 import (
-	"strings"
-
 	"github.com/streamingfast/shutter"
 )
 
@@ -53,7 +51,7 @@ func (p *KeepLastLinesLogPlugin) LastLines() []string {
 //}
 
 func (p *KeepLastLinesLogPlugin) LogLine(in string) {
-	if strings.HasPrefix(in, "DMLOG ") && !p.includeDeepMindLines {
+	if readerInstrumentationPrefixRegex.MatchString(in) && !p.includeDeepMindLines {
 		// It's a deep mind log line and we don't care about it, skip
 		return
 	}

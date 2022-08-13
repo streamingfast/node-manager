@@ -5,18 +5,26 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/shutter"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestMindReaderPlugin_ReadFlow(t *testing.T) {
+func TestMindReaderPlugin_OfficialPrefix_ReadFlow(t *testing.T) {
+	testMindReaderPluginReadFlow(t, "FIRE")
+}
+
+func TestMindReaderPlugin_LegacyPrefix_ReadFlow(t *testing.T) {
+	testMindReaderPluginReadFlow(t, "DMLOG")
+}
+
+func testMindReaderPluginReadFlow(t *testing.T, prefix string) {
 	numOfLines := 1
 	lines := make(chan string, numOfLines)
 	blocks := make(chan *bstream.Block, numOfLines)
@@ -36,7 +44,7 @@ func TestMindReaderPlugin_ReadFlow(t *testing.T) {
 		readMessageError = mindReader.readOneMessage(blocks)
 	}()
 
-	mindReader.LogLine(`DMLOG {"id":"00000001a"}`)
+	mindReader.LogLine(prefix + ` {"id":"00000001a"}`)
 	select {
 	case b := <-blocks:
 		require.Equal(t, uint64(01), b.Number)
@@ -124,7 +132,13 @@ func (c *testConsoleReader) Done() <-chan interface{} {
 
 func (c *testConsoleReader) ReadBlock() (*bstream.Block, error) {
 	line, _ := <-c.lines
-	formatedLine := line[6:]
+
+	var formatedLine string
+	if strings.HasPrefix(line, "DMLOG") {
+		formatedLine = line[6:]
+	} else {
+		formatedLine = line[5:]
+	}
 
 	type block struct {
 		ID string `json:"id"`
