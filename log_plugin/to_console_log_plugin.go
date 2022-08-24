@@ -38,7 +38,8 @@ func init() {
 // standard output
 type ToConsoleLogPlugin struct {
 	*shutter.Shutter
-	debugDeepMind bool
+	debugDeepMind  bool
+	skipBlankLines bool
 }
 
 func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
@@ -46,6 +47,10 @@ func NewToConsoleLogPlugin(debugDeepMind bool) *ToConsoleLogPlugin {
 		Shutter:       shutter.New(),
 		debugDeepMind: debugDeepMind,
 	}
+}
+
+func (p *ToConsoleLogPlugin) SetSkipBlankLines(skip bool) {
+	p.skipBlankLines = skip
 }
 
 func (p *ToConsoleLogPlugin) Launch() {}
@@ -58,6 +63,10 @@ func (p *ToConsoleLogPlugin) DebugDeepMind(enabled bool) {
 }
 
 func (p *ToConsoleLogPlugin) LogLine(in string) {
+	if in == "" && p.skipBlankLines {
+		return
+	}
+
 	if p.debugDeepMind || !readerInstrumentationPrefixRegex.MatchString(in) {
 		logLineLength := int64(len(in))
 
