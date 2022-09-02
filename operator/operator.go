@@ -412,7 +412,7 @@ func (o *Operator) runCommand(cmd *Command) error {
 		o.zlogger.Info("preparing to start chain")
 
 		var options []nodeManager.StartOption
-		if value := cmd.params["debug-deep-mind"]; value != "" {
+		if value := cmd.params["debug-firehose-logs"]; value != "" {
 			if value == "true" {
 				options = append(options, nodeManager.EnableDebugDeepmindOption)
 			} else {

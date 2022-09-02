@@ -169,11 +169,11 @@ func (o *Operator) maintenanceHandler(w http.ResponseWriter, r *http.Request) {
 
 func (o *Operator) resumeHandler(w http.ResponseWriter, r *http.Request) {
 	params := map[string]string{
-		"debug-deep-mind": r.FormValue("debug-deep-mind"),
+		"debug-firehose-logs": r.FormValue("debug-firehose-logs"),
 	}
 
-	if params["debug-deep-mind"] == "" {
-		params["debug-deep-mind"] = "false"
+	if params["debug-firehose-logs"] == "" {
+		params["debug-firehose-logs"] = "false"
 	}
 
 	o.triggerWebCommand("resume", params, w, r)

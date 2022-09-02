@@ -22,8 +22,8 @@ import (
 
 type StartOption string
 
-var EnableDebugDeepmindOption = StartOption("enable-debug-deep-mind")
-var DisableDebugDeepmindOption = StartOption("disable-debug-deep-mind")
+var EnableDebugDeepmindOption = StartOption("enable-debug-firehose-logs")
+var DisableDebugDeepmindOption = StartOption("disable-debug-firehose-logs")
 
 type ShutterInterface interface {
 	Shutdown(error)
