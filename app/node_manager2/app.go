@@ -21,7 +21,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/streamingfast/dgrpc"
+	dgrpcserver "github.com/streamingfast/dgrpc/server"
+	dgrpcfactory "github.com/streamingfast/dgrpc/server/factory"
+
 	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/metrics"
@@ -46,7 +48,7 @@ type Modules struct {
 	MetricsAndReadinessManager   *nodeManager.MetricsAndReadinessManager
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	MindreaderPlugin             *mindreader.MindReaderPlugin
-	RegisterGRPCService          func(server *grpc.Server) error
+	RegisterGRPCService          func(server grpc.ServiceRegistrar) error
 	StartFailureHandlerFunc      func()
 }
 
@@ -131,19 +133,17 @@ func (a *App) IsReady() bool {
 
 func (a *App) startMindreader() error {
 	a.zlogger.Info("starting mindreader gRPC server")
-	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
+	gs := dgrpcfactory.ServerFromOptions(dgrpcserver.WithLogger(a.zlogger))
 
 	if a.modules.RegisterGRPCService != nil {
-		err := a.modules.RegisterGRPCService(gs)
+		err := a.modules.RegisterGRPCService(gs.ServiceRegistrar())
 		if err != nil {
 			return fmt.Errorf("register extra grpc service: %w", err)
 		}
 	}
 
-	err := mindreader.RunGRPCServer(gs, a.config.GRPCAddr, a.zlogger)
-	if err != nil {
-		return err
-	}
+	gs.OnTerminated(a.Shutdown)
+	gs.Launch(a.config.GRPCAddr)
 
 	return nil
 }

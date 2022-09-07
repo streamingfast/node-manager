@@ -20,7 +20,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/streamingfast/dgrpc"
+	dgrpcserver "github.com/streamingfast/dgrpc/server"
+	dgrpcfactory "github.com/streamingfast/dgrpc/server/factory"
 	"github.com/streamingfast/logging"
 	nodeManager "github.com/streamingfast/node-manager"
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
@@ -45,7 +46,7 @@ type Config struct {
 type Modules struct {
 	ConsoleReaderFactory       mindreader.ConsolerReaderFactory
 	MetricsAndReadinessManager *nodeManager.MetricsAndReadinessManager
-	RegisterGRPCService        func(server *grpc.Server) error
+	RegisterGRPCService        func(server grpc.ServiceRegistrar) error
 }
 
 type App struct {
@@ -72,7 +73,7 @@ func New(c *Config, modules *Modules, zlogger *zap.Logger, tracer logging.Tracer
 func (a *App) Run() error {
 	a.zlogger.Info("launching nodeos mindreader-stdin", zap.Reflect("config", a.Config))
 
-	gs := dgrpc.NewServer(dgrpc.WithLogger(a.zlogger))
+	gs := dgrpcfactory.ServerFromOptions(dgrpcserver.WithLogger(a.zlogger))
 
 	a.zlogger.Info("launching mindreader plugin")
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
@@ -98,16 +99,13 @@ func (a *App) Run() error {
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
 	if a.modules.RegisterGRPCService != nil {
-		err := a.modules.RegisterGRPCService(gs)
+		err := a.modules.RegisterGRPCService(gs.ServiceRegistrar())
 		if err != nil {
 			return fmt.Errorf("register extra grpc service: %w", err)
 		}
 	}
-
-	err = mindreader.RunGRPCServer(gs, a.Config.GRPCAddr, a.zlogger)
-	if err != nil {
-		return err
-	}
+	gs.OnTerminated(a.Shutdown)
+	go gs.Launch(a.Config.GRPCAddr)
 
 	a.zlogger.Debug("running mindreader log plugin")
 	mindreaderLogPlugin.Launch()

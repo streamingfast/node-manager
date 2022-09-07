@@ -21,14 +21,14 @@ import (
 	"os"
 	"time"
 
+	"go.uber.org/zap"
+
+	dgrpcserver "github.com/streamingfast/dgrpc/server"
 	"github.com/streamingfast/dmetrics"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/node-manager/metrics"
-	"github.com/streamingfast/node-manager/mindreader"
 	"github.com/streamingfast/node-manager/operator"
 	"github.com/streamingfast/shutter"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
 )
 
 type Config struct {
@@ -44,7 +44,7 @@ type Modules struct {
 
 	LaunchConnectionWatchdogFunc func(terminating <-chan struct{})
 	StartFailureHandlerFunc      func()
-	GrpcServer                   *grpc.Server
+	DGrpcServer                  dgrpcserver.Server
 }
 
 type App struct {
@@ -65,22 +65,22 @@ func New(c *Config, modules *Modules, zlogger *zap.Logger) *App {
 }
 
 func (a *App) Run() error {
-	a.zlogger.Info("launching nodeos mindreader", zap.Reflect("config", a.config))
+	a.zlogger.Info("launching reader", zap.Reflect("config", a.config))
 
 	hostname, _ := os.Hostname()
 	a.zlogger.Info("retrieved hostname from os", zap.String("hostname", hostname))
-
-	dmetrics.Register(metrics.Metricset)
-
-	err := mindreader.RunGRPCServer(a.modules.GrpcServer, a.config.GRPCAddr, a.zlogger)
-	if err != nil {
-		return err
-	}
 
 	a.OnTerminating(func(err error) {
 		a.modules.Operator.Shutdown(err)
 		<-a.modules.Operator.Terminated()
 	})
+
+	dmetrics.Register(metrics.Metricset)
+	a.modules.DGrpcServer.OnTerminated(a.Shutdown)
+
+	a.zlogger.Info("about to launch grpc server", zap.String("grpc_addr", a.config.GRPCAddr))
+	go a.modules.DGrpcServer.Launch(a.config.GRPCAddr)
+	a.zlogger.Info("grpc server launch", zap.String("grpc_addr", a.config.GRPCAddr))
 
 	a.modules.Operator.OnTerminated(func(err error) {
 		a.zlogger.Info("chain operator terminated shutting down mindreader app")
