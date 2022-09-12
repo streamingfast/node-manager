@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package node_mindreader_stdin
+package node_reader_stdin
 
 import (
 	"bufio"
@@ -20,12 +20,15 @@ import (
 	"io"
 	"os"
 
+	"github.com/streamingfast/bstream/blockstream"
 	dgrpcserver "github.com/streamingfast/dgrpc/server"
 	dgrpcfactory "github.com/streamingfast/dgrpc/server/factory"
 	"github.com/streamingfast/logging"
 	nodeManager "github.com/streamingfast/node-manager"
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"github.com/streamingfast/node-manager/mindreader"
+	pbbstream "github.com/streamingfast/pbgo/sf/bstream/v1"
+	pbheadinfo "github.com/streamingfast/pbgo/sf/headinfo/v1"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -41,6 +44,10 @@ type Config struct {
 	WorkingDir                 string
 	LogToZap                   bool
 	DebugDeepMind              bool
+
+	// MaxLineLengthInBytes configures the maximum bytes a single line consumed can be
+	// without any error. If left unspecified or 0, the default is 50 MiB (50 * 1024 * 1024).
+	MaxLineLengthInBytes int64
 }
 
 type Modules struct {
@@ -71,11 +78,13 @@ func New(c *Config, modules *Modules, zlogger *zap.Logger, tracer logging.Tracer
 }
 
 func (a *App) Run() error {
-	a.zlogger.Info("launching nodeos mindreader-stdin", zap.Reflect("config", a.Config))
+	a.zlogger.Info("launching reader-node app (reading from stdin)", zap.Reflect("config", a.Config))
 
 	gs := dgrpcfactory.ServerFromOptions(dgrpcserver.WithLogger(a.zlogger))
 
-	a.zlogger.Info("launching mindreader plugin")
+	blockStreamServer := blockstream.NewUnmanagedServer(blockstream.ServerOptionWithLogger(a.zlogger))
+
+	a.zlogger.Info("launching reader log plugin")
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
 		a.Config.OneBlocksStoreURL,
 		a.Config.WorkingDir,
@@ -86,7 +95,7 @@ func (a *App) Run() error {
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func(_ error) {},
 		a.Config.OneBlockSuffix,
-		nil,
+		blockStreamServer,
 		a.zlogger,
 		a.tracer,
 	)
@@ -98,6 +107,10 @@ func (a *App) Run() error {
 	mindreaderLogPlugin.OnTerminated(a.Shutdown)
 	a.OnTerminating(mindreaderLogPlugin.Shutdown)
 
+	serviceRegistrar := gs.ServiceRegistrar()
+	pbheadinfo.RegisterHeadInfoServer(serviceRegistrar, blockStreamServer)
+	pbbstream.RegisterBlockStreamServer(serviceRegistrar, blockStreamServer)
+
 	if a.modules.RegisterGRPCService != nil {
 		err := a.modules.RegisterGRPCService(gs.ServiceRegistrar())
 		if err != nil {
@@ -107,7 +120,7 @@ func (a *App) Run() error {
 	gs.OnTerminated(a.Shutdown)
 	go gs.Launch(a.Config.GRPCAddr)
 
-	a.zlogger.Debug("running mindreader log plugin")
+	a.zlogger.Debug("running reader log plugin")
 	mindreaderLogPlugin.Launch()
 	go a.modules.MetricsAndReadinessManager.Launch()
 
@@ -116,21 +129,30 @@ func (a *App) Run() error {
 		logPlugin = logplugin.NewToZapLogPlugin(a.Config.DebugDeepMind, a.zlogger)
 	}
 
-	stdin := bufio.NewReaderSize(os.Stdin, 50*1024*1024)
+	maxLineLength := a.Config.MaxLineLengthInBytes
+	if maxLineLength == 0 {
+		maxLineLength = 50 * 1024 * 1024
+	}
+
+	stdin := bufio.NewReaderSize(os.Stdin, int(maxLineLength))
+
 	go func() {
-		a.zlogger.Info("starting stdin reader")
+		a.zlogger.Info("starting stdin consumption loop")
 		for {
 			in, _, err := stdin.ReadLine()
 			if err != nil {
 				if err != io.EOF {
-					a.zlogger.Error("got an error from readstring", zap.Error(err))
+					a.zlogger.Error("got an error from while trying to read a line", zap.Error(err))
 					mindreaderLogPlugin.Shutdown(err)
 					return
 				}
+
+				// We are in the case here where `err == io.EOF`
 				if len(in) == 0 {
 					a.zlogger.Info("done reading from stdin")
 					return
 				}
+
 				a.zlogger.Debug("got io.EOF on stdin, but still had data to send")
 			}
 			line := string(in)
