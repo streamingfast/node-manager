@@ -143,7 +143,9 @@ func (a *App) startMindreader() error {
 	}
 
 	gs.OnTerminated(a.Shutdown)
-	gs.Launch(a.config.GRPCAddr)
+
+	// Launch is blocking and we don't want to block in this method
+	go gs.Launch(a.config.GRPCAddr)
 
 	return nil
 }
