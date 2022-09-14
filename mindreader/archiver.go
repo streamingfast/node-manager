@@ -15,9 +15,9 @@
 package mindreader
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
@@ -86,15 +86,31 @@ func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
 		return nil
 	}
 
-	buffer := bytes.NewBuffer(nil)
-	blockWriter, err := a.blockWriterFactory.New(buffer)
+	pipeRead, pipeWrite := io.Pipe()
+
+	// We are in a pipe context and `a.blockWriterFactory.New(pipeWrite)` writes some bytes to the writer when called.
+	// To avoid blocking everything, we must start reading bytes in a goroutine first to ensure the called is not block
+	// forever because nobody is reading the pipe.
+	writeObjectErrChan := make(chan error)
+	go func() {
+		writeObjectErrChan <- a.localOneBlocksStore.WriteObject(ctx, bstream.BlockFileNameWithSuffix(block, a.oneblockSuffix), pipeRead)
+	}()
+
+	blockWriter, err := a.blockWriterFactory.New(pipeWrite)
 	if err != nil {
 		return fmt.Errorf("write block factory: %w", err)
 	}
 
-	if err := blockWriter.Write(block); err != nil {
-		return fmt.Errorf("write block: %w", err)
+	// If `blockWriter.Write()` emits `nil`, the fact that we close with a `nil` error will actually forwards
+	// `io.EOF` to the `pipeRead` (e.g. our `WriteObject` call above) which is what we want. If it emits a non
+	// `nil`, it will be forwarded to the `pipeRead` which is also correct.
+	pipeWrite.CloseWithError(blockWriter.Write(block))
+
+	// We are in a pipe context here, wait until the `WriteObject` call has finished
+	err = <-writeObjectErrChan
+	if err != nil {
+		return err
 	}
 
-	return a.localOneBlocksStore.WriteObject(ctx, bstream.BlockFileNameWithSuffix(block, a.oneblockSuffix), buffer)
+	return nil
 }
