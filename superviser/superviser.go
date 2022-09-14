@@ -59,7 +59,7 @@ func New(logger *zap.Logger, binary string, arguments []string) *Superviser {
 		s.Logger.Info("superviser is terminating")
 
 		if err := s.Stop(); err != nil {
-			s.Logger.Error("failed to to node process", zap.Error(err))
+			s.Logger.Error("failed to stop supervised node process", zap.Error(err))
 		}
 
 		s.Logger.Info("shutting down plugins", zap.Int("last_exit_code", s.LastExitCode()))
@@ -178,7 +178,7 @@ func (s *Superviser) Stop() error {
 	s.cmdLock.Lock()
 	defer s.cmdLock.Unlock()
 
-	s.Logger.Info("supervisor received a stop request, terminating node process")
+	s.Logger.Info("supervisor received a stop request, terminating supervised node process")
 
 	if !s.isRunning() {
 		s.Logger.Info("underlying process is not running, nothing to do")
@@ -196,6 +196,7 @@ func (s *Superviser) Stop() error {
 
 	// Blocks until command finished completely
 	s.Logger.Debug("blocking until command actually ends")
+
 nodeProcessDone:
 	for {
 		select {
@@ -206,24 +207,38 @@ nodeProcessDone:
 		}
 	}
 
-	s.Logger.Info("node process has been terminated")
-	s.cmd = nil
+	s.Logger.Info("supervised process has been terminated")
 
-	s.Logger.Info("waiting for std out and err to drain")
-	sleepTime := time.Duration(0)
+	s.Logger.Info("waiting for stdout and stderr to be drained", s.getProcessOutputStatsLogFields()...)
 	for {
-		time.Sleep(sleepTime)
-		sleepTime = 500 * time.Millisecond
 		if s.isBufferEmpty() {
-			s.Logger.Info("buffer is empty. done waiting")
 			break
 		}
-		s.Logger.Debug("draining std out and err", zap.Int("stdout_len", len(s.cmd.Stdout)), zap.Int("stderr_len", len(s.cmd.Stderr)))
+
+		s.Logger.Debug("draining stdout and stderr", s.getProcessOutputStatsLogFields()...)
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	s.Logger.Info("std out and err are now drain")
+	s.Logger.Info("stdout and stderr are now drained")
+
+	// Must be after `for { ... }` as `s.cmd` is used within the loop and also before it via call to `getProcessOutputStatsLogFields`
+	s.cmd = nil
 
 	return nil
+}
+
+func (s *Superviser) getProcessOutputStats() (stdoutLineCount, stderrLineCount int) {
+	if s.cmd != nil {
+		return len(s.cmd.Stdout), len(s.cmd.Stderr)
+	}
+
+	return
+}
+
+func (s *Superviser) getProcessOutputStatsLogFields() []zap.Field {
+	stdoutLineCount, stderrLineCount := s.getProcessOutputStats()
+
+	return []zap.Field{zap.Int("stdout_len", stdoutLineCount), zap.Int("stderr_len", stderrLineCount)}
 }
 
 func (s *Superviser) IsRunning() bool {
@@ -257,9 +272,9 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 		case status := <-statusChan:
 			processTerminated = true
 			if status.Exit == 0 {
-				s.Logger.Info("command terminated with zero status", zap.Int("stdout_len", len(cmd.Stdout)), zap.Int("stderr_len", len(cmd.Stderr)))
+				s.Logger.Info("command terminated with zero status", s.getProcessOutputStatsLogFields()...)
 			} else {
-				s.Logger.Error(fmt.Sprintf("command terminated with non-zero status, last log lines:\n%s\n", formatLogLines(s.LastLogLines())), zap.Any("status", status))
+				s.Logger.Error(fmt.Sprintf("command terminated with non-zero status, last log lines:\n%s\n", formatLogLines(s.LastLogLines())), overseerStatusLogFields(status)...)
 			}
 
 		case line := <-cmd.Stdout:
@@ -267,13 +282,43 @@ func (s *Superviser) start(cmd *overseer.Cmd) {
 		case line := <-cmd.Stderr:
 			s.processLogLine(line)
 		}
+
 		if processTerminated {
-			s.Logger.Info("node process terminated", zap.Bool("buffer_empty", s.isBufferEmpty()))
+			s.Logger.Debug("command terminated but continue read loop to fully consume stdout/sdterr line channels", zap.Bool("buffer_empty", s.isBufferEmpty()))
 			if s.isBufferEmpty() {
 				return
 			}
 		}
 	}
+}
+
+func overseerStatusLogFields(status overseer.Status) []zap.Field {
+	fields := []zap.Field{
+		zap.String("command", status.Cmd),
+		zap.Int("exit_code", status.Exit),
+	}
+
+	if status.Error != nil {
+		fields = append(fields, zap.String("error", status.Error.Error()))
+	}
+
+	if status.PID != 0 {
+		fields = append(fields, zap.Int("pid", status.PID))
+	}
+
+	if status.Runtime > 0 {
+		fields = append(fields, zap.Duration("runtime", time.Duration(status.Runtime*float64(time.Second))))
+	}
+
+	if status.StartTs > 0 {
+		fields = append(fields, zap.Time("started_at", time.Unix(0, status.StartTs)))
+	}
+
+	if status.StopTs > 0 {
+		fields = append(fields, zap.Time("stopped_at", time.Unix(0, status.StopTs)))
+	}
+
+	return fields
 }
 
 func formatLogLines(lines []string) string {
