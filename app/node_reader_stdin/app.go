@@ -17,7 +17,6 @@ package node_reader_stdin
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/streamingfast/bstream/blockstream"
@@ -153,11 +152,9 @@ func (a *App) Run() error {
 		}
 
 		if err := scanner.Err(); err != nil {
-			if err != io.EOF {
-				a.zlogger.Error("got an error from while trying to read a line", zap.Error(err))
-				mindreaderLogPlugin.Shutdown(err)
-				return
-			}
+			a.zlogger.Error("got an error from while trying to read a line", zap.Error(err))
+			mindreaderLogPlugin.Shutdown(err)
+			return
 		}
 
 		a.zlogger.Info("done reading from stdin")
