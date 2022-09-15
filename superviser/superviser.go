@@ -27,6 +27,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// mindreaderPlugin can be used to check if `logplugin.LogPlugin` is actually a mindreader one.
+// This is not in `mindreader` package to not introduce a cycle dependencies
+type mindreaderPlugin interface {
+	logplugin.LogPlugin
+
+	GetMindreaderLineChannel() chan string
+}
+
 type Superviser struct {
 	*shutter.Shutter
 	Binary    string
