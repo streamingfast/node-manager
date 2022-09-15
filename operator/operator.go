@@ -126,7 +126,7 @@ func (o *Operator) Launch(httpListenAddr string, options ...HTTPOption) error {
 	o.LaunchBackupSchedules()
 
 	if o.options.Bootstrapper != nil {
-		o.zlogger.Info("Operator calling bootstrap function")
+		o.zlogger.Info("operator calling bootstrap function")
 		err := o.options.Bootstrapper.Bootstrap()
 		if err != nil {
 			return fmt.Errorf("unable to bootstrap chain: %w", err)
