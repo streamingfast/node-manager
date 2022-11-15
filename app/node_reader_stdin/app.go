@@ -82,7 +82,10 @@ func (a *App) Run() error {
 
 	gs := dgrpcfactory.ServerFromOptions(dgrpcserver.WithLogger(a.zlogger))
 
-	blockStreamServer := blockstream.NewUnmanagedServer(blockstream.ServerOptionWithLogger(a.zlogger))
+	blockStreamServer := blockstream.NewUnmanagedServer(
+		blockstream.ServerOptionWithLogger(a.zlogger),
+		blockstream.ServerOptionWithBuffer(1),
+	)
 
 	a.zlogger.Info("launching reader log plugin")
 	mindreaderLogPlugin, err := mindreader.NewMindReaderPlugin(
