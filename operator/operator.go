@@ -15,7 +15,6 @@
 package operator
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -24,7 +23,6 @@ import (
 	"time"
 
 	"github.com/streamingfast/derr"
-	"github.com/streamingfast/dstore"
 	nodeManager "github.com/streamingfast/node-manager"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/atomic"
@@ -37,7 +35,6 @@ type Operator struct {
 	options          *Options
 	lastStartCommand time.Time
 
-	bootstrapper    Bootstrapper
 	backupModules   map[string]BackupModule
 	backupSchedules []*BackupSchedule
 
@@ -46,7 +43,6 @@ type Operator struct {
 	Superviser     nodeManager.ChainSuperviser
 	chainReadiness nodeManager.Readiness
 	aboutToStop    *atomic.Bool
-	snapshotStore  dstore.Store
 	zlogger        *zap.Logger
 }
 
@@ -182,41 +178,6 @@ func formatLogLines(lines []string) string {
 	}
 
 	return strings.Join(formattedLines, "\n")
-}
-
-func (o *Operator) waitForReadFlowToComplete() {
-	o.zlogger.Info("chain operator shutting down")
-
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-
-	go func() {
-		// We give `(shutown_delay / 2)` time for http server to quit
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(float64(o.options.ShutdownDelay)/2.0))
-		defer cancel()
-
-		if o.httpServer != nil {
-			if err := o.httpServer.Shutdown(ctx); err != nil {
-				o.zlogger.Error("unable to close http server gracefully", zap.Error(err))
-			}
-		}
-
-		wg.Done()
-	}()
-
-	go func() {
-		err := o.Superviser.Stop()
-		if err != nil {
-			o.zlogger.Error("unable to close Superviser gracefully", zap.Error(err))
-		}
-
-		wg.Done()
-	}()
-
-	// FIXME: How could we have a timeout or so we do not wait forever!
-	o.zlogger.Info("chain operator wait on group")
-	wg.Wait()
-	o.zlogger.Info("chain operator clean up done")
 }
 
 func (o *Operator) runSubCommand(name string, parentCmd *Command) error {
@@ -481,19 +442,18 @@ func (o *Operator) LaunchBackupSchedules() {
 
 func (o *Operator) RunEveryPeriod(period time.Duration, commandName string, params map[string]string) {
 	for {
-		time.Sleep(1)
+		time.Sleep(100 * time.Microsecond)
+
 		if o.Superviser.IsRunning() {
 			break
 		}
 	}
 
-	ticker := time.NewTicker(period)
-	for {
-		select {
-		case <-ticker.C:
-			if o.Superviser.IsRunning() {
-				o.commandChan <- &Command{cmd: commandName, logger: o.zlogger, params: params}
-			}
+	ticker := time.NewTicker(period).C
+
+	for range ticker {
+		if o.Superviser.IsRunning() {
+			o.commandChan <- &Command{cmd: commandName, logger: o.zlogger, params: params}
 		}
 	}
 }
