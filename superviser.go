@@ -39,6 +39,7 @@ type ChainSuperviser interface {
 
 	GetCommand() string
 	GetName() string
+	ServerID() (string, error)
 
 	RegisterLogPlugin(plugin logplugin.LogPlugin)
 	Start(options ...StartOption) error
@@ -46,7 +47,6 @@ type ChainSuperviser interface {
 
 	IsRunning() bool
 	Stopped() <-chan struct{}
-	ServerID() (string, error)
 
 	LastExitCode() int
 	LastLogLines() []string

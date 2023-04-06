@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"sync"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/blockstream"
@@ -49,10 +50,14 @@ type MindReaderPlugin struct {
 	consoleReaderFactory ConsolerReaderFactory
 	stopBlock            uint64 // if set, call shutdownFunc(nil) when we hit this number
 	channelCapacity      int    // transformed blocks are buffered in a channel
-	headBlockUpdater     nodeManager.HeadBlockUpdater
-	onBlockWritten       nodeManager.OnBlockWritten
-	blockStreamServer    *blockstream.Server
-	zlogger              *zap.Logger
+
+	lastSeenBlock     bstream.BlockRef
+	lastSeenBlockLock sync.RWMutex
+
+	headBlockUpdater  nodeManager.HeadBlockUpdater
+	onBlockWritten    nodeManager.OnBlockWritten
+	blockStreamServer *blockstream.Server
+	zlogger           *zap.Logger
 
 	lines               chan string
 	consoleReader       ConsolerReader // contains the 'reader' part of the pipe
@@ -296,6 +301,10 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 		return nil
 	}
 
+	p.lastSeenBlockLock.Lock()
+	p.lastSeenBlock = block.AsRef()
+	p.lastSeenBlockLock.Unlock()
+
 	if p.headBlockUpdater != nil {
 		if err := p.headBlockUpdater(block); err != nil {
 			p.zlogger.Info("shutting down because head block updater generated an error", zap.Error(err))
@@ -338,8 +347,11 @@ func (p *MindReaderPlugin) OnBlockWritten(callback nodeManager.OnBlockWritten) {
 // `logplugin.LogPlugin` is an actual mindreader plugin without depending on the `mindreader`
 // package in which case it would create an import cycle.
 //
-// The `superviser.Superviser` defines `type mindreaderPlugin interface { GetMindreaderLineChannel() chan string }`
+// The `superviser.Superviser` defines `type mindreaderPlugin interface { LastSeenBlockNum() bstream.BlockRef }`
 // which is respected. This is a trick to avoid circual dependency in imports.
-func (p *MindReaderPlugin) GetMindreaderLineChannel() chan string {
-	return p.lines
+func (p *MindReaderPlugin) LastSeenBlock() bstream.BlockRef {
+	p.lastSeenBlockLock.RLock()
+	defer p.lastSeenBlockLock.RUnlock()
+
+	return p.lastSeenBlock
 }

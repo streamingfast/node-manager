@@ -38,12 +38,14 @@ type Operator struct {
 	backupModules   map[string]BackupModule
 	backupSchedules []*BackupSchedule
 
-	commandChan    chan *Command
-	httpServer     *http.Server
+	commandChan chan *Command
+	httpServer  *http.Server
+
 	Superviser     nodeManager.ChainSuperviser
 	chainReadiness nodeManager.Readiness
-	aboutToStop    *atomic.Bool
-	zlogger        *zap.Logger
+
+	aboutToStop *atomic.Bool
+	zlogger     *zap.Logger
 }
 
 type Bootstrapper interface {

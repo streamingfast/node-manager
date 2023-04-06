@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ShinyTrinkets/overseer"
+	"github.com/streamingfast/bstream"
 	nodeManager "github.com/streamingfast/node-manager"
 	logplugin "github.com/streamingfast/node-manager/log_plugin"
 	"github.com/streamingfast/shutter"
@@ -32,7 +33,7 @@ import (
 type mindreaderPlugin interface {
 	logplugin.LogPlugin
 
-	GetMindreaderLineChannel() chan string
+	LastSeenBlock() bstream.BlockRef
 }
 
 type Superviser struct {
@@ -138,6 +139,15 @@ func (s *Superviser) LastLogLines() []string {
 	}
 
 	return nil
+}
+
+func (s *Superviser) LastSeenBlockNum() uint64 {
+	for _, plugin := range s.GetLogPlugins() {
+		if v, ok := plugin.(mindreaderPlugin); ok {
+			return v.LastSeenBlock().Num()
+		}
+	}
+	return 0
 }
 
 func (s *Superviser) Start(options ...nodeManager.StartOption) error {
