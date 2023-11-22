@@ -25,6 +25,7 @@ import (
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/blockstream"
+	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/dstore"
 	"github.com/streamingfast/logging"
 	nodeManager "github.com/streamingfast/node-manager"
@@ -37,7 +38,7 @@ var (
 )
 
 type ConsolerReader interface {
-	ReadBlock() (obj *bstream.Block, err error)
+	ReadBlock() (obj *pbbstream.Block, err error)
 	Done() <-chan interface{}
 }
 
@@ -121,7 +122,6 @@ func NewMindReaderPlugin(
 		oneBlockSuffix,
 		localOneBlocksStore,
 		remoteOneBlocksStore,
-		bstream.GetBlockWriterFactory,
 		zlogger,
 		tracer,
 	)
@@ -179,7 +179,7 @@ func (p *MindReaderPlugin) Launch() {
 
 }
 func (p *MindReaderPlugin) launch() {
-	blocks := make(chan *bstream.Block, p.channelCapacity)
+	blocks := make(chan *pbbstream.Block, p.channelCapacity)
 	p.zlogger.Info("launching blocks reading loop", zap.Int("capacity", p.channelCapacity))
 	go p.consumeReadFlow(blocks)
 
@@ -226,7 +226,7 @@ func (p *MindReaderPlugin) waitForReadFlowToComplete() {
 }
 
 // consumeReadFlow is the one function blocking termination until consumption/writeBlock/upload is done
-func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *bstream.Block) {
+func (p *MindReaderPlugin) consumeReadFlow(blocks <-chan *pbbstream.Block) {
 	p.zlogger.Info("starting consume flow")
 	defer close(p.consumeReadFlowDone)
 
@@ -291,13 +291,13 @@ func (p *MindReaderPlugin) drainMessages() {
 	}
 }
 
-func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
+func (p *MindReaderPlugin) readOneMessage(blocks chan<- *pbbstream.Block) error {
 	block, err := p.consoleReader.ReadBlock()
 	if err != nil {
 		return err
 	}
 
-	if block.Num() < bstream.GetProtocolFirstStreamableBlock {
+	if block.Number < bstream.GetProtocolFirstStreamableBlock {
 		return nil
 	}
 
@@ -320,7 +320,7 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *bstream.Block) error {
 
 	blocks <- block
 
-	if p.stopBlock != 0 && block.Num() >= p.stopBlock && !p.IsTerminating() {
+	if p.stopBlock != 0 && block.Number >= p.stopBlock && !p.IsTerminating() {
 		p.zlogger.Info("shutting down because requested end block reached", zap.Stringer("block", block))
 
 		// See comment tagged 0a33f6b578cc4d0b

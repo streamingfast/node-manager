@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/streamingfast/bstream"
+	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/shutter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +27,7 @@ func TestMindReaderPlugin_LegacyPrefix_ReadFlow(t *testing.T) {
 func testMindReaderPluginReadFlow(t *testing.T, prefix string) {
 	numOfLines := 1
 	lines := make(chan string, numOfLines)
-	blocks := make(chan *bstream.Block, numOfLines)
+	blocks := make(chan *pbbstream.Block, numOfLines)
 
 	mindReader := &MindReaderPlugin{
 		Shutter:       shutter.New(),
@@ -59,7 +59,7 @@ func testMindReaderPluginReadFlow(t *testing.T, prefix string) {
 func TestMindReaderPlugin_StopAtBlockNumReached(t *testing.T) {
 	numOfLines := 2
 	lines := make(chan string, numOfLines)
-	blocks := make(chan *bstream.Block, numOfLines)
+	blocks := make(chan *pbbstream.Block, numOfLines)
 	done := make(chan interface{})
 
 	mindReader := &MindReaderPlugin{
@@ -130,7 +130,7 @@ func (c *testConsoleReader) Done() <-chan interface{} {
 	return c.done
 }
 
-func (c *testConsoleReader) ReadBlock() (*bstream.Block, error) {
+func (c *testConsoleReader) ReadBlock() (*pbbstream.Block, error) {
 	line, _ := <-c.lines
 
 	var formatedLine string
@@ -148,7 +148,7 @@ func (c *testConsoleReader) ReadBlock() (*bstream.Block, error) {
 	if err := json.Unmarshal([]byte(formatedLine), data); err != nil {
 		return nil, fmt.Errorf("marshalling error on '%s': %w", formatedLine, err)
 	}
-	return &bstream.Block{
+	return &pbbstream.Block{
 		Id:     data.ID,
 		Number: toBlockNum(data.ID),
 	}, nil

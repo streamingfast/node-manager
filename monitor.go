@@ -3,7 +3,7 @@ package node_manager
 import (
 	"time"
 
-	"github.com/streamingfast/bstream"
+	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/dmetrics"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -14,7 +14,7 @@ type Readiness interface {
 }
 
 type MetricsAndReadinessManager struct {
-	headBlockChan      chan *bstream.Block
+	headBlockChan      chan *pbbstream.Block
 	headBlockTimeDrift *dmetrics.HeadTimeDrift
 	headBlockNumber    *dmetrics.HeadBlockNum
 	appReadiness       *dmetrics.AppReadiness
@@ -29,7 +29,7 @@ type MetricsAndReadinessManager struct {
 
 func NewMetricsAndReadinessManager(headBlockTimeDrift *dmetrics.HeadTimeDrift, headBlockNumber *dmetrics.HeadBlockNum, appReadiness *dmetrics.AppReadiness, readinessMaxLatency time.Duration) *MetricsAndReadinessManager {
 	return &MetricsAndReadinessManager{
-		headBlockChan:       make(chan *bstream.Block, 1), // just for non-blocking, saving a few nanoseconds here
+		headBlockChan:       make(chan *pbbstream.Block, 1), // just for non-blocking, saving a few nanoseconds here
 		readinessProbe:      atomic.NewBool(false),
 		appReadiness:        appReadiness,
 		headBlockTimeDrift:  headBlockTimeDrift,
@@ -54,7 +54,7 @@ func (m *MetricsAndReadinessManager) IsReady() bool {
 
 func (m *MetricsAndReadinessManager) Launch() {
 	for {
-		var lastSeenBlock *bstream.Block
+		var lastSeenBlock *pbbstream.Block
 		select {
 		case block := <-m.headBlockChan:
 			lastSeenBlock = block
@@ -67,7 +67,7 @@ func (m *MetricsAndReadinessManager) Launch() {
 
 		// metrics
 		if m.headBlockNumber != nil {
-			m.headBlockNumber.SetUint64(lastSeenBlock.Num())
+			m.headBlockNumber.SetUint64(lastSeenBlock.Number)
 		}
 
 		if lastSeenBlock.Time().IsZero() { // never act upon zero timestamps
@@ -86,7 +86,7 @@ func (m *MetricsAndReadinessManager) Launch() {
 	}
 }
 
-func (m *MetricsAndReadinessManager) UpdateHeadBlock(block *bstream.Block) error {
+func (m *MetricsAndReadinessManager) UpdateHeadBlock(block *pbbstream.Block) error {
 	m.headBlockChan <- block
 	return nil
 }

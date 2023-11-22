@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 
+	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
+
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/dstore"
 	"github.com/streamingfast/logging"
@@ -33,7 +35,6 @@ type Archiver struct {
 	oneblockSuffix string
 
 	localOneBlocksStore dstore.Store
-	blockWriterFactory  bstream.BlockWriterFactory
 
 	fileUploader *FileUploader
 	logger       *zap.Logger
@@ -45,7 +46,6 @@ func NewArchiver(
 	oneblockSuffix string,
 	localOneBlocksStore dstore.Store,
 	remoteOneBlocksStore dstore.Store,
-	blockWriterFactory bstream.BlockWriterFactory,
 	logger *zap.Logger,
 	tracer logging.Tracer,
 ) *Archiver {
@@ -60,7 +60,6 @@ func NewArchiver(
 		startBlock:          startBlock,
 		oneblockSuffix:      oneblockSuffix,
 		localOneBlocksStore: localOneBlocksStore,
-		blockWriterFactory:  blockWriterFactory,
 		fileUploader:        fileUploader,
 		logger:              logger,
 		tracer:              tracer,
@@ -80,7 +79,7 @@ func (a *Archiver) Start(ctx context.Context) {
 	go a.fileUploader.Start(ctx)
 }
 
-func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
+func (a *Archiver) StoreBlock(ctx context.Context, block *pbbstream.Block) error {
 	if block.Number < a.startBlock {
 		a.logger.Debug("skipping block below start_block", zap.Stringer("block", block), zap.Uint64("start_block", a.startBlock))
 		return nil
@@ -96,7 +95,7 @@ func (a *Archiver) StoreBlock(ctx context.Context, block *bstream.Block) error {
 		writeObjectErrChan <- a.localOneBlocksStore.WriteObject(ctx, bstream.BlockFileNameWithSuffix(block, a.oneblockSuffix), pipeRead)
 	}()
 
-	blockWriter, err := a.blockWriterFactory.New(pipeWrite)
+	blockWriter, err := bstream.NewDBinBlockWriter(pipeWrite)
 	if err != nil {
 		return fmt.Errorf("write block factory: %w", err)
 	}

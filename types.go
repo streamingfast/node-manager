@@ -14,12 +14,12 @@
 
 package node_manager
 
-import "github.com/streamingfast/bstream"
+import pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 
 type DeepMindDebuggable interface {
 	DebugDeepMind(enabled bool)
 }
 
-type HeadBlockUpdater func(block *bstream.Block) error
+type HeadBlockUpdater func(block *pbbstream.Block) error
 
-type OnBlockWritten func(block *bstream.Block) error
+type OnBlockWritten func(block *pbbstream.Block) error

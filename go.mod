@@ -1,18 +1,20 @@
 module github.com/streamingfast/node-manager
 
-go 1.18
+go 1.21
+
+toolchain go1.21.2
 
 require (
 	github.com/ShinyTrinkets/overseer v0.3.0
 	github.com/abourget/llerrgroup v0.0.0-20161118145731-75f536392d17
 	github.com/gorilla/mux v1.8.0
-	github.com/streamingfast/bstream v0.0.2-0.20221115101451-752234eb5e18
+	github.com/streamingfast/bstream v0.0.2-0.20231121211820-e45c1b42f472
 	github.com/streamingfast/derr v0.0.0-20220301163149-de09cb18fc70
 	github.com/streamingfast/dgrpc v0.0.0-20220909121013-162e9305bbfc
 	github.com/streamingfast/dmetrics v0.0.0-20220811180000-3e513057d17c
 	github.com/streamingfast/dstore v0.1.1-0.20220607202639-35118aeaf648
 	github.com/streamingfast/logging v0.0.0-20220304214715-bc750a74b424
-	github.com/streamingfast/pbgo v0.0.6-0.20220629184423-cfd0608e0cf4
+	github.com/streamingfast/pbgo v0.0.6-0.20231120172814-537d034aad5e
 	github.com/streamingfast/shutter v1.5.0
 	github.com/stretchr/testify v1.7.0
 	go.uber.org/atomic v1.9.0
@@ -41,7 +43,6 @@ require (
 	github.com/cncf/udpa/go v0.0.0-20210930031921-04548b0d99d4 // indirect
 	github.com/cncf/xds/go v0.0.0-20211011173535-cb28da3451f1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/envoyproxy/go-control-plane v0.10.2-0.20220325020618-49ff273808a1 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
@@ -67,8 +68,7 @@ require (
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/sethvargo/go-retry v0.1.0 // indirect
-	github.com/streamingfast/atm v0.0.0-20220131151839-18c87005e680 // indirect
-	github.com/streamingfast/dbin v0.0.0-20210809205249-73d5eca35dc5 // indirect
+	github.com/streamingfast/dbin v0.9.1-0.20231117225723-59790c798e2c // indirect
 	github.com/streamingfast/dtracing v0.0.0-20210811175635-d55665d3622a // indirect
 	github.com/streamingfast/opaque v0.0.0-20210811180740-0c01d37ea308 // indirect
 	github.com/teris-io/shortid v0.0.0-20171029131806-771a37caa5cf // indirect
